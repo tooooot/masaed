@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>مساعد — لوحة التحكم العقارية</title>
+<title>مساعد — لوحة التحكم</title>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -43,6 +43,7 @@ a{color:var(--green);text-decoration:none;}
 .nav-badge{margin-right:auto;background:var(--green);color:#000;font-size:0.62rem;font-weight:700;padding:1px 7px;border-radius:10px;}
 .nav-badge.red{background:var(--red);color:#fff;}
 .nav-badge.yellow{background:var(--yellow);color:#000;}
+.nav-badge.blue{background:var(--blue);color:#fff;}
 
 /* ── Main ── */
 .main{flex:1;overflow-y:auto;background:var(--bg);}
@@ -65,11 +66,13 @@ a{color:var(--green);text-decoration:none;}
 .stat-card.yellow::before{background:var(--yellow);}
 .stat-card.purple::before{background:var(--purple);}
 .stat-card.orange::before{background:var(--orange);}
+.stat-card.red::before{background:var(--red);}
 .stat-num{font-size:1.8rem;font-weight:700;color:var(--green);}
 .stat-card.blue .stat-num{color:var(--blue);}
 .stat-card.yellow .stat-num{color:var(--yellow);}
 .stat-card.purple .stat-num{color:var(--purple);}
 .stat-card.orange .stat-num{color:var(--orange);}
+.stat-card.red .stat-num{color:var(--red);}
 .stat-label{font-size:0.74rem;color:var(--muted);margin-top:2px;}
 .stat-sub{font-size:0.68rem;color:var(--muted);margin-top:4px;}
 
@@ -135,6 +138,50 @@ a{color:var(--green);text-decoration:none;}
 .session-footer{display:flex;align-items:center;gap:8px;font-size:0.72rem;color:var(--muted);}
 .session-footer .msg-count{background:var(--hover);padding:2px 8px;border-radius:5px;font-weight:700;color:var(--text);}
 
+/* ── Bookmarklet ── */
+.bookmarklet-zone{text-align:center;padding:28px;background:var(--bg);border-radius:var(--r);border:2px dashed var(--border);margin-bottom:16px;}
+.bookmarklet-btn{display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:12px 24px;border-radius:8px;font-size:1rem;cursor:grab;text-decoration:none;font-weight:700;box-shadow:0 4px 15px rgba(102,126,234,.3);user-select:none;transition:transform .15s;font-family:'Tajawal',sans-serif;}
+.bookmarklet-btn:hover{transform:scale(1.03);}
+.drag-hint{margin-top:10px;color:var(--muted);font-size:0.8rem;}
+.extract-row{display:flex;gap:8px;margin-top:14px;}
+.extract-input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:0.82rem;direction:ltr;outline:none;font-family:monospace;}
+.extract-input::placeholder{color:var(--muted);}
+
+/* ── Lead Card (fill mode) ── */
+.lead-fill-card{background:var(--card);border:2px solid var(--green);border-radius:var(--r);padding:24px;margin-bottom:16px;animation:fadeIn .25s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.lead-fill-card .lf-num{font-size:0.75rem;color:var(--green);font-weight:700;margin-bottom:6px;}
+.lead-fill-card .lf-city{display:inline-block;background:var(--hover);color:var(--muted);padding:2px 8px;border-radius:4px;font-size:0.75rem;margin-bottom:8px;}
+.lead-fill-card .lf-title{font-size:1rem;color:var(--text);margin-bottom:16px;line-height:1.6;}
+.open-listing-btn{display:block;width:100%;text-align:center;background:var(--hover);color:var(--muted);padding:10px;border-radius:8px;text-decoration:none;margin-bottom:16px;font-size:0.85rem;transition:background .15s;}
+.open-listing-btn:hover{background:var(--border);color:var(--text);}
+.phone-fill-row{display:flex;gap:8px;align-items:center;}
+.phone-fill-input{flex:1;background:var(--bg);border:2px solid var(--border);color:var(--green);padding:12px 14px;border-radius:8px;font-size:1.1rem;font-family:monospace;direction:ltr;text-align:center;outline:none;transition:border-color .2s;}
+.phone-fill-input:focus{border-color:var(--green);}
+.phone-fill-input::placeholder{color:var(--border);font-size:0.9rem;}
+.fill-skip{display:block;width:100%;text-align:center;margin-top:10px;color:var(--border);background:none;border:none;cursor:pointer;font-size:0.8rem;padding:6px;font-family:'Tajawal',sans-serif;}
+.fill-skip:hover{color:var(--muted);}
+.fill-progress{height:3px;background:var(--border);border-radius:2px;margin-bottom:20px;overflow:hidden;}
+.fill-progress-bar{height:3px;background:linear-gradient(90deg,var(--green),var(--blue));transition:width .4s;}
+.queue-list{display:flex;flex-direction:column;gap:6px;}
+.queue-item{background:var(--card);border:1px solid var(--border);border-radius:7px;padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:0.8rem;}
+.queue-item .qi-num{color:var(--border);min-width:20px;}
+.queue-item .qi-title{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.queue-item .qi-done{color:var(--green);font-family:monospace;direction:ltr;font-size:0.75rem;}
+.queue-item.done{opacity:.45;}
+.done-screen{text-align:center;padding:60px 20px;}
+.done-screen .done-icon{font-size:3.5rem;margin-bottom:14px;}
+.done-screen h2{font-size:1.3rem;color:var(--green);margin-bottom:6px;}
+.done-screen p{color:var(--muted);}
+
+/* ── Scraper Leads Table ── */
+.s-new{background:var(--hover);color:var(--muted);}
+.s-phone{background:#00a88420;color:var(--green);}
+.s-contacted{background:#3b82f620;color:var(--blue);}
+.hidden-phone{color:var(--yellow);}
+.btn-extract{background:#8b5cf620;color:var(--purple);border:1px solid #8b5cf638;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.72rem;font-family:'Tajawal',sans-serif;}
+.btn-contact2{background:#3b82f620;color:var(--blue);border:1px solid #3b82f638;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.72rem;font-family:'Tajawal',sans-serif;}
+
 /* ── Log View ── */
 .log-box{background:#0d1418;border-radius:var(--r);border:1px solid var(--border);padding:14px;font-family:monospace;font-size:0.75rem;line-height:1.7;max-height:400px;overflow-y:auto;}
 .log-line{margin-bottom:2px;}
@@ -155,6 +202,7 @@ a{color:var(--green);text-decoration:none;}
 .btn-outline:hover{color:var(--text);border-color:var(--muted);}
 .btn-yellow{background:#f59e0b20;color:var(--yellow);border:1px solid #f59e0b38;}
 .btn-blue{background:#3b82f620;color:var(--blue);border:1px solid #3b82f638;}
+.btn-purple{background:#8b5cf620;color:var(--purple);border:1px solid #8b5cf638;}
 .btn-sm{padding:4px 10px;font-size:0.72rem;}
 
 /* ── Loading / Empty ── */
@@ -177,7 +225,6 @@ a{color:var(--green);text-decoration:none;}
 .bn-item.active .bn-label{color:var(--green);}
 .bn-bdg{position:absolute;top:4px;right:calc(50% - 18px);background:var(--green);color:#000;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:8px;}
 
-/* ── Divider ── */
 .divider{border:none;border-top:1px solid var(--border);margin:16px 0;}
 
 @media(max-width:768px){
@@ -236,6 +283,15 @@ a{color:var(--green);text-decoration:none;}
       <span class="nav-icon">💬</span> الجلسات
       <span class="nav-badge yellow" id="nb-sessions" style="display:none">0</span>
     </div>
+    <div class="nav-section">الطلبات المسحوبة</div>
+    <div class="nav-item" onclick="showPage('scraped',this)">
+      <span class="nav-icon">📱</span> الطلبات المجمّعة
+      <span class="nav-badge yellow" id="nb-scraped" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('fill',this)">
+      <span class="nav-icon">✏️</span> تعبئة الأرقام
+      <span class="nav-badge red" id="nb-fill" style="display:none">0</span>
+    </div>
     <div class="nav-section">النظام</div>
     <div class="nav-item" onclick="showPage('logs',this)">
       <span class="nav-icon">📋</span> السجلات
@@ -272,26 +328,30 @@ a{color:var(--green);text-decoration:none;}
           <div class="stat-sub" id="ov-requests-total">إجمالي: —</div>
         </div>
         <div class="stat-card yellow">
+          <div class="stat-num" id="ov-scraped">—</div>
+          <div class="stat-label">طلبات مسحوبة</div>
+          <div class="stat-sub" id="ov-scraped-sub">لديها رقم: —</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-num" id="ov-hidden">—</div>
+          <div class="stat-label">أرقام مخفية</div>
+          <div class="stat-sub">تحتاج تعبئة يدوية</div>
+        </div>
+        <div class="stat-card purple">
           <div class="stat-num" id="ov-pending">—</div>
           <div class="stat-label">توفيقات بانتظار موافقة</div>
           <div class="stat-sub">تحتاج مراجعتك</div>
         </div>
-        <div class="stat-card purple">
+        <div class="stat-card orange">
           <div class="stat-num" id="ov-sessions">—</div>
           <div class="stat-label">جلسات نشطة</div>
-          <div class="stat-sub">حوار جارٍ بين طرفين</div>
-        </div>
-        <div class="stat-card orange">
-          <div class="stat-num" id="ov-closed">—</div>
-          <div class="stat-label">صفقات مكتملة</div>
-          <div class="stat-sub">جلسات أُغلقت</div>
+          <div class="stat-sub" id="ov-closed-sub">مكتملة: —</div>
         </div>
       </div>
 
-      <!-- Quick matches preview -->
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
         <div style="font-size:0.9rem;font-weight:700;">أحدث التوفيقات</div>
-        <button class="btn btn-outline btn-sm" onclick="showPage('matches',document.querySelector('.nav-item:nth-child(5)'))">عرض الكل ←</button>
+        <button class="btn btn-outline btn-sm" onclick="showPage('matches',document.querySelectorAll('.nav-item')[4])">عرض الكل ←</button>
       </div>
       <div id="overview-matches">
         <div class="empty"><div class="spinner"></div></div>
@@ -310,7 +370,6 @@ a{color:var(--green);text-decoration:none;}
           <button class="btn btn-outline btn-sm" onclick="loadListings()">🔄 تحديث</button>
         </div>
       </div>
-
       <div class="filter-bar">
         <div class="filter-chip active" onclick="filterTable('listings','',this)">الكل</div>
         <div class="filter-chip" onclick="filterTable('listings','شقة',this)">شقق</div>
@@ -319,25 +378,23 @@ a{color:var(--green);text-decoration:none;}
         <div class="filter-chip" onclick="filterTable('listings','تجاري',this)">تجاري</div>
         <input class="search-input" id="listings-search" placeholder="ابحث بالمدينة أو الحي..." oninput="searchTable('listings',this.value)">
       </div>
-
       <div id="listings-table">
         <div class="empty"><div class="spinner"></div></div>
       </div>
     </div>
 
-    <!-- ══ PAGE: REQUESTS ══ -->
+    <!-- ══ PAGE: REQUESTS (n8n) ══ -->
     <div class="page" id="page-requests">
       <div class="page-hd">
         <div class="page-hd-icon">🔍</div>
         <div>
           <div class="page-hd-title">الطلبات</div>
-          <div class="page-hd-sub">أشخاص يبحثون عن عقار</div>
+          <div class="page-hd-sub">أشخاص يبحثون عن عقار — مصدر: n8n</div>
         </div>
         <div class="page-hd-actions">
           <button class="btn btn-outline btn-sm" onclick="loadRequests()">🔄 تحديث</button>
         </div>
       </div>
-
       <div class="filter-bar">
         <div class="filter-chip active" onclick="filterTable('requests','',this)">الكل</div>
         <div class="filter-chip" onclick="filterTable('requests','إيجار',this)">إيجار</div>
@@ -346,7 +403,6 @@ a{color:var(--green);text-decoration:none;}
         <div class="filter-chip" onclick="filterTable('requests','فيلا',this)">فلل</div>
         <input class="search-input" id="requests-search" placeholder="ابحث بالمدينة أو الحي..." oninput="searchTable('requests',this.value)">
       </div>
-
       <div id="requests-table">
         <div class="empty"><div class="spinner"></div></div>
       </div>
@@ -365,14 +421,12 @@ a{color:var(--green);text-decoration:none;}
           <button class="btn btn-outline btn-sm" onclick="loadMatches()">🔄 تحديث</button>
         </div>
       </div>
-
       <div class="filter-bar">
         <div class="filter-chip active" onclick="filterMatches('pending',this)">بانتظار الموافقة</div>
         <div class="filter-chip" onclick="filterMatches('approved',this)">موافق عليها</div>
         <div class="filter-chip" onclick="filterMatches('rejected',this)">مرفوضة</div>
         <div class="filter-chip" onclick="filterMatches('session_created',this)">فُتحت جلسة</div>
       </div>
-
       <div id="matches-list">
         <div class="empty"><div class="spinner"></div></div>
       </div>
@@ -390,16 +444,96 @@ a{color:var(--green);text-decoration:none;}
           <button class="btn btn-outline btn-sm" onclick="loadSessions()">🔄 تحديث</button>
         </div>
       </div>
-
       <div class="filter-bar">
         <div class="filter-chip active" onclick="filterSessions('active',this)">نشطة</div>
         <div class="filter-chip" onclick="filterSessions('closed',this)">مغلقة</div>
         <div class="filter-chip" onclick="filterSessions('all',this)">الكل</div>
       </div>
-
       <div id="sessions-list">
         <div class="empty"><div class="spinner"></div></div>
       </div>
+    </div>
+
+    <!-- ══ PAGE: SCRAPED LEADS ══ -->
+    <div class="page" id="page-scraped">
+      <div class="page-hd">
+        <div class="page-hd-icon">📱</div>
+        <div>
+          <div class="page-hd-title">الطلبات المجمّعة</div>
+          <div class="page-hd-sub">طلبات مسحوبة من حراج — استخرج أرقامها المخفية</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-yellow btn-sm" onclick="triggerScrapeDirect(this)">⬇️ سحب الآن</button>
+          <button class="btn btn-purple btn-sm" onclick="showPage('fill',document.querySelectorAll('.nav-item')[7])">✏️ تعبئة الأرقام</button>
+          <button class="btn btn-outline btn-sm" onclick="loadScraped()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <!-- Bookmarklet Section -->
+      <div class="bookmarklet-zone">
+        <a id="bookmarkletBtn" class="bookmarklet-btn" href="#" onclick="return false">📱 استخرج رقم الهاتف</a>
+        <div class="drag-hint">اسحب الزر أعلاه إلى شريط المفضلة — ثم افتح أي إعلان في حراج وانقر عليه</div>
+        <div class="extract-row">
+          <input id="pasteUrl" class="extract-input" type="text" placeholder="https://haraj.com.sa/...">
+          <button class="btn btn-blue btn-sm" onclick="extractFromUrl()">استخرج</button>
+        </div>
+        <div id="extractResult" style="margin-top:8px;font-size:0.8rem;color:var(--green);display:none"></div>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="stats-row" style="margin-bottom:16px;">
+        <div class="stat-card green">
+          <div class="stat-num" id="sc-total">—</div>
+          <div class="stat-label">إجمالي الطلبات</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-num" id="sc-phone">—</div>
+          <div class="stat-label">رقم مرئي</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-num" id="sc-hidden">—</div>
+          <div class="stat-label">رقم مخفي</div>
+        </div>
+        <div class="stat-card orange">
+          <div class="stat-num" id="sc-cities">—</div>
+          <div class="stat-label">مدن</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-num" id="sc-contacted">—</div>
+          <div class="stat-label">تم التواصل</div>
+        </div>
+      </div>
+
+      <!-- Filter + Table -->
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="loadScrapedByStatus('new',this)">جديد</div>
+        <div class="filter-chip" onclick="loadScrapedByStatus('phone_extracted',this)">مستخرج</div>
+        <div class="filter-chip" onclick="loadScrapedByStatus('contacted',this)">تم التواصل</div>
+        <div class="filter-chip" onclick="loadScrapedByStatus('all',this)">الكل</div>
+      </div>
+      <div id="scraped-table">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: FILL PHONES ══ -->
+    <div class="page" id="page-fill">
+      <div class="page-hd">
+        <div class="page-hd-icon">✏️</div>
+        <div>
+          <div class="page-hd-title">تعبئة الأرقام المخفية</div>
+          <div class="page-hd-sub">افتح كل إعلان، اعثر على الرقم، واحفظه هنا</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadFill()">🔄 تحديث</button>
+        </div>
+      </div>
+      <div class="fill-progress">
+        <div class="fill-progress-bar" id="fill-prog-bar" style="width:0%"></div>
+      </div>
+      <div style="font-size:0.72rem;color:var(--muted);margin-bottom:16px;" id="fill-prog-text">جارٍ التحميل...</div>
+      <div id="fill-card"></div>
+      <div class="queue-list" id="fill-queue"></div>
     </div>
 
     <!-- ══ PAGE: LOGS ══ -->
@@ -414,7 +548,6 @@ a{color:var(--green);text-decoration:none;}
           <button class="btn btn-outline btn-sm" onclick="loadLogs()">🔄 تحديث</button>
         </div>
       </div>
-
       <div class="log-box" id="log-box">
         <div class="log-line"><span class="log-time">—</span> <span class="log-info">جارٍ تحميل السجلات...</span></div>
       </div>
@@ -428,15 +561,17 @@ a{color:var(--green);text-decoration:none;}
   <div class="bn-item active" id="bn-overview" onclick="showPage('overview',this)">
     <span class="bn-icon">📊</span><span class="bn-label">عام</span>
   </div>
-  <div class="bn-item" id="bn-listings" onclick="showPage('listings',this)">
-    <span class="bn-icon">🏘️</span><span class="bn-label">العروض</span>
-  </div>
-  <div class="bn-item" id="bn-requests" onclick="showPage('requests',this)">
-    <span class="bn-icon">🔍</span><span class="bn-label">الطلبات</span>
+  <div class="bn-item" id="bn-scraped" onclick="showPage('scraped',this)">
+    <span class="bn-icon">📱</span><span class="bn-label">الطلبات</span>
+    <span class="bn-bdg" id="nb-scraped-m" style="display:none">0</span>
   </div>
   <div class="bn-item" id="bn-matches" onclick="showPage('matches',this)">
     <span class="bn-icon">🎯</span><span class="bn-label">التوفيق</span>
     <span class="bn-bdg" id="nb-matches-m" style="display:none">0</span>
+  </div>
+  <div class="bn-item" id="bn-fill" onclick="showPage('fill',this)">
+    <span class="bn-icon">✏️</span><span class="bn-label">تعبئة</span>
+    <span class="bn-bdg" id="nb-fill-m" style="display:none">0</span>
   </div>
   <div class="bn-item" id="bn-sessions" onclick="showPage('sessions',this)">
     <span class="bn-icon">💬</span><span class="bn-label">الجلسات</span>
@@ -449,29 +584,51 @@ a{color:var(--green);text-decoration:none;}
 // ══════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════
-const N8N = 'https://n8n.srv1506241.hstgr.cloud';
-const API_URL = N8N + '/webhook/masaed-api';
+const N8N_API = 'https://n8n.srv1506241.hstgr.cloud/webhook/masaed-api';
+const SCRAPER_API = '/api';
 
+const PAGES = ['overview','listings','requests','matches','sessions','scraped','fill','logs'];
+
+// ══════════════════════════════════════════
+// N8N API
+// ══════════════════════════════════════════
 async function api(action, params = {}) {
   try {
-    const r = await fetch(API_URL, {
+    const r = await fetch(N8N_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, ...params })
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.json();
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
+  } catch (e) { return { success: false, error: e.message }; }
+}
+
+// ══════════════════════════════════════════
+// SCRAPER API
+// ══════════════════════════════════════════
+async function scraperGet(path) {
+  try {
+    const r = await fetch(SCRAPER_API + path);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+async function scraperPost(path, body) {
+  try {
+    const r = await fetch(SCRAPER_API + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    return await r.json();
+  } catch(e) { return null; }
 }
 
 // ══════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════
-const PAGE_MAP = { overview:0, listings:1, requests:2, matches:3, sessions:4, logs:5 };
-const PAGES = ['overview','listings','requests','matches','sessions','logs'];
-
 function showPage(id, el) {
   PAGES.forEach(p => {
     document.getElementById('page-'+p).classList.remove('active');
@@ -483,17 +640,14 @@ function showPage(id, el) {
   const bn = document.getElementById('bn-'+id);
   if (bn) bn.classList.add('active');
   if (el?.classList.contains('nav-item')) el.classList.add('active');
-  else {
-    const idx = PAGE_MAP[id];
-    const items = document.querySelectorAll('.nav-item');
-    if (items[idx]) items[idx].classList.add('active');
-  }
   document.querySelector('.main').scrollTop = 0;
   if (id === 'overview') loadOverview();
   if (id === 'listings') loadListings();
   if (id === 'requests') loadRequests();
   if (id === 'matches') loadMatches();
   if (id === 'sessions') loadSessions();
+  if (id === 'scraped') loadScraped();
+  if (id === 'fill') loadFill();
   if (id === 'logs') loadLogs();
 }
 
@@ -517,15 +671,14 @@ async function checkStatus() {
   if (d.success) {
     dot.classList.add('live');
     txt.textContent = 'متصل ✓';
-    const lr = document.getElementById('last-run');
-    if (d.last_scrape) lr.textContent = 'آخر سحب: ' + relTime(d.last_scrape);
+    if (d.last_scrape) document.getElementById('last-run').textContent = 'آخر سحب: ' + relTime(d.last_scrape);
   } else {
-    txt.textContent = 'API غير متصل بعد';
+    txt.textContent = 'n8n غير متصل';
   }
 }
 
 function relTime(iso) {
-  const d = new Date(iso), now = Date.now(), diff = Math.floor((now - d) / 60000);
+  const diff = Math.floor((Date.now() - new Date(iso)) / 60000);
   if (diff < 1) return 'الآن';
   if (diff < 60) return diff + ' دقيقة';
   if (diff < 1440) return Math.floor(diff/60) + ' ساعة';
@@ -536,7 +689,7 @@ function relTime(iso) {
 // OVERVIEW
 // ══════════════════════════════════════════
 async function loadOverview() {
-  const d = await api('stats');
+  const [d, stats] = await Promise.all([api('stats'), scraperGet('/stats')]);
   if (d.success && d.data) {
     const s = d.data;
     document.getElementById('ov-listings').textContent = s.listings_today ?? '—';
@@ -545,15 +698,22 @@ async function loadOverview() {
     document.getElementById('ov-requests-total').textContent = 'إجمالي: ' + (s.requests_total ?? '—');
     document.getElementById('ov-pending').textContent = s.matches_pending ?? '—';
     document.getElementById('ov-sessions').textContent = s.sessions_active ?? '—';
-    document.getElementById('ov-closed').textContent = s.sessions_closed ?? '—';
-    // badges
+    document.getElementById('ov-closed-sub').textContent = 'مكتملة: ' + (s.sessions_closed ?? '—');
     setNb('nb-listings', s.listings_today, 'blue');
     setNb('nb-requests', s.requests_today, 'blue');
     setNb('nb-matches', s.matches_pending, '');
     setNb('nb-sessions', s.sessions_active, 'yellow');
     setNb('nb-matches-m', s.matches_pending);
   }
-  // Recent matches preview
+  if (stats) {
+    document.getElementById('ov-scraped').textContent = stats.total ?? '—';
+    document.getElementById('ov-scraped-sub').textContent = 'لديها رقم: ' + (stats.with_phone ?? '—');
+    document.getElementById('ov-hidden').textContent = stats.hidden_phone ?? '—';
+    setNb('nb-scraped', stats.new, 'yellow');
+    setNb('nb-scraped-m', stats.new);
+    setNb('nb-fill', stats.hidden_phone, 'red');
+    setNb('nb-fill-m', stats.hidden_phone);
+  }
   const m = await api('matches', { status: 'pending', limit: 3 });
   renderMatchCards('overview-matches', m.data || [], true);
 }
@@ -566,7 +726,7 @@ function setNb(id, val, cls) {
 }
 
 // ══════════════════════════════════════════
-// LISTINGS TABLE
+// LISTINGS TABLE (n8n)
 // ══════════════════════════════════════════
 let listingsData = [], requestsData = [];
 
@@ -579,18 +739,10 @@ async function loadListings() {
 
 function renderListingsTable(data) {
   const el = document.getElementById('listings-table');
-  if (!data.length) {
-    el.innerHTML = emptyState('🏘️', 'لا توجد عروض بعد', 'اضغط "اسحب الآن" لجلب عقارات حراج');
-    return;
-  }
-  el.innerHTML = `
-<div class="table-wrap">
-<table>
-<thead><tr>
-  <th>النوع</th><th>المدينة / الحي</th><th>الغرف</th><th>السعر</th><th>الهدف</th><th>رقم التواصل</th><th>تاريخ النشر</th><th>المصدر</th>
-</tr></thead>
-<tbody>${data.map(r => `
-<tr>
+  if (!data.length) { el.innerHTML = emptyState('🏘️', 'لا توجد عروض بعد', 'اضغط "اسحب الآن" لجلب عقارات حراج'); return; }
+  el.innerHTML = `<div class="table-wrap"><table>
+<thead><tr><th>النوع</th><th>المدينة / الحي</th><th>الغرف</th><th>السعر</th><th>الهدف</th><th>رقم التواصل</th><th>تاريخ النشر</th></tr></thead>
+<tbody>${data.map(r => `<tr>
   <td><span class="badge ${typeBadge(r.property_type)}">${r.property_type||'—'}</span></td>
   <td><span class="city-tag">${r.city||'—'}</span>${r.district?' / '+r.district:''}</td>
   <td>${r.bedrooms ? r.bedrooms + ' غرف' : '—'}</td>
@@ -598,23 +750,11 @@ function renderListingsTable(data) {
   <td><span class="badge ${r.purpose==='بيع'?'badge-sale':'badge-rent'}">${r.purpose||'—'}</span></td>
   <td><a class="phone-link" href="tel:${r.phone}">${r.phone||'—'}</a></td>
   <td style="color:var(--muted);font-size:.72rem">${r.posted_at ? new Date(r.posted_at).toLocaleDateString('ar') : '—'}</td>
-  <td style="font-size:.7rem;color:var(--muted)">${r.source||'حراج'}</td>
-</tr>`).join('')}
-</tbody>
-</table>
-</div>`;
-}
-
-function typeBadge(t) {
-  if (!t) return '';
-  if (t.includes('شقة')) return 'badge-apt';
-  if (t.includes('فيلا')) return 'badge-villa';
-  if (t.includes('أرض')) return 'badge-land';
-  return 'badge-sale';
+</tr>`).join('')}</tbody></table></div>`;
 }
 
 // ══════════════════════════════════════════
-// REQUESTS TABLE
+// REQUESTS TABLE (n8n)
 // ══════════════════════════════════════════
 async function loadRequests() {
   document.getElementById('requests-table').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
@@ -625,18 +765,10 @@ async function loadRequests() {
 
 function renderRequestsTable(data) {
   const el = document.getElementById('requests-table');
-  if (!data.length) {
-    el.innerHTML = emptyState('🔍', 'لا توجد طلبات بعد', 'اضغط "اسحب الآن" لجلب طلبات من حراج');
-    return;
-  }
-  el.innerHTML = `
-<div class="table-wrap">
-<table>
-<thead><tr>
-  <th>النوع</th><th>الهدف</th><th>المدينة / الحي</th><th>الغرف</th><th>الميزانية</th><th>رقم التواصل</th><th>تاريخ الطلب</th>
-</tr></thead>
-<tbody>${data.map(r => `
-<tr>
+  if (!data.length) { el.innerHTML = emptyState('🔍', 'لا توجد طلبات بعد', 'اضغط "اسحب الآن" لجلب طلبات من حراج'); return; }
+  el.innerHTML = `<div class="table-wrap"><table>
+<thead><tr><th>النوع</th><th>الهدف</th><th>المدينة / الحي</th><th>الغرف</th><th>الميزانية</th><th>رقم التواصل</th><th>تاريخ الطلب</th></tr></thead>
+<tbody>${data.map(r => `<tr>
   <td><span class="badge ${typeBadge(r.property_type)}">${r.property_type||'—'}</span></td>
   <td><span class="badge ${r.purpose==='شراء'?'badge-sale':'badge-rent'}">${r.purpose||'إيجار'}</span></td>
   <td><span class="city-tag">${r.city||'—'}</span>${r.district?' / '+r.district:''}</td>
@@ -644,14 +776,11 @@ function renderRequestsTable(data) {
   <td class="price-val">${r.budget_max ? r.budget_max.toLocaleString('ar') + ' ر' : '—'}</td>
   <td><a class="phone-link" href="tel:${r.phone}">${r.phone||'—'}</a></td>
   <td style="color:var(--muted);font-size:.72rem">${r.posted_at ? new Date(r.posted_at).toLocaleDateString('ar') : '—'}</td>
-</tr>`).join('')}
-</tbody>
-</table>
-</div>`;
+</tr>`).join('')}</tbody></table></div>`;
 }
 
 // ══════════════════════════════════════════
-// MATCHES
+// MATCHES (n8n)
 // ══════════════════════════════════════════
 let matchesCache = { pending:[], approved:[], rejected:[], session_created:[] };
 let currentMatchStatus = 'pending';
@@ -664,10 +793,7 @@ async function loadMatches() {
     api('matches', { status:'rejected', limit:50 }),
     api('matches', { status:'session_created', limit:50 }),
   ]);
-  matchesCache = {
-    pending: p.data||[], approved: a.data||[],
-    rejected: r.data||[], session_created: s.data||[]
-  };
+  matchesCache = { pending: p.data||[], approved: a.data||[], rejected: r.data||[], session_created: s.data||[] };
   setNb('nb-matches', p.data?.length, '');
   setNb('nb-matches-m', p.data?.length);
   renderMatchCards('matches-list', matchesCache[currentMatchStatus], false);
@@ -682,19 +808,14 @@ function filterMatches(status, el) {
 
 function renderMatchCards(containerId, data, compact) {
   const el = document.getElementById(containerId);
-  if (!data || !data.length) {
-    el.innerHTML = emptyState('🎯', 'لا توجد توفيقات', 'اضغط "وفّق الآن" لتشغيل محرك المطابقة');
-    return;
-  }
+  if (!data || !data.length) { el.innerHTML = emptyState('🎯', 'لا توجد توفيقات', 'اضغط "وفّق الآن" لتشغيل محرك المطابقة'); return; }
   const items = compact ? data.slice(0,3) : data;
+  const statusLabel = { pending:'بانتظار الموافقة', approved:'موافق عليها', rejected:'مرفوضة', session_created:'فُتحت جلسة' };
+  const statusBadge = { pending:'badge-pending', approved:'badge-approved', rejected:'badge-rejected', session_created:'badge-active' };
   el.innerHTML = items.map(m => {
     const score = m.score || 0;
     const cls = score >= 70 ? 'high' : score >= 50 ? 'mid' : 'low';
-    const isPending = m.status === 'pending';
-    const statusLabel = { pending:'بانتظار الموافقة', approved:'موافق عليها', rejected:'مرفوضة', session_created:'فُتحت جلسة' };
-    const statusBadge = { pending:'badge-pending', approved:'badge-approved', rejected:'badge-rejected', session_created:'badge-active' };
-    return `
-<div class="match-card">
+    return `<div class="match-card">
   <div class="match-header">
     <div class="score-ring ${cls}">${score}%</div>
     <div class="match-meta">
@@ -707,27 +828,16 @@ function renderMatchCards(containerId, data, compact) {
     <div class="match-party">
       <div class="match-party-label">🔍 الباحث</div>
       <div class="match-party-name">${m.requester_name || 'غير مسمى'}</div>
-      <div class="match-party-detail">
-        ${m.req_city||'—'} ${m.req_district?' / '+m.req_district:''}
-        ${m.req_type?'• '+m.req_type:''} ${m.req_rooms?'• '+m.req_rooms+' غرف':''}
-        ${m.req_budget?'<br>الميزانية: '+m.req_budget.toLocaleString('ar')+' ر':''}
-        ${m.req_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.req_phone+'</span>':''}
-      </div>
+      <div class="match-party-detail">${m.req_city||'—'}${m.req_type?' • '+m.req_type:''}${m.req_rooms?' • '+m.req_rooms+' غرف':''}${m.req_budget?'<br>الميزانية: '+m.req_budget.toLocaleString('ar')+' ر':''}${m.req_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.req_phone+'</span>':''}</div>
     </div>
     <div class="match-arrow">⇄</div>
     <div class="match-party">
       <div class="match-party-label">🏠 العقار</div>
       <div class="match-party-name">${m.listing_title || 'عقار'}</div>
-      <div class="match-party-detail">
-        ${m.lst_city||'—'} ${m.lst_district?' / '+m.lst_district:''}
-        ${m.lst_type?'• '+m.lst_type:''} ${m.lst_rooms?'• '+m.lst_rooms+' غرف':''}
-        ${m.lst_price?'<br>السعر: '+m.lst_price.toLocaleString('ar')+' ر':''}
-        ${m.lst_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.lst_phone+'</span>':''}
-      </div>
+      <div class="match-party-detail">${m.lst_city||'—'}${m.lst_type?' • '+m.lst_type:''}${m.lst_rooms?' • '+m.lst_rooms+' غرف':''}${m.lst_price?'<br>السعر: '+m.lst_price.toLocaleString('ar')+' ر':''}${m.lst_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.lst_phone+'</span>':''}</div>
     </div>
   </div>
-  ${isPending ? `
-  <div class="match-actions">
+  ${m.status === 'pending' ? `<div class="match-actions">
     <button class="btn btn-red btn-sm" onclick="matchAction('${m.id}','reject',this)">✕ رفض</button>
     <button class="btn btn-green btn-sm" onclick="matchAction('${m.id}','approve',this)">✓ موافق — أعلم الطرفين</button>
   </div>` : ''}
@@ -736,22 +846,14 @@ function renderMatchCards(containerId, data, compact) {
 }
 
 async function matchAction(id, action, btn) {
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   const d = await api('match-' + action, { id });
-  if (d.success) {
-    toast(action === 'approve' ? '✅ تمت الموافقة — سيُرسَل تنبيه للطرفين عند توفر واتساب' : 'تم الرفض');
-    loadMatches();
-    loadOverview();
-  } else {
-    toast('❌ ' + (d.error || 'خطأ'), 3000);
-    btn.disabled = false;
-    btn.innerHTML = action === 'approve' ? '✓ موافق' : '✕ رفض';
-  }
+  if (d.success) { toast(action === 'approve' ? '✅ تمت الموافقة' : 'تم الرفض'); loadMatches(); loadOverview(); }
+  else { toast('❌ ' + (d.error || 'خطأ'), 3000); btn.disabled = false; btn.innerHTML = action === 'approve' ? '✓ موافق' : '✕ رفض'; }
 }
 
 // ══════════════════════════════════════════
-// SESSIONS
+// SESSIONS (n8n)
 // ══════════════════════════════════════════
 let currentSessionFilter = 'active';
 
@@ -770,33 +872,16 @@ function filterSessions(status, el) {
 
 function renderSessionCards(data) {
   const el = document.getElementById('sessions-list');
-  if (!data.length) {
-    el.innerHTML = emptyState('💬', 'لا توجد جلسات', 'ستظهر هنا بعد الموافقة على التوفيقات');
-    return;
-  }
-  el.innerHTML = data.map(s => `
-<div class="session-card">
+  if (!data.length) { el.innerHTML = emptyState('💬', 'لا توجد جلسات', 'ستظهر هنا بعد الموافقة على التوفيقات'); return; }
+  el.innerHTML = data.map(s => `<div class="session-card">
   <div class="session-header">
     <div class="session-icon">💬</div>
-    <div>
-      <div style="font-size:.82rem;font-weight:700">جلسة #${s.id||'—'}</div>
-      <div class="session-id">${s.match_id ? 'توفيق: ' + s.match_id : ''}</div>
-    </div>
-    <div class="session-status">
-      <span class="badge ${s.status==='active'?'badge-active':'badge-closed'}">${s.status==='active'?'نشطة':'مغلقة'}</span>
-    </div>
+    <div><div style="font-size:.82rem;font-weight:700">جلسة #${s.id||'—'}</div><div class="session-id">${s.match_id ? 'توفيق: ' + s.match_id : ''}</div></div>
+    <div class="session-status"><span class="badge ${s.status==='active'?'badge-active':'badge-closed'}">${s.status==='active'?'نشطة':'مغلقة'}</span></div>
   </div>
   <div class="session-parties">
-    <div class="session-party">
-      <div class="session-party-role">🔍 الباحث</div>
-      <div class="session-party-phone">${maskPhone(s.requester_phone)}</div>
-      <div style="font-size:.7rem;color:var(--muted);margin-top:2px">${s.req_last_msg ? 'آخر رسالة: ' + relTime(s.req_last_msg) : '—'}</div>
-    </div>
-    <div class="session-party">
-      <div class="session-party-role">🏠 المالك</div>
-      <div class="session-party-phone">${maskPhone(s.owner_phone)}</div>
-      <div style="font-size:.7rem;color:var(--muted);margin-top:2px">${s.own_last_msg ? 'آخر رسالة: ' + relTime(s.own_last_msg) : '—'}</div>
-    </div>
+    <div class="session-party"><div class="session-party-role">🔍 الباحث</div><div class="session-party-phone">${maskPhone(s.requester_phone)}</div>${s.req_last_msg?'<div style="font-size:.7rem;color:var(--muted);margin-top:2px">آخر رسالة: '+relTime(s.req_last_msg)+'</div>':''}</div>
+    <div class="session-party"><div class="session-party-role">🏠 المالك</div><div class="session-party-phone">${maskPhone(s.owner_phone)}</div>${s.own_last_msg?'<div style="font-size:.7rem;color:var(--muted);margin-top:2px">آخر رسالة: '+relTime(s.own_last_msg)+'</div>':''}</div>
   </div>
   <div class="session-footer">
     <span>فُتحت: ${s.created_at ? new Date(s.created_at).toLocaleDateString('ar') : '—'}</span>
@@ -806,10 +891,7 @@ function renderSessionCards(data) {
 </div>`).join('');
 }
 
-function maskPhone(phone) {
-  if (!phone) return '—';
-  return phone.slice(0,4) + '****' + phone.slice(-3);
-}
+function maskPhone(phone) { if (!phone) return '—'; return phone.slice(0,4) + '****' + phone.slice(-3); }
 
 async function closeSession(id, btn) {
   if (!confirm('هل تريد إغلاق هذه الجلسة؟')) return;
@@ -821,38 +903,232 @@ async function closeSession(id, btn) {
 }
 
 // ══════════════════════════════════════════
-// LOGS
+// SCRAPED LEADS (scraper API)
+// ══════════════════════════════════════════
+let scrapedData = [];
+let currentScrapedStatus = 'new';
+
+async function loadScraped() {
+  const stats = await scraperGet('/stats');
+  if (stats) {
+    document.getElementById('sc-total').textContent = stats.total || 0;
+    document.getElementById('sc-phone').textContent = stats.with_phone || 0;
+    document.getElementById('sc-hidden').textContent = stats.hidden_phone || 0;
+    document.getElementById('sc-cities').textContent = stats.cities || 0;
+    document.getElementById('sc-contacted').textContent = stats.contacted || 0;
+    setNb('nb-scraped', stats.new, 'yellow');
+    setNb('nb-scraped-m', stats.new);
+    setNb('nb-fill', stats.hidden_phone, 'red');
+    setNb('nb-fill-m', stats.hidden_phone);
+  }
+  await loadScrapedByStatus(currentScrapedStatus, null);
+  initBookmarklet();
+}
+
+async function loadScrapedByStatus(status, el) {
+  if (el) {
+    document.querySelectorAll('#page-scraped .filter-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+  }
+  currentScrapedStatus = status;
+  document.getElementById('scraped-table').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const url = status === 'all' ? '/leads?limit=200' : `/leads?status=${status}&limit=200`;
+  const d = await scraperGet(url);
+  scrapedData = d?.leads || [];
+  renderScrapedTable(scrapedData);
+}
+
+function renderScrapedTable(data) {
+  const el = document.getElementById('scraped-table');
+  if (!data.length) { el.innerHTML = emptyState('📱', 'لا توجد طلبات', 'اضغط "سحب الآن" لجلب طلبات من حراج'); return; }
+  const statusCls = { new:'s-new', phone_extracted:'s-phone', contacted:'s-contacted' };
+  const statusLbl = { new:'جديد', phone_extracted:'رقم مستخرج', contacted:'تم التواصل' };
+  el.innerHTML = `<div class="table-wrap"><table>
+<thead><tr><th>المدينة</th><th>العنوان</th><th>الرقم</th><th>الحالة</th><th>إجراء</th></tr></thead>
+<tbody>${data.map(l => `<tr>
+  <td><span class="city-tag">${esc(l.city||'—')}</span></td>
+  <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.title||'')}">${esc(l.title||'').substring(0,60)}</td>
+  <td>${l.phone_hidden ? '<span class="hidden-phone">🔒 مخفي</span>' : `<a class="phone-link" href="tel:${l.phone}">${l.phone||'—'}</a>`}</td>
+  <td><span class="badge ${statusCls[l.status]||'s-new'}">${statusLbl[l.status]||l.status}</span></td>
+  <td style="white-space:nowrap">
+    ${l.url ? `<a class="btn btn-outline btn-sm" href="${esc(l.url)}" target="_blank" style="text-decoration:none">فتح</a> ` : ''}
+    ${l.phone_hidden ? `<button class="btn-extract" onclick="toast('افتح الإعلان واستخدم الـBookmarklet')">📱 استخرج</button>` : ''}
+    ${!l.phone_hidden && l.status !== 'contacted' ? `<button class="btn-contact2" onclick="markContacted(${l.id},'${l.phone}')">تواصل</button>` : ''}
+  </td>
+</tr>`).join('')}</tbody></table></div>`;
+}
+
+async function markContacted(id, phone) {
+  const d = await scraperPost(`/leads/${id}/contact`, {});
+  toast(d?.success !== false ? `✅ تم تسجيل التواصل مع ${phone}` : 'خطأ في الحفظ');
+  await loadScrapedByStatus(currentScrapedStatus, null);
+}
+
+async function triggerScrapeDirect(btn) {
+  btn.disabled = true; btn.textContent = '⏳ جارٍ السحب...';
+  const d = await scraperPost('/scrape', { cities: ['جدة','الرياض','مكة','الدمام','المدينة'] });
+  toast(d ? `✅ تم سحب ${d.new_leads||0} طلب جديد` : '⚠️ خادم السكريبر غير متصل');
+  btn.disabled = false; btn.textContent = '⬇️ سحب الآن';
+  loadScraped();
+}
+
+// ── Bookmarklet ────────────────────────────────────────────────────────────────
+function initBookmarklet() {
+  const code = `(function(){
+  const API='https://masaed.wardyat.net/api';
+  function extract(){
+    const m=document.body.innerText.match(/(?:966|00966|\\+966)?0?5\\d{8}/g);
+    if(m&&m.length)return m[0].replace(/[^0-9]/g,'');
+    const btns=Array.from(document.querySelectorAll('button,a')).filter(e=>/رقم|هاتف|جوال|تواصل|phone/i.test(e.innerText));
+    if(btns.length){btns[0].click();setTimeout(()=>{const m2=document.body.innerText.match(/(?:966|00966|\\+966)?0?5\\d{8}/g);if(m2)show(m2[0].replace(/[^0-9]/g,''));},1500);return null;}
+    return null;
+  }
+  function show(p){
+    const old=document.getElementById('masaed-ov');if(old)old.remove();
+    const d=document.createElement('div');d.id='masaed-ov';
+    d.innerHTML='<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.75);z-index:999999;display:flex;align-items:center;justify-content:center"><div style="background:#202c33;border:1px solid #00a884;border-radius:12px;padding:28px 36px;text-align:center;color:#e9edef;min-width:300px;font-family:Arial;direction:rtl"><div style="font-size:2rem;margin-bottom:8px">📱</div><div style="font-size:.85rem;color:#8696a0;margin-bottom:6px">رقم الهاتف</div><div style="font-size:1.6rem;font-weight:700;color:#00a884;direction:ltr;font-family:monospace;margin-bottom:16px">'+p+'</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="navigator.clipboard.writeText(\\\''+p+'\\\').then(()=>{this.textContent=\\\'✅ تم النسخ\\\'})" style="background:#253035;color:#e9edef;border:none;padding:8px 14px;border-radius:6px;cursor:pointer">📋 نسخ</button><a href="https://wa.me/'+p+'" target="_blank" style="background:#00a884;color:#000;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;text-decoration:none;font-weight:700">💬 واتساب</a><button onclick="save(\\\''+p+'\\\')" style="background:#8b5cf6;color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer">💾 حفظ</button><button onclick="document.getElementById(\\\'masaed-ov\\\').remove()" style="background:#742a2a;color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer">✕</button></div></div></div>';
+    document.body.appendChild(d);
+  }
+  window.save=function(p){fetch(API+'/leads/from-bookmarklet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:p,url:location.href,title:document.title,body:document.body.innerText.substring(0,1000),source:location.hostname.replace('www.','')})}).then(()=>{}).catch(()=>{});};
+  const p=extract();if(p)show(p);
+})()`;
+  document.getElementById('bookmarkletBtn').href = 'javascript:' + encodeURIComponent(code);
+}
+
+async function extractFromUrl() {
+  const url = document.getElementById('pasteUrl').value.trim();
+  if (!url) { toast('الصق رابط الإعلان أولاً'); return; }
+  const res = document.getElementById('extractResult');
+  res.style.display = 'block'; res.textContent = '⏳ جارٍ الاستخراج...';
+  const d = await scraperPost('/extract-url', { url });
+  if (d?.phone) {
+    res.innerHTML = `✅ الرقم: <strong style="font-family:monospace;direction:ltr">${d.phone}</strong> <a href="https://wa.me/${d.phone}" target="_blank" style="color:#25D366">💬 واتساب</a>`;
+  } else {
+    res.textContent = '⚠️ لم يُعثر على رقم — جرّب الـBookmarklet بعد فتح الصفحة';
+  }
+}
+
+// ══════════════════════════════════════════
+// FILL PHONES (scraper API)
+// ══════════════════════════════════════════
+let fillLeads = [];
+let fillIdx = 0;
+
+async function loadFill() {
+  const d = await scraperGet('/leads?status=new&limit=200');
+  fillLeads = (d?.leads || []).filter(l => l.phone_hidden && l.url);
+  fillIdx = 0;
+  if (!fillLeads.length) { showFillDone(); return; }
+  renderFill();
+}
+
+function renderFill() {
+  updateFillProgress();
+  renderFillCard();
+  renderFillQueue();
+}
+
+function updateFillProgress() {
+  const total = fillLeads.length;
+  const pct = total ? Math.round((fillIdx / total) * 100) : 0;
+  document.getElementById('fill-prog-text').textContent = `${fillIdx} / ${total} — ${pct}% مكتمل`;
+  document.getElementById('fill-prog-bar').style.width = pct + '%';
+}
+
+function renderFillCard() {
+  const container = document.getElementById('fill-card');
+  if (fillIdx >= fillLeads.length) { showFillDone(); return; }
+  const l = fillLeads[fillIdx];
+  container.innerHTML = `<div class="lead-fill-card">
+  <div class="lf-num">الطلب ${fillIdx + 1} من ${fillLeads.length}</div>
+  <span class="lf-city">${esc(l.city || 'غير محدد')}</span>
+  <div class="lf-title">${esc(l.title || '')}</div>
+  <a class="open-listing-btn" href="${esc(l.url)}" target="_blank">🔗 افتح الإعلان في حراج ←</a>
+  <div class="phone-fill-row">
+    <input id="fillPhoneInput" class="phone-fill-input" type="tel" placeholder="05XXXXXXXX"
+      onkeydown="if(event.key==='Enter') saveFillPhone()"
+      oninput="this.value=this.value.replace(/[^0-9+]/g,'')">
+    <button class="btn btn-green" onclick="saveFillPhone()">حفظ ←</button>
+  </div>
+  <button class="fill-skip" onclick="skipFill()">تخطى ←</button>
+</div>`;
+  setTimeout(() => document.getElementById('fillPhoneInput')?.focus(), 100);
+}
+
+async function saveFillPhone() {
+  const input = document.getElementById('fillPhoneInput');
+  const raw = (input?.value || '').trim();
+  if (!raw || raw.length < 9) { toast('أدخل رقم صحيح'); input?.focus(); return; }
+  const btn = document.querySelector('.lead-fill-card .btn-green');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+  const d = await scraperPost(`/leads/${fillLeads[fillIdx].id}/phone`, { phone: raw });
+  if (d?.success !== false) {
+    fillLeads[fillIdx].phone_hidden = false;
+    fillLeads[fillIdx].phone = d?.phone || raw;
+    toast(`✅ ${d?.phone || raw}`);
+    fillIdx++;
+    renderFill();
+  } else {
+    toast('خطأ في الحفظ');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'حفظ ←'; }
+  }
+}
+
+function skipFill() { fillIdx++; renderFill(); }
+
+function renderFillQueue() {
+  document.getElementById('fill-queue').innerHTML = fillLeads.map((l, i) => `
+<div class="queue-item ${i < fillIdx ? 'done' : ''}">
+  <span class="qi-num">${i + 1}</span>
+  <span class="qi-title">${esc(l.title || '')}</span>
+  ${i < fillIdx && l.phone ? `<span class="qi-done">${l.phone}</span>` : ''}
+  ${i === fillIdx ? '<span style="color:var(--green);font-size:.72rem">← الحالي</span>' : ''}
+</div>`).join('');
+}
+
+function showFillDone() {
+  document.getElementById('fill-card').innerHTML = `<div class="done-screen">
+  <div class="done-icon">🎉</div>
+  <h2>تم الانتهاء</h2>
+  <p>تم تعبئة جميع الأرقام المتاحة</p>
+  <button class="btn btn-outline" style="margin-top:20px" onclick="showPage('scraped',document.querySelectorAll('.nav-item')[6])">← العودة للطلبات</button>
+</div>`;
+  document.getElementById('fill-queue').innerHTML = '';
+  document.getElementById('fill-prog-bar').style.width = '100%';
+  document.getElementById('fill-prog-text').textContent = 'مكتمل 100%';
+}
+
+// ══════════════════════════════════════════
+// LOGS (n8n)
 // ══════════════════════════════════════════
 async function loadLogs() {
   const d = await api('logs', { limit: 100 });
   const box = document.getElementById('log-box');
   if (!d.success || !d.data?.length) {
-    box.innerHTML = '<div class="log-line"><span class="log-time">—</span> <span class="log-warn">لا توجد سجلات بعد. يتم إنشاؤها عند تشغيل عمليات السحب والتوفيق.</span></div>';
+    box.innerHTML = '<div class="log-line"><span class="log-time">—</span> <span class="log-warn">لا توجد سجلات بعد.</span></div>';
     return;
   }
   box.innerHTML = d.data.map(l => {
     const cls = l.level === 'error' ? 'log-err' : l.level === 'warn' ? 'log-warn' : l.level === 'success' ? 'log-success' : 'log-info';
-    return `<div class="log-line"><span class="log-time">${l.time ? new Date(l.time).toLocaleString('ar') : '—'}</span> <span class="${cls}">[${(l.level||'info').toUpperCase()}]</span> ${esc(l.message||'')}${l.count?` (${l.count})`:''}</div>`;
+    return `<div class="log-line"><span class="log-time">${l.time ? new Date(l.time).toLocaleString('ar') : '—'}</span> <span class="${cls}">[${(l.level||'info').toUpperCase()}]</span> ${esc(l.message||'')}${l.count?' ('+l.count+')':''}</div>`;
   }).join('');
   box.scrollTop = box.scrollHeight;
 }
 
 // ══════════════════════════════════════════
-// SCRAPE / MATCH TRIGGERS
+// SCRAPE / MATCH TRIGGERS (n8n)
 // ══════════════════════════════════════════
 async function triggerScrape(btn) {
-  btn.disabled = true;
-  btn.innerHTML = '⏳ جارٍ السحب...';
+  btn.disabled = true; btn.innerHTML = '⏳ جارٍ السحب...';
   const d = await api('scrape-now');
   toast(d.success ? '⬇️ بدأ سحب العقارات — تحقق بعد دقيقة' : '❌ ' + (d.error||'تعذّر'), 3000);
   setTimeout(() => { btn.disabled = false; btn.innerHTML = '⬇️ اسحب الآن'; loadAll(); }, 8000);
 }
 
 async function triggerMatch(btn) {
-  btn.disabled = true;
-  btn.innerHTML = '⏳ يُوفّق...';
+  btn.disabled = true; btn.innerHTML = '⏳ يُوفّق...';
   const d = await api('match-now');
-  toast(d.success ? '⚡ بدأ محرك التوفيق — النتائج خلال دقيقة' : '❌ ' + (d.error||'تعذّر'), 3000);
+  toast(d.success ? '⚡ بدأ محرك التوفيق' : '❌ ' + (d.error||'تعذّر'), 3000);
   setTimeout(() => { btn.disabled = false; btn.innerHTML = '⚡ وفّق الآن'; loadMatches(); loadOverview(); }, 10000);
 }
 
@@ -860,8 +1136,7 @@ async function triggerMatch(btn) {
 // TABLE FILTERS
 // ══════════════════════════════════════════
 function filterTable(type, val, el) {
-  const bar = el.closest('.filter-bar');
-  bar.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.closest('.filter-bar').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
   if (type === 'listings') renderListingsTable(val ? listingsData.filter(r => JSON.stringify(r).includes(val)) : listingsData);
   if (type === 'requests') renderRequestsTable(val ? requestsData.filter(r => JSON.stringify(r).includes(val)) : requestsData);
@@ -876,10 +1151,20 @@ function searchTable(type, val) {
 // ══════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════
+function typeBadge(t) {
+  if (!t) return '';
+  if (t.includes('شقة')) return 'badge-apt';
+  if (t.includes('فيلا')) return 'badge-villa';
+  if (t.includes('أرض')) return 'badge-land';
+  return 'badge-sale';
+}
+
 function emptyState(icon, title, sub) {
   return `<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-text">${title}</div><div class="empty-sub">${sub}</div></div>`;
 }
-function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 function loadAll() { loadOverview(); }
 
 // ══════════════════════════════════════════
