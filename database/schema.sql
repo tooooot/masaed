@@ -65,6 +65,30 @@ CREATE INDEX IF NOT EXISTS idx_masaed_messages_session ON sanad.masaed_messages 
 --   }
 -- }
 
+-- ── Leads (scraped rental requests) ──────────────────────────────────────────
+-- Populated by the Haraj scraper and dashboard bookmarklet.
+
+CREATE TABLE IF NOT EXISTS sanad.masaed_leads (
+    id           SERIAL PRIMARY KEY,
+    source       TEXT NOT NULL DEFAULT 'haraj',    -- haraj | bookmarklet | ...
+    external_id  TEXT,
+    url          TEXT,
+    title        TEXT,
+    body         TEXT,
+    city         TEXT,
+    phone        TEXT,
+    phone_hidden BOOLEAN DEFAULT TRUE,
+    listing_type TEXT DEFAULT 'wanted',
+    status       TEXT DEFAULT 'new',               -- new | phone_extracted | contacted
+    session_id   INTEGER REFERENCES sanad.masaed_sessions(id),
+    scraped_at   TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(source, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_masaed_leads_status    ON sanad.masaed_leads (status);
+CREATE INDEX IF NOT EXISTS idx_masaed_leads_city      ON sanad.masaed_leads (city);
+CREATE INDEX IF NOT EXISTS idx_masaed_leads_scrapedat ON sanad.masaed_leads (scraped_at DESC);
+
 -- ── Example: create a test session ───────────────────────────────────────────
 -- INSERT INTO sanad.masaed_sessions (requester_phone, owner_phone)
 -- VALUES ('966550858330', '966548060060');

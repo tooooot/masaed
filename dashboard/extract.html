@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مساعد — استخراج الأرقام</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+  .header { background: #1a1d27; border-bottom: 1px solid #2d3748; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  .header h1 { font-size: 1.2rem; color: #fff; }
+  .header .badge { background: #4CAF50; color: #fff; font-size: .7rem; padding: 2px 8px; border-radius: 20px; }
+
+  .container { max-width: 900px; margin: 32px auto; padding: 0 20px; }
+
+  .card { background: #1a1d27; border: 1px solid #2d3748; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .card h2 { font-size: 1.1rem; color: #a0aec0; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+  /* Bookmarklet drag area */
+  .bookmarklet-zone { text-align: center; padding: 32px; background: #12141c; border-radius: 10px; border: 2px dashed #4a5568; }
+  .bookmarklet-btn {
+    display: inline-block;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white; padding: 14px 28px; border-radius: 8px; font-size: 1.1rem;
+    cursor: grab; text-decoration: none; font-weight: bold;
+    box-shadow: 0 4px 15px rgba(102,126,234,0.4);
+    user-select: none; transition: transform .15s;
+  }
+  .bookmarklet-btn:hover { transform: scale(1.03); }
+  .drag-hint { margin-top: 12px; color: #718096; font-size: .85rem; }
+
+  /* Leads table */
+  .leads-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .filter-btns button {
+    background: #2d3748; border: none; color: #a0aec0; padding: 6px 14px;
+    border-radius: 6px; cursor: pointer; margin-right: 6px; font-size: .85rem;
+    transition: all .2s;
+  }
+  .filter-btns button.active { background: #667eea; color: #fff; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th { background: #12141c; color: #718096; padding: 10px 12px; text-align: right; border-bottom: 1px solid #2d3748; }
+  td { padding: 10px 12px; border-bottom: 1px solid #1e2231; vertical-align: top; }
+  tr:hover td { background: #1e2231; }
+
+  .status-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: .75rem; font-weight: bold; }
+  .s-new { background: #2d3748; color: #a0aec0; }
+  .s-phone { background: #276749; color: #9ae6b4; }
+  .s-contacted { background: #1a365d; color: #90cdf4; }
+
+  .btn-extract { background: #805ad5; color: #fff; border: none; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: .8rem; }
+  .btn-contact { background: #2b6cb0; color: #fff; border: none; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: .8rem; }
+  .btn-open { background: #2d3748; color: #a0aec0; border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: .8rem; text-decoration: none; display: inline-block; }
+
+  .phone-cell { font-family: monospace; color: #9ae6b4; direction: ltr; }
+  .hidden-phone { color: #f6ad55; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #276749; color: #9ae6b4; padding: 12px 24px; border-radius: 8px;
+    font-size: .9rem; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+
+  .stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .stat { background: #1a1d27; border: 1px solid #2d3748; border-radius: 8px; padding: 14px 20px; flex: 1; min-width: 120px; text-align: center; }
+  .stat .num { font-size: 1.8rem; font-weight: bold; color: #667eea; }
+  .stat .lbl { font-size: .78rem; color: #718096; margin-top: 2px; }
+
+  .title-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .city-badge { background: #2d3748; color: #a0aec0; padding: 2px 8px; border-radius: 4px; font-size: .75rem; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>📱</div>
+  <h1>مساعد — استخراج الأرقام</h1>
+  <span class="badge">LIVE</span>
+  <a href="index.html" style="margin-right:auto;color:#718096;font-size:.85rem;text-decoration:none;">← لوحة التحكم</a>
+</div>
+
+<div class="container">
+
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat"><div class="num" id="sTotal">—</div><div class="lbl">إجمالي الطلبات</div></div>
+    <div class="stat"><div class="num" id="sPhone" style="color:#9ae6b4">—</div><div class="lbl">رقم مرئي</div></div>
+    <div class="stat"><div class="num" id="sHidden" style="color:#f6ad55">—</div><div class="lbl">رقم مخفي</div></div>
+    <div class="stat"><div class="num" id="sContacted" style="color:#90cdf4">—</div><div class="lbl">تم التواصل</div></div>
+  </div>
+
+  <!-- Bookmarklet -->
+  <div class="card">
+    <h2>🔖 Bookmarklet — استخراج الأرقام المخفية</h2>
+    <div class="bookmarklet-zone">
+      <a id="bookmarkletBtn" class="bookmarklet-btn" href="#" onclick="return false">
+        📱 استخرج رقم الهاتف
+      </a>
+      <div class="drag-hint">
+        👆 اسحب الزر أعلاه إلى شريط المفضلة في متصفحك<br>
+        ثم افتح أي إعلان في الحراج أو OLX وانقر عليه — سيظهر الرقم فوراً
+      </div>
+    </div>
+    <div style="margin-top:16px;background:#12141c;border-radius:8px;padding:16px">
+      <div style="color:#718096;font-size:.8rem;margin-bottom:8px">أو الصق رابط الإعلان:</div>
+      <div style="display:flex;gap:8px">
+        <input id="pasteUrl" type="text" placeholder="https://haraj.com.sa/..."
+          style="flex:1;background:#1a1d27;border:1px solid #2d3748;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:.9rem;direction:ltr">
+        <button onclick="extractFromUrl()"
+          style="background:#667eea;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer">استخرج</button>
+      </div>
+      <div id="extractResult" style="margin-top:10px;font-size:.9rem;color:#9ae6b4;display:none"></div>
+    </div>
+  </div>
+
+  <!-- Leads List -->
+  <div class="card">
+    <div class="leads-header">
+      <h2>📋 الطلبات المجمّعة</h2>
+      <div class="filter-btns">
+        <button class="active" onclick="loadLeads('new')">جديد</button>
+        <button onclick="loadLeads('phone_extracted')">مستخرج</button>
+        <button onclick="loadLeads('contacted')">تم التواصل</button>
+        <button onclick="loadLeads('all')">الكل</button>
+        <button onclick="triggerScrape()" style="background:#276749;color:#9ae6b4;margin-right:12px">🔄 سحب الآن</button>
+      </div>
+    </div>
+    <div id="leadsTable">جاري التحميل...</div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = "/api";
+
+// ── Build Bookmarklet ─────────────────────────────────────────────────────────
+const bookmarkletCode = `(function(){
+  // مساعد — Phone Extractor Bookmarklet v1
+  const MASAED_API = 'https://masaed.wardyat.net/api';
+
+  // Extract phone from current page
+  function extractPhone(){
+    // Pattern: Saudi mobile numbers
+    const txt = document.body.innerText;
+    const m = txt.match(/(?:966|00966|\\+966)?0?5\\d{8}/g);
+    if(m && m.length) return m[0].replace(/[^0-9]/g,'');
+
+    // Try clicking "show phone" buttons
+    const btns = Array.from(document.querySelectorAll('button,a'))
+      .filter(el => /رقم|هاتف|جوال|تواصل|اتصال|phone/i.test(el.innerText));
+    if(btns.length){
+      btns[0].click();
+      setTimeout(()=>{
+        const m2 = document.body.innerText.match(/(?:966|00966|\\+966)?0?5\\d{8}/g);
+        if(m2) showResult(m2[0].replace(/[^0-9]/g,''));
+      }, 1500);
+      return null; // will be set async
+    }
+    return null;
+  }
+
+  function showResult(phone){
+    // Remove old overlay
+    const old = document.getElementById('masaed-overlay');
+    if(old) old.remove();
+
+    const div = document.createElement('div');
+    div.id = 'masaed-overlay';
+    div.innerHTML = \`
+      <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:999999;display:flex;align-items:center;justify-content:center">
+        <div style="background:#1a1d27;border:1px solid #667eea;border-radius:12px;padding:28px 36px;text-align:center;color:#e2e8f0;min-width:300px;font-family:Arial,sans-serif;direction:rtl">
+          <div style="font-size:2rem;margin-bottom:8px">📱</div>
+          <div style="font-size:.9rem;color:#a0aec0;margin-bottom:8px">رقم الهاتف</div>
+          <div style="font-size:1.6rem;font-weight:bold;color:#9ae6b4;direction:ltr;font-family:monospace;margin-bottom:16px">\${phone}</div>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            <button onclick="navigator.clipboard.writeText('\${phone}').then(()=>{this.textContent='✅ تم النسخ'})"
+              style="background:#2d3748;color:#e2e8f0;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">📋 نسخ</button>
+            <a href="https://wa.me/\${phone}" target="_blank"
+              style="background:#25D366;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;text-decoration:none">
+              💬 واتساب</a>
+            <button onclick="saveToMasaed('\${phone}')"
+              style="background:#667eea;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">💾 حفّظ في مساعد</button>
+            <button onclick="document.getElementById('masaed-overlay').remove()"
+              style="background:#742a2a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">✕ إغلاق</button>
+          </div>
+        </div>
+      </div>
+    \`;
+    document.body.appendChild(div);
+    window._masaedPhone = phone;
+    window._masaedUrl = location.href;
+    window._masaedTitle = document.title;
+  }
+
+  window.saveToMasaed = function(phone){
+    const btn = event.target;
+    fetch(MASAED_API + '/leads/from-bookmarklet', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        phone, url: location.href, title: document.title,
+        body: document.body.innerText.substring(0,1000),
+        source: location.hostname.replace('www.','')
+      })
+    }).then(()=>{
+      btn.textContent = '✅ تم الحفظ';
+      btn.style.background = '#276749';
+    }).catch(()=>{
+      btn.textContent = '⚠️ خطأ';
+    });
+  };
+
+  const phone = extractPhone();
+  if(phone) showResult(phone);
+  else {
+    // Show loading
+    const d = document.createElement('div');
+    d.innerHTML = '<div style="position:fixed;bottom:20px;right:20px;background:#667eea;color:#fff;padding:10px 20px;border-radius:8px;z-index:999999;font-family:Arial">⏳ مساعد يبحث عن الرقم...</div>';
+    d.id='masaed-loading';
+    document.body.appendChild(d);
+    setTimeout(()=>document.getElementById('masaed-loading')?.remove(), 3000);
+  }
+})()`;
+
+document.getElementById('bookmarkletBtn').href = 'javascript:' + encodeURIComponent(bookmarkletCode);
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+async function loadStats(){
+  try {
+    const r = await fetch(API + '/stats');
+    const d = await r.json();
+    document.getElementById('sTotal').textContent = d.total || 0;
+    document.getElementById('sPhone').textContent = d.with_phone || 0;
+    document.getElementById('sHidden').textContent = d.hidden_phone || 0;
+    document.getElementById('sContacted').textContent = d.contacted || 0;
+  } catch(e) { /* scraper API offline */ }
+}
+
+// ── Leads Table ───────────────────────────────────────────────────────────────
+async function loadLeads(status='new'){
+  document.querySelectorAll('.filter-btns button').forEach(b => b.classList.remove('active'));
+  event?.target?.classList.add('active');
+
+  const url = status === 'all'
+    ? `${API}/leads?limit=100`
+    : `${API}/leads?status=${status}&limit=100`;
+
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    renderLeads(d.leads || []);
+  } catch(e) {
+    document.getElementById('leadsTable').innerHTML = `
+      <div style="text-align:center;padding:40px;color:#718096">
+        ⚠️ خادم السكريبر غير متصل<br>
+        <small>شغّل: <code>python3 /root/masaed/scraper/scraper_api.py</code></small>
+      </div>`;
+  }
+}
+
+function renderLeads(leads){
+  if(!leads.length){
+    document.getElementById('leadsTable').innerHTML = '<div style="text-align:center;padding:40px;color:#718096">لا توجد طلبات</div>';
+    return;
+  }
+  const rows = leads.map(l => `
+    <tr>
+      <td><span class="city-badge">${l.city || '—'}</span></td>
+      <td class="title-cell" title="${escHtml(l.title||'')}">${escHtml(l.title||'').substring(0,60)}</td>
+      <td>
+        ${l.phone_hidden
+          ? `<span class="hidden-phone">🔒 مخفي</span>`
+          : `<span class="phone-cell">${l.phone||'—'}</span>`}
+      </td>
+      <td><span class="status-badge ${statusClass(l.status)}">${statusLabel(l.status)}</span></td>
+      <td style="white-space:nowrap">
+        ${l.url ? `<a class="btn-open" href="${escHtml(l.url)}" target="_blank">فتح</a> ` : ''}
+        ${l.phone_hidden ? `<button class="btn-extract" onclick="openAndExtract('${escHtml(l.url||'')}',${l.id})">📱 استخرج</button>` : ''}
+        ${!l.phone_hidden && l.status !== 'contacted' ? `<button class="btn-contact" onclick="markContacted(${l.id},'${l.phone}')">تواصل</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  document.getElementById('leadsTable').innerHTML = `
+    <table>
+      <thead><tr><th>المدينة</th><th>العنوان</th><th>الرقم</th><th>الحالة</th><th>إجراء</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function openAndExtract(url, id){
+  if(url) window.open(url, '_blank');
+  toast(`افتح الإعلان واضغط Bookmarklet لاستخراج الرقم (ID: ${id})`);
+}
+
+async function markContacted(id, phone){
+  try {
+    await fetch(`${API}/leads/${id}/contact`, {method:'POST',headers:{'Content-Type':'application/json'}});
+    toast(`✅ تم تسجيل التواصل مع ${phone}`);
+    loadLeads('phone_extracted');
+  } catch(e) { toast('خطأ في الحفظ'); }
+}
+
+async function triggerScrape(){
+  const btn = document.querySelector('.filter-btns button:last-child');
+  btn.textContent = '⏳ جاري السحب...';
+  btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/scrape`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({cities:['جدة','الرياض','مكة']})
+    });
+    const d = await r.json();
+    toast(`✅ تم سحب ${d.new_leads} طلب جديد`);
+    loadLeads('new');
+    loadStats();
+  } catch(e) {
+    toast('⚠️ خادم السكريبر غير متصل');
+  } finally {
+    btn.textContent = '🔄 سحب الآن';
+    btn.disabled = false;
+  }
+}
+
+// ── Extract from pasted URL ───────────────────────────────────────────────────
+async function extractFromUrl(){
+  const url = document.getElementById('pasteUrl').value.trim();
+  if(!url){ toast('الصق رابط الإعلان أولاً'); return; }
+
+  const res = document.getElementById('extractResult');
+  res.style.display = 'block';
+  res.textContent = '⏳ جاري الاستخراج...';
+
+  try {
+    const r = await fetch(`${API}/extract-url`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url})
+    });
+    const d = await r.json();
+    if(d.phone){
+      res.innerHTML = `✅ الرقم: <strong style="font-family:monospace;direction:ltr">${d.phone}</strong>
+        <a href="https://wa.me/${d.phone}" target="_blank" style="color:#25D366;margin-right:8px">💬 واتساب</a>`;
+    } else {
+      res.textContent = '⚠️ لم يتم العثور على رقم — جرّب Bookmarklet بعد فتح الصفحة';
+    }
+  } catch(e) {
+    res.textContent = '⚠️ خادم السكريبر غير متصل';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function statusClass(s){ return {new:'s-new',phone_extracted:'s-phone',contacted:'s-contacted'}[s]||'s-new'; }
+function statusLabel(s){ return {new:'جديد',phone_extracted:'رقم مستخرج',contacted:'تم التواصل'}[s]||s; }
+function escHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadStats();
+loadLeads('new');
+</script>
+</body>
+</html>
