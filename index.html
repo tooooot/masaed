@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مساعد — لوحة التحكم</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#111b21;--card:#202c33;--border:#2a3942;
+  --green:#00a884;--red:#ef4444;--yellow:#f59e0b;--blue:#3b82f6;--purple:#8b5cf6;--orange:#f97316;
+  --text:#e9edef;--muted:#8696a0;--hover:#253035;--r:10px;
+}
+body{background:var(--bg);color:var(--text);font-family:'Tajawal',sans-serif;font-size:14px;min-height:100vh;display:flex;flex-direction:column;}
+a{color:var(--green);text-decoration:none;}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ── Top Bar ── */
+.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:0 20px;height:56px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:200;flex-shrink:0;}
+.logo{font-size:1.4rem;}
+.brand{font-weight:700;font-size:1rem;}
+.brand-sub{font-size:0.65rem;color:var(--muted);}
+.topbar-right{margin-right:auto;display:flex;align-items:center;gap:10px;}
+.v-chip{font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:8px;background:var(--green);color:#000;}
+.v-chip.v1{background:#8b5cf6;color:#fff;}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;}
+.status-dot.live{background:var(--green);animation:pulse 2s infinite;}
+.status-text{font-size:0.7rem;color:var(--muted);}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Shell ── */
+.shell{display:flex;flex:1;overflow:hidden;height:calc(100vh - 56px);}
+
+/* ── Sidebar ── */
+.sidebar{width:200px;background:var(--card);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+.nav-section{padding:14px 14px 4px;font-size:0.62rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:6px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;font-size:0.81rem;font-weight:500;color:var(--muted);transition:.15s;border-right:3px solid transparent;}
+.nav-item:hover{background:var(--hover);color:var(--text);}
+.nav-item.active{background:#00a88415;color:var(--green);border-right-color:var(--green);}
+.nav-item.active.purple{background:#8b5cf615;color:#8b5cf6;border-right-color:#8b5cf6;}
+.nav-icon{font-size:.95rem;flex-shrink:0;}
+.nav-badge{margin-right:auto;font-size:0.6rem;font-weight:700;padding:1px 6px;border-radius:10px;background:var(--green);color:#000;}
+.nav-badge.yellow{background:var(--yellow);color:#000;}
+.nav-badge.red{background:var(--red);color:#fff;}
+.nav-badge.purple{background:#8b5cf6;color:#fff;}
+
+/* ── Main ── */
+.main{flex:1;overflow-y:auto;background:var(--bg);}
+.page{display:none;padding:20px;max-width:1200px;}
+.page.active{display:block;}
+
+/* ── Page Header ── */
+.page-hd{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px;flex-wrap:wrap;}
+.page-hd-icon{font-size:1.8rem;background:var(--card);border-radius:12px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);flex-shrink:0;}
+.page-hd-title{font-size:1.1rem;font-weight:700;}
+.page-hd-sub{font-size:0.75rem;color:var(--muted);margin-top:2px;}
+.page-hd-actions{margin-right:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+
+/* ── Stats ── */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px;}
+.stat-card{background:var(--card);border-radius:var(--r);border:1px solid var(--border);padding:14px 16px;position:relative;overflow:hidden;}
+.stat-card::before{content:'';position:absolute;top:0;right:0;width:3px;height:100%;}
+.stat-card.green::before{background:var(--green);}
+.stat-card.blue::before{background:var(--blue);}
+.stat-card.yellow::before{background:var(--yellow);}
+.stat-card.purple::before{background:#8b5cf6;}
+.stat-card.orange::before{background:var(--orange);}
+.stat-card.red::before{background:var(--red);}
+.stat-num{font-size:1.8rem;font-weight:700;color:var(--green);}
+.stat-card.blue .stat-num{color:var(--blue);}
+.stat-card.yellow .stat-num{color:var(--yellow);}
+.stat-card.purple .stat-num{color:#8b5cf6;}
+.stat-card.orange .stat-num{color:var(--orange);}
+.stat-card.red .stat-num{color:var(--red);}
+.stat-label{font-size:0.72rem;color:var(--muted);margin-top:2px;}
+.stat-sub{font-size:0.66rem;color:var(--muted);margin-top:4px;}
+
+/* ── Section title ── */
+.sec-title{font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* ── Filter Bar ── */
+.filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+.filter-chip{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:4px 12px;font-size:0.73rem;cursor:pointer;transition:.15s;color:var(--muted);}
+.filter-chip:hover{border-color:var(--muted);}
+.filter-chip.active{background:#00a88418;border-color:var(--green);color:var(--green);}
+.search-input{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:5px 12px;font-size:0.73rem;color:var(--text);outline:none;font-family:'Tajawal',sans-serif;margin-right:auto;width:180px;}
+.search-input::placeholder{color:var(--muted);}
+.search-input:focus{border-color:var(--muted);}
+
+/* ── Table ── */
+.table-wrap{background:var(--card);border-radius:var(--r);border:1px solid var(--border);overflow:hidden;margin-bottom:16px;}
+.table-wrap table{width:100%;border-collapse:collapse;}
+.table-wrap th{background:var(--hover);padding:9px 12px;font-size:0.7rem;font-weight:700;color:var(--muted);text-align:right;border-bottom:1px solid var(--border);}
+.table-wrap td{padding:9px 12px;font-size:0.77rem;border-bottom:1px solid var(--border);vertical-align:middle;}
+.table-wrap tr:last-child td{border-bottom:none;}
+.table-wrap tr:hover td{background:var(--hover);}
+.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:0.67rem;font-weight:700;}
+.badge-new{background:#2d374888;color:#a0aec0;}
+.badge-extracted{background:#27674988;color:#9ae6b4;}
+.badge-contacted{background:#1a365d88;color:#90cdf4;}
+.badge-active{background:#00a88422;color:var(--green);}
+.badge-closed{background:#ef444422;color:var(--red);}
+.badge-pending{background:#f59e0b22;color:var(--yellow);}
+.badge-approved{background:#00a88422;color:var(--green);}
+.phone-val{color:var(--green);font-family:monospace;font-size:0.75rem;direction:ltr;display:inline-block;}
+.phone-hidden{color:var(--yellow);font-size:0.75rem;}
+.city-tag{background:var(--hover);border-radius:5px;padding:2px 7px;font-size:0.68rem;}
+.title-cell{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* ── Buttons ── */
+.btn{padding:6px 14px;border-radius:7px;font-size:0.77rem;font-weight:600;cursor:pointer;border:none;font-family:'Tajawal',sans-serif;transition:.15s;display:inline-flex;align-items:center;gap:5px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.btn-green{background:var(--green);color:#000;}
+.btn-green:hover:not(:disabled){background:#00c09a;}
+.btn-yellow{background:#f59e0b22;color:var(--yellow);border:1px solid #f59e0b38;}
+.btn-yellow:hover:not(:disabled){background:#f59e0b30;}
+.btn-blue{background:#3b82f622;color:var(--blue);border:1px solid #3b82f638;}
+.btn-purple{background:#8b5cf622;color:#8b5cf6;border:1px solid #8b5cf638;}
+.btn-red{background:#ef444420;color:var(--red);border:1px solid #ef444438;}
+.btn-red:hover:not(:disabled){background:#ef444430;}
+.btn-outline{background:transparent;color:var(--muted);border:1px solid var(--border);}
+.btn-outline:hover{color:var(--text);border-color:var(--muted);}
+.btn-sm{padding:4px 10px;font-size:0.7rem;}
+
+/* ── Match / Session Cards ── */
+.match-card,.session-card{background:var(--card);border-radius:var(--r);border:1px solid var(--border);padding:14px 16px;margin-bottom:10px;}
+.match-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.score-ring{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;border:3px solid var(--border);flex-shrink:0;}
+.score-ring.high{border-color:var(--green);color:var(--green);}
+.score-ring.mid{border-color:var(--yellow);color:var(--yellow);}
+.score-ring.low{border-color:var(--muted);color:var(--muted);}
+.match-body{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-bottom:12px;}
+.match-party{background:var(--hover);border-radius:8px;padding:10px 12px;}
+.match-party-label{font-size:0.62rem;color:var(--muted);margin-bottom:4px;font-weight:700;text-transform:uppercase;}
+.match-party-detail{font-size:0.71rem;color:var(--muted);line-height:1.5;}
+.match-arrow{font-size:1.3rem;color:var(--muted);text-align:center;}
+.match-actions{display:flex;gap:8px;justify-content:flex-end;}
+.session-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;}
+.session-party{background:var(--hover);border-radius:8px;padding:8px 10px;}
+.session-party-role{font-size:0.62rem;color:var(--muted);margin-bottom:2px;}
+.session-party-phone{font-size:0.78rem;font-family:monospace;color:var(--green);}
+.session-footer{display:flex;align-items:center;gap:8px;font-size:0.7rem;color:var(--muted);}
+.msg-count{background:var(--hover);padding:2px 8px;border-radius:5px;font-weight:700;color:var(--text);}
+
+/* ── Fill (phone entry) ── */
+.fill-card{background:var(--card);border:2px solid var(--green);border-radius:14px;padding:24px;margin-bottom:16px;animation:fadeIn .25s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.fill-progress{background:var(--hover);border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;font-size:.8rem;}
+.fill-bar-wrap{height:4px;background:var(--hover);border-radius:2px;margin-bottom:16px;}
+.fill-bar{height:4px;background:linear-gradient(90deg,var(--green),var(--blue));border-radius:2px;transition:width .4s;}
+.fill-input{width:100%;background:#12141c;border:2px solid var(--border);color:var(--green);padding:12px;border-radius:8px;font-size:1.2rem;font-family:monospace;direction:ltr;text-align:center;outline:none;transition:border-color .2s;margin:12px 0;}
+.fill-input:focus{border-color:var(--green);}
+.fill-input::placeholder{color:var(--border);font-size:.95rem;}
+.open-link{display:block;background:var(--hover);color:var(--muted);padding:10px 14px;border-radius:8px;text-decoration:none;font-size:.82rem;margin-bottom:4px;text-align:center;transition:background .2s;}
+.open-link:hover{background:#2d3748;color:var(--text);}
+
+/* ── Bookmarklet zone ── */
+.bookmarklet-zone{background:#12141c;border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;margin-bottom:16px;}
+.bookmarklet-btn{display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:12px 24px;border-radius:8px;font-size:1rem;cursor:grab;text-decoration:none;font-weight:bold;box-shadow:0 4px 15px #667eea40;user-select:none;transition:transform .15s;}
+.bookmarklet-btn:hover{transform:scale(1.03);}
+
+/* ── Log ── */
+.log-box{background:#0d1418;border-radius:var(--r);border:1px solid var(--border);padding:14px;font-family:monospace;font-size:.74rem;line-height:1.7;max-height:400px;overflow-y:auto;}
+.log-line{margin-bottom:2px;}
+.log-time{color:var(--muted);}
+.log-info{color:var(--blue);}
+.log-success{color:var(--green);}
+.log-warn{color:var(--yellow);}
+.log-err{color:var(--red);}
+
+/* ── Spinner / Empty ── */
+.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:48px 20px;color:var(--muted);}
+.empty-icon{font-size:2.4rem;margin-bottom:10px;}
+.empty-text{font-size:.82rem;}
+.empty-sub{font-size:.72rem;color:var(--border);margin-top:6px;}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--card);border:1px solid var(--green);color:var(--text);padding:10px 20px;border-radius:10px;font-size:.82rem;transition:.3s;opacity:0;z-index:999;pointer-events:none;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ── Bottom Nav (mobile) ── */
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--card);border-top:1px solid var(--border);z-index:200;justify-content:space-around;align-items:center;}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:6px 2px;gap:3px;position:relative;}
+.bn-icon{font-size:1.15rem;}
+.bn-label{font-size:0.55rem;color:var(--muted);font-weight:600;}
+.bn-item.active .bn-label,.bn-item.active .bn-icon{color:var(--green);}
+.bn-bdg{position:absolute;top:4px;right:calc(50% - 18px);background:var(--red);color:#fff;font-size:.52rem;font-weight:700;padding:1px 5px;border-radius:8px;}
+
+@media(max-width:768px){
+  .sidebar{display:none;}
+  .bottom-nav{display:flex;}
+  .shell{height:calc(100vh - 56px - 60px);}
+  .page{padding:12px 12px 20px;}
+  .stats-row{grid-template-columns:repeat(2,1fr);}
+  .match-body{grid-template-columns:1fr;gap:6px;}
+  .match-arrow{display:none;}
+  .session-parties{grid-template-columns:1fr;}
+  #toast{bottom:70px;}
+  .search-input{width:120px;}
+  .page-hd-actions{width:100%;margin-right:0;}
+}
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="logo">🏠</div>
+  <div>
+    <div class="brand">مساعد</div>
+    <div class="brand-sub">الوكيل العقاري الذكي</div>
+  </div>
+  <div class="topbar-right">
+    <span class="v-chip">v2 طلبات</span>
+    <span class="v-chip v1">v1 مفاوض</span>
+    <span class="status-dot" id="status-dot"></span>
+    <span class="status-text" id="status-text">جارٍ الاتصال...</span>
+  </div>
+</div>
+
+<div class="shell">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-section">مساعد الطلبات v2</div>
+    <div class="nav-item active" onclick="nav('overview',this)">
+      <span class="nav-icon">📊</span> نظرة عامة
+    </div>
+    <div class="nav-item" onclick="nav('leads',this)">
+      <span class="nav-icon">🔍</span> طلبات الإيجار
+      <span class="nav-badge" id="nb-leads" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="nav('fill',this)">
+      <span class="nav-icon">📱</span> تعبئة الأرقام
+      <span class="nav-badge yellow" id="nb-hidden" style="display:none">0</span>
+    </div>
+
+    <div class="nav-section">مساعد المفاوض v1</div>
+    <div class="nav-item" onclick="nav('sessions',this)">
+      <span class="nav-icon">💬</span> جلسات التفاوض
+      <span class="nav-badge" id="nb-sessions" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="nav('matches',this)">
+      <span class="nav-icon">🎯</span> التوفيقات
+      <span class="nav-badge yellow" id="nb-matches" style="display:none">0</span>
+    </div>
+
+    <div class="nav-section">النظام</div>
+    <div class="nav-item" onclick="nav('logs',this)">
+      <span class="nav-icon">📋</span> السجلات
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- ══ OVERVIEW ══ -->
+    <div class="page active" id="page-overview">
+      <div class="page-hd">
+        <div class="page-hd-icon">📊</div>
+        <div>
+          <div class="page-hd-title">نظرة عامة</div>
+          <div class="page-hd-sub">إحصائيات مساعد — الطلبات والجلسات</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-yellow btn-sm" onclick="triggerScrape(this)">⬇️ اسحب الآن</button>
+          <button class="btn btn-outline btn-sm" onclick="loadOverview()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <div class="sec-title">مساعد الطلبات — حراج</div>
+      <div class="stats-row">
+        <div class="stat-card green">
+          <div class="stat-num" id="ov-total">—</div>
+          <div class="stat-label">إجمالي الطلبات</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-num" id="ov-phone">—</div>
+          <div class="stat-label">رقم مرئي</div>
+          <div class="stat-sub">جاهز للتواصل</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-num" id="ov-hidden">—</div>
+          <div class="stat-label">رقم مخفي</div>
+          <div class="stat-sub">يحتاج استخراج</div>
+        </div>
+        <div class="stat-card orange">
+          <div class="stat-num" id="ov-contacted">—</div>
+          <div class="stat-label">تم التواصل</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-num" id="ov-cities">—</div>
+          <div class="stat-label">مدن</div>
+        </div>
+      </div>
+
+      <div class="sec-title">مساعد المفاوض — جلسات نشطة</div>
+      <div id="ov-sessions-preview">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ LEADS ══ -->
+    <div class="page" id="page-leads">
+      <div class="page-hd">
+        <div class="page-hd-icon">🔍</div>
+        <div>
+          <div class="page-hd-title">طلبات الإيجار</div>
+          <div class="page-hd-sub">طلبات مسحوبة من حراج.com.sa — فقط طلبات (لا عروض)</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-yellow btn-sm" onclick="triggerScrape(this)">⬇️ اسحب الآن</button>
+          <button class="btn btn-outline btn-sm" onclick="loadLeads()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <!-- Bookmarklet -->
+      <div class="bookmarklet-zone">
+        <a id="bookmarkletBtn" class="bookmarklet-btn" href="#" onclick="return false">📱 استخرج رقم الهاتف</a>
+        <div style="margin-top:10px;color:var(--muted);font-size:.78rem">
+          اسحب الزر أعلاه إلى شريط المفضلة ← افتح أي إعلان في حراج ← اضغطه لاستخراج الرقم
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterLeads('new',this)">جديد</div>
+        <div class="filter-chip" onclick="filterLeads('phone_extracted',this)">مستخرج</div>
+        <div class="filter-chip" onclick="filterLeads('contacted',this)">تم التواصل</div>
+        <div class="filter-chip" onclick="filterLeads('all',this)">الكل</div>
+        <input class="search-input" placeholder="ابحث في العنوان أو المدينة..." oninput="searchLeads(this.value)">
+      </div>
+
+      <div id="leads-table">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ FILL ══ -->
+    <div class="page" id="page-fill">
+      <div class="page-hd">
+        <div class="page-hd-icon">📱</div>
+        <div>
+          <div class="page-hd-title">تعبئة الأرقام المخفية</div>
+          <div class="page-hd-sub">افتح كل إعلان ← سجّل دخول حراج ← انسخ الرقم ← احفظ</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadFill()">🔄 إعادة تحميل</button>
+        </div>
+      </div>
+
+      <div class="fill-bar-wrap"><div class="fill-bar" id="fill-bar" style="width:0%"></div></div>
+      <div class="fill-progress">
+        <span id="fill-prog-text" style="color:var(--muted)">جاري التحميل...</span>
+        <span id="fill-prog-pct" style="color:var(--green);font-weight:700">0%</span>
+      </div>
+
+      <div id="fill-card-area"></div>
+      <div id="fill-queue" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;"></div>
+    </div>
+
+    <!-- ══ SESSIONS ══ -->
+    <div class="page" id="page-sessions">
+      <div class="page-hd">
+        <div class="page-hd-icon">💬</div>
+        <div>
+          <div class="page-hd-title">جلسات التفاوض</div>
+          <div class="page-hd-sub">محادثات نشطة يديرها مساعد بين الطرفين</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadSessions()">🔄 تحديث</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterSessions('active',this)">نشطة</div>
+        <div class="filter-chip" onclick="filterSessions('closed',this)">مغلقة</div>
+        <div class="filter-chip" onclick="filterSessions('all',this)">الكل</div>
+      </div>
+      <div id="sessions-list"><div class="empty"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- ══ MATCHES ══ -->
+    <div class="page" id="page-matches">
+      <div class="page-hd">
+        <div class="page-hd-icon">🎯</div>
+        <div>
+          <div class="page-hd-title">التوفيقات</div>
+          <div class="page-hd-sub">طلب ↔ عقار — راجع وافق أو ارفض</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadMatches()">🔄 تحديث</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterMatches('pending',this)">بانتظار الموافقة</div>
+        <div class="filter-chip" onclick="filterMatches('approved',this)">موافق عليها</div>
+        <div class="filter-chip" onclick="filterMatches('session_created',this)">فُتحت جلسة</div>
+      </div>
+      <div id="matches-list"><div class="empty"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- ══ LOGS ══ -->
+    <div class="page" id="page-logs">
+      <div class="page-hd">
+        <div class="page-hd-icon">📋</div>
+        <div>
+          <div class="page-hd-title">السجلات</div>
+          <div class="page-hd-sub">عمليات السحب والاستخراج</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadLogs()">🔄 تحديث</button>
+        </div>
+      </div>
+      <div class="log-box" id="log-box">
+        <div class="log-line"><span class="log-time">—</span> <span class="log-info">جارٍ التحميل...</span></div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- Bottom Nav -->
+<div class="bottom-nav">
+  <div class="bn-item active" id="bn-overview" onclick="nav('overview',this)">
+    <span class="bn-icon">📊</span><span class="bn-label">عام</span>
+  </div>
+  <div class="bn-item" id="bn-leads" onclick="nav('leads',this)">
+    <span class="bn-icon">🔍</span><span class="bn-label">الطلبات</span>
+  </div>
+  <div class="bn-item" id="bn-fill" onclick="nav('fill',this)">
+    <span class="bn-icon">📱</span><span class="bn-label">تعبئة</span>
+    <span class="bn-bdg" id="nb-hidden-m" style="display:none">0</span>
+  </div>
+  <div class="bn-item" id="bn-sessions" onclick="nav('sessions',this)">
+    <span class="bn-icon">💬</span><span class="bn-label">جلسات</span>
+  </div>
+  <div class="bn-item" id="bn-matches" onclick="nav('matches',this)">
+    <span class="bn-icon">🎯</span><span class="bn-label">توفيق</span>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════
+// APIs
+// ════════════════════════════════════════════
+const SCRAPER = '/api';
+const N8N = 'https://n8n.srv1506241.hstgr.cloud/webhook/masaed-api';
+
+async function scraperFetch(path, opts = {}) {
+  try {
+    const r = await fetch(SCRAPER + path, opts);
+    return await r.json();
+  } catch(e) { return { error: e.message }; }
+}
+
+async function n8nApi(action, params = {}) {
+  try {
+    const r = await fetch(N8N, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action, ...params })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch(e) { return { success: false, error: e.message }; }
+}
+
+// ════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════
+const PAGES = ['overview','leads','fill','sessions','matches','logs'];
+
+function nav(id, el) {
+  PAGES.forEach(p => {
+    document.getElementById('page-'+p).classList.remove('active');
+    const bn = document.getElementById('bn-'+p);
+    if (bn) bn.classList.remove('active');
+  });
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  const bn = document.getElementById('bn-'+id);
+  if (bn) bn.classList.add('active');
+  if (el?.classList?.contains('nav-item')) el.classList.add('active');
+  document.querySelector('.main').scrollTop = 0;
+  const loaders = { overview: loadOverview, leads: loadLeads, fill: loadFill, sessions: loadSessions, matches: loadMatches, logs: loadLogs };
+  loaders[id]?.();
+}
+
+// ════════════════════════════════════════════
+// TOAST
+// ════════════════════════════════════════════
+function toast(msg, dur = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// ════════════════════════════════════════════
+// OVERVIEW
+// ════════════════════════════════════════════
+async function loadOverview() {
+  const s = await scraperFetch('/stats');
+  if (!s.error) {
+    document.getElementById('ov-total').textContent = s.total ?? '—';
+    document.getElementById('ov-phone').textContent = s.with_phone ?? '—';
+    document.getElementById('ov-hidden').textContent = s.hidden_phone ?? '—';
+    document.getElementById('ov-contacted').textContent = s.contacted ?? '—';
+    document.getElementById('ov-cities').textContent = s.cities ?? '—';
+    setBadge('nb-leads', s.new);
+    setBadge('nb-hidden', s.hidden_phone, 'yellow');
+    setBadge('nb-hidden-m', s.hidden_phone);
+  }
+  // Check scraper health
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  if (!s.error) {
+    dot.classList.add('live'); txt.textContent = 'متصل ✓';
+  } else {
+    txt.textContent = 'API غير متصل';
+  }
+  // Sessions preview from n8n
+  const sess = await n8nApi('sessions', { status: 'active', limit: 3 });
+  const el = document.getElementById('ov-sessions-preview');
+  const data = sess.data || [];
+  if (!data.length) {
+    el.innerHTML = emptyState('💬', 'لا توجد جلسات نشطة', 'جلسات التفاوض ستظهر هنا');
+  } else {
+    el.innerHTML = data.map(s => sessionCardHtml(s)).join('');
+    setBadge('nb-sessions', data.length);
+  }
+}
+
+// ════════════════════════════════════════════
+// LEADS
+// ════════════════════════════════════════════
+let leadsData = [], leadsFilter = 'new', leadsQuery = '';
+
+async function loadLeads() {
+  document.getElementById('leads-table').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const d = await scraperFetch('/leads?limit=300');
+  leadsData = d.leads || [];
+  renderLeadsTable();
+}
+
+function filterLeads(status, el) {
+  document.querySelectorAll('#page-leads .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  leadsFilter = status;
+  renderLeadsTable();
+}
+
+function searchLeads(q) {
+  leadsQuery = q.toLowerCase();
+  renderLeadsTable();
+}
+
+function renderLeadsTable() {
+  let data = leadsData;
+  if (leadsFilter !== 'all') data = data.filter(l => l.status === leadsFilter);
+  if (leadsQuery) data = data.filter(l => (l.title + l.city + '').toLowerCase().includes(leadsQuery));
+
+  const el = document.getElementById('leads-table');
+  if (!data.length) {
+    el.innerHTML = emptyState('🔍', 'لا توجد طلبات', 'اضغط "اسحب الآن" لجلب طلبات من حراج');
+    return;
+  }
+  el.innerHTML = `
+<div class="table-wrap"><table>
+<thead><tr><th>المدينة</th><th>العنوان</th><th>الرقم</th><th>الحالة</th><th>إجراء</th></tr></thead>
+<tbody>${data.map(l => `
+<tr>
+  <td><span class="city-tag">${esc(l.city||'—')}</span></td>
+  <td class="title-cell" title="${esc(l.title||'')}">${esc((l.title||'').substring(0,60))}</td>
+  <td>${l.phone_hidden
+    ? '<span class="phone-hidden">🔒 مخفي</span>'
+    : `<span class="phone-val">${l.phone||'—'}</span>`}</td>
+  <td><span class="badge badge-${statusClass(l.status)}">${statusLabel(l.status)}</span></td>
+  <td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap">
+    ${l.url ? `<a class="btn btn-outline btn-sm" href="${esc(l.url)}" target="_blank">فتح</a>` : ''}
+    ${l.phone_hidden ? `<button class="btn btn-yellow btn-sm" onclick="openExtract('${esc(l.url||'')}')">📱 استخرج</button>` : ''}
+    ${!l.phone_hidden && l.status !== 'contacted' ? `<a class="btn btn-green btn-sm" href="https://wa.me/${l.phone}" target="_blank">💬 واتساب</a><button class="btn btn-blue btn-sm" onclick="markContacted(${l.id},this)">✓ تواصلت</button>` : ''}
+  </td>
+</tr>`).join('')}
+</tbody></table></div>`;
+}
+
+function openExtract(url) {
+  if (url) window.open(url, '_blank');
+  nav('fill', document.querySelector('.nav-item:nth-child(3)'));
+}
+
+async function markContacted(id, btn) {
+  btn.disabled = true;
+  await scraperFetch(`/leads/${id}/contact`, { method:'POST', headers:{'Content-Type':'application/json'} });
+  toast('✅ تم تسجيل التواصل');
+  loadLeads();
+  loadOverview();
+}
+
+// ════════════════════════════════════════════
+// FILL (phone entry)
+// ════════════════════════════════════════════
+let fillLeads = [], fillIdx = 0;
+
+async function loadFill() {
+  const d = await scraperFetch('/leads?limit=300');
+  fillLeads = (d.leads || []).filter(l => l.phone_hidden && l.url);
+  fillIdx = 0;
+  renderFill();
+}
+
+function renderFill() {
+  const total = fillLeads.length;
+  const done = fillIdx;
+  const pct = total ? Math.round(done / total * 100) : 100;
+
+  document.getElementById('fill-bar').style.width = pct + '%';
+  document.getElementById('fill-prog-text').textContent =
+    total ? `${done} من ${total} مكتملة` : 'لا توجد أرقام مخفية متبقية';
+  document.getElementById('fill-prog-pct').textContent = pct + '%';
+
+  const cardArea = document.getElementById('fill-card-area');
+  if (fillIdx >= fillLeads.length) {
+    cardArea.innerHTML = `<div class="fill-card" style="text-align:center;padding:40px">
+      <div style="font-size:2.5rem;margin-bottom:12px">🎉</div>
+      <div style="font-size:1.1rem;font-weight:700;color:var(--green)">تم الانتهاء من جميع الأرقام!</div>
+      <div style="color:var(--muted);margin-top:8px;font-size:.82rem">يمكنك الآن التواصل مع أصحاب الطلبات</div>
+      <button class="btn btn-outline" style="margin-top:16px" onclick="nav('leads',document.querySelector('.nav-item:nth-child(2)'))">عرض الطلبات ←</button>
+    </div>`;
+    document.getElementById('fill-queue').innerHTML = '';
+    return;
+  }
+
+  const l = fillLeads[fillIdx];
+  cardArea.innerHTML = `
+<div class="fill-card">
+  <div style="font-size:.75rem;color:var(--green);font-weight:700;margin-bottom:6px">طلب ${fillIdx+1} من ${total}</div>
+  <span class="city-tag">${esc(l.city||'غير محدد')}</span>
+  <div style="font-size:1rem;color:var(--text);margin:10px 0 16px;line-height:1.5">${esc(l.title||'')}</div>
+  <a class="open-link" href="${esc(l.url)}" target="_blank" onclick="setTimeout(()=>document.getElementById('fill-input').focus(),900)">
+    🔗 افتح الإعلان في حراج (سجّل دخول ← اضغط تواصل ← انسخ الرقم)
+  </a>
+  <input id="fill-input" class="fill-input" type="tel" placeholder="05XXXXXXXX أو 966XXXXXXXXX"
+    oninput="this.value=this.value.replace(/[^0-9+]/g,'')"
+    onkeydown="if(event.key==='Enter')saveFillPhone(${l.id})">
+  <div style="display:flex;gap:8px;margin-top:4px">
+    <button class="btn btn-green" style="flex:1" onclick="saveFillPhone(${l.id})">💾 حفظ والتالي ←</button>
+    <button class="btn btn-outline" onclick="fillIdx++;renderFill()">تخطى</button>
+  </div>
+</div>`;
+
+  // Queue
+  document.getElementById('fill-queue').innerHTML = fillLeads.slice(fillIdx+1, fillIdx+6).map((ll, i) => `
+<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:.8rem;opacity:${1 - i*0.15}">
+  <span style="color:var(--muted)">${fillIdx+2+i}</span>
+  <span style="flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ll.title||'')}</span>
+  <span class="city-tag">${esc(ll.city||'—')}</span>
+</div>`).join('');
+}
+
+async function saveFillPhone(id) {
+  const raw = (document.getElementById('fill-input')?.value || '').trim();
+  if (!raw || raw.replace(/[^0-9]/g,'').length < 9) { toast('أدخل رقم صحيح'); return; }
+
+  const r = await scraperFetch(`/leads/${id}/phone`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ phone: raw })
+  });
+  if (r.success) {
+    toast(`✅ ${r.phone}`);
+    fillLeads[fillIdx].phone_hidden = false;
+    fillIdx++;
+    renderFill();
+    loadOverview();
+  } else {
+    toast('❌ ' + (r.error || 'خطأ في الحفظ'));
+  }
+}
+
+// ════════════════════════════════════════════
+// SESSIONS (v1 — n8n)
+// ════════════════════════════════════════════
+let sessFilter = 'active';
+
+async function loadSessions() {
+  document.getElementById('sessions-list').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const d = await n8nApi('sessions', { status: sessFilter === 'all' ? undefined : sessFilter, limit: 100 });
+  renderSessions(d.data || []);
+}
+
+function filterSessions(s, el) {
+  document.querySelectorAll('#page-sessions .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  sessFilter = s; loadSessions();
+}
+
+function renderSessions(data) {
+  const el = document.getElementById('sessions-list');
+  if (!data.length) { el.innerHTML = emptyState('💬', 'لا توجد جلسات', 'تظهر هنا بعد الموافقة على التوفيقات'); return; }
+  setBadge('nb-sessions', data.filter(s => s.status === 'active').length);
+  el.innerHTML = data.map(s => sessionCardHtml(s)).join('');
+}
+
+function sessionCardHtml(s) {
+  return `<div class="session-card">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <span style="font-size:1.3rem">💬</span>
+    <div>
+      <div style="font-size:.82rem;font-weight:700">جلسة #${s.id||'—'}</div>
+      <div style="font-size:.68rem;color:var(--muted);font-family:monospace">${s.created_at ? new Date(s.created_at).toLocaleDateString('ar') : ''}</div>
+    </div>
+    <span class="badge badge-${s.status==='active'?'active':'closed'}" style="margin-right:auto">${s.status==='active'?'نشطة':'مغلقة'}</span>
+  </div>
+  <div class="session-parties">
+    <div class="session-party"><div class="session-party-role">🔍 الباحث</div><div class="session-party-phone">${maskPhone(s.requester_phone)}</div></div>
+    <div class="session-party"><div class="session-party-role">🏠 المالك</div><div class="session-party-phone">${maskPhone(s.owner_phone)}</div></div>
+  </div>
+  <div class="session-footer">
+    <span>آخر نشاط: ${s.updated_at ? relTime(s.updated_at) : '—'}</span>
+    <span class="msg-count">${s.message_count||0} رسالة</span>
+    ${s.status==='active'?`<button class="btn btn-red btn-sm" style="margin-right:auto" onclick="closeSession('${s.id}',this)">إغلاق</button>`:''}
+  </div>
+</div>`;
+}
+
+async function closeSession(id, btn) {
+  if (!confirm('إغلاق هذه الجلسة؟')) return;
+  btn.disabled = true;
+  const d = await n8nApi('session-close', { id });
+  toast(d.success ? 'تم الإغلاق' : '❌ ' + d.error);
+  if (d.success) loadSessions();
+  else btn.disabled = false;
+}
+
+// ════════════════════════════════════════════
+// MATCHES (v1 — n8n)
+// ════════════════════════════════════════════
+let matchCache = {}, matchStatus = 'pending';
+
+async function loadMatches() {
+  document.getElementById('matches-list').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const [p, a, sc] = await Promise.all([
+    n8nApi('matches', { status:'pending', limit:100 }),
+    n8nApi('matches', { status:'approved', limit:50 }),
+    n8nApi('matches', { status:'session_created', limit:50 }),
+  ]);
+  matchCache = { pending: p.data||[], approved: a.data||[], session_created: sc.data||[] };
+  setBadge('nb-matches', p.data?.length, 'yellow');
+  renderMatchCards(matchCache[matchStatus]);
+}
+
+function filterMatches(s, el) {
+  document.querySelectorAll('#page-matches .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  matchStatus = s;
+  renderMatchCards(matchCache[s] || []);
+}
+
+function renderMatchCards(data) {
+  const el = document.getElementById('matches-list');
+  if (!data.length) { el.innerHTML = emptyState('🎯', 'لا توجد توفيقات', 'ستظهر هنا عند تشغيل محرك المطابقة'); return; }
+  el.innerHTML = data.map(m => {
+    const sc = m.score||0, cls = sc>=70?'high':sc>=50?'mid':'low';
+    const isPending = m.status === 'pending';
+    const slabels = { pending:'بانتظار الموافقة', approved:'موافق', rejected:'مرفوضة', session_created:'فُتحت جلسة' };
+    return `<div class="match-card">
+  <div class="match-header">
+    <div class="score-ring ${cls}">${sc}%</div>
+    <div style="flex:1">
+      <div style="font-size:.7rem;color:var(--muted)">${m.matched_at?new Date(m.matched_at).toLocaleString('ar'):'—'}</div>
+      <div style="font-size:.82rem;margin-top:2px">${m.reason||'—'}</div>
+    </div>
+    <span class="badge badge-${isPending?'pending':'approved'}">${slabels[m.status]||m.status}</span>
+  </div>
+  <div class="match-body">
+    <div class="match-party">
+      <div class="match-party-label">🔍 الباحث</div>
+      <div class="match-party-detail">${m.req_city||'—'}${m.req_budget?'<br>'+m.req_budget.toLocaleString('ar')+' ر':''}${m.req_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.req_phone+'</span>':''}</div>
+    </div>
+    <div class="match-arrow">⇄</div>
+    <div class="match-party">
+      <div class="match-party-label">🏠 العقار</div>
+      <div class="match-party-detail">${m.lst_city||'—'}${m.lst_price?'<br>'+m.lst_price.toLocaleString('ar')+' ر':''}${m.lst_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.lst_phone+'</span>':''}</div>
+    </div>
+  </div>
+  ${isPending ? `<div class="match-actions">
+    <button class="btn btn-red btn-sm" onclick="matchAction('${m.id}','reject',this)">✕ رفض</button>
+    <button class="btn btn-green btn-sm" onclick="matchAction('${m.id}','approve',this)">✓ موافق</button>
+  </div>` : ''}
+</div>`;
+  }).join('');
+}
+
+async function matchAction(id, action, btn) {
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  const d = await n8nApi('match-' + action, { id });
+  toast(d.success ? (action==='approve'?'✅ موافق — سيُبلَّغ الطرفان':'تم الرفض') : '❌ '+d.error);
+  if (d.success) { loadMatches(); loadOverview(); }
+  else { btn.disabled = false; btn.innerHTML = action==='approve'?'✓ موافق':'✕ رفض'; }
+}
+
+// ════════════════════════════════════════════
+// LOGS
+// ════════════════════════════════════════════
+async function loadLogs() {
+  const box = document.getElementById('log-box');
+  const d = await n8nApi('logs', { limit: 100 });
+  if (!d.success || !d.data?.length) {
+    box.innerHTML = '<div class="log-line"><span class="log-warn">لا توجد سجلات</span></div>';
+    return;
+  }
+  box.innerHTML = d.data.map(l => {
+    const cls = { error:'log-err', warn:'log-warn', success:'log-success' }[l.level] || 'log-info';
+    return `<div class="log-line"><span class="log-time">${l.time?new Date(l.time).toLocaleString('ar'):'—'}</span> <span class="${cls}">[${(l.level||'INFO').toUpperCase()}]</span> ${esc(l.message||'')}</div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+// ════════════════════════════════════════════
+// SCRAPE TRIGGER
+// ════════════════════════════════════════════
+async function triggerScrape(btn) {
+  btn.disabled = true; btn.innerHTML = '⏳ جارٍ السحب...';
+  const d = await scraperFetch('/scrape', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ cities:['جدة','الرياض','مكة','المدينة','الدمام'],
+      queries:['ابحث عن شقة للايجار','محتاج شقة ايجار','مطلوب شقة للايجار','ابغى شقة ايجار','احتاج شقة للإيجار'] })
+  });
+  if (d.status === 'ok') toast(`✅ ${d.new_leads} طلب جديد`);
+  else toast('⚠️ السحب يعمل في الخلفية...');
+  setTimeout(() => { btn.disabled = false; btn.innerHTML = '⬇️ اسحب الآن'; loadOverview(); }, 5000);
+}
+
+// ════════════════════════════════════════════
+// BOOKMARKLET
+// ════════════════════════════════════════════
+const BLET = `(function(){
+  const API='https://masaed.wardyat.net/api';
+  const RE=/(?:966|00966|\\+966|0)?5\\d{8}/g;
+  function norm(p){p=p.replace(/[^0-9]/g,'');if(p.startsWith('966'))return p;if(p.startsWith('0'))return'966'+p.slice(1);if(p.startsWith('5'))return'966'+p;return p;}
+  function show(phone){
+    document.getElementById('_moverlay')?.remove();
+    const d=document.createElement('div');d.id='_moverlay';
+    d.innerHTML='<div style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:999999;display:flex;align-items:center;justify-content:center"><div style="background:#202c33;border:2px solid #00a884;border-radius:14px;padding:28px 36px;text-align:center;color:#e9edef;min-width:280px;font-family:Arial,sans-serif;direction:rtl"><div style="font-size:2rem;margin-bottom:8px">📱</div><div style="font-size:.82rem;color:#8696a0;margin-bottom:6px">رقم الهاتف</div><div style="font-size:1.6rem;font-weight:bold;color:#00a884;direction:ltr;font-family:monospace;margin-bottom:18px">'+phone+'</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button onclick="navigator.clipboard.writeText(\''+phone+'\').then(()=>{this.textContent=\'✅ تم\'})" style="background:#253035;color:#e9edef;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">📋 نسخ</button><a href="https://wa.me/'+phone+'" target="_blank" style="background:#00a884;color:#000;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;text-decoration:none;font-weight:bold">💬 واتساب</a><button onclick="save(\''+phone+'\')" style="background:#3b82f6;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">💾 حفّظ</button><button onclick="document.getElementById(\'_moverlay\').remove()" style="background:#ef444420;color:#ef4444;border:1px solid #ef444438;padding:8px 16px;border-radius:6px;cursor:pointer">✕</button></div></div></div>';
+    document.body.appendChild(d);
+  }
+  window._msave=function(p){fetch(API+'/leads/from-bookmarklet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:p,url:location.href,title:document.title,body:document.body.innerText.substring(0,800),source:location.hostname.replace('www.','')}),}).then(()=>{const b=document.querySelector('[onclick*=\\'_msave\\']');if(b){b.textContent='✅ تم الحفظ';b.style.background='#00a88440';}}).catch(()=>{});};
+  const txt=document.body.innerText;
+  const phones=txt.match(RE);
+  if(phones){show(norm(phones[0]));return;}
+  const btns=[...document.querySelectorAll('button,a,span')].filter(e=>/رقم|هاتف|جوال|تواصل|اتصال|contact|phone/i.test(e.innerText));
+  if(btns.length){
+    const ld=document.createElement('div');ld.style.cssText='position:fixed;bottom:20px;right:20px;background:#00a884;color:#000;padding:10px 18px;border-radius:8px;z-index:999999;font-family:Arial;font-weight:bold';ld.textContent='⏳ مساعد يبحث...';document.body.appendChild(ld);
+    btns[0].click();
+    setTimeout(()=>{ld.remove();const m=document.body.innerText.match(RE);if(m)show(norm(m[0]));else{const d2=document.createElement('div');d2.style.cssText='position:fixed;bottom:20px;right:20px;background:#ef4444;color:#fff;padding:10px 18px;border-radius:8px;z-index:999999;font-family:Arial';d2.textContent='لم يُعثر على رقم';document.body.appendChild(d2);setTimeout(()=>d2.remove(),3000);}},2500);
+    return;
+  }
+  const d3=document.createElement('div');d3.style.cssText='position:fixed;bottom:20px;right:20px;background:#f59e0b;color:#000;padding:10px 18px;border-radius:8px;z-index:999999;font-family:Arial;font-weight:bold';d3.textContent='لا يوجد رقم في هذه الصفحة';document.body.appendChild(d3);setTimeout(()=>d3.remove(),3000);
+})()`;
+
+document.getElementById('bookmarkletBtn').href = 'javascript:' + encodeURIComponent(BLET);
+
+// ════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════
+function setBadge(id, val, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (val > 0) { el.textContent = val; el.style.display = ''; if (cls) el.className = 'nav-badge ' + cls; }
+  else el.style.display = 'none';
+}
+function statusClass(s) { return {new:'new',phone_extracted:'extracted',contacted:'contacted'}[s]||'new'; }
+function statusLabel(s) { return {new:'جديد',phone_extracted:'مستخرج',contacted:'تم التواصل'}[s]||s; }
+function maskPhone(p) { if(!p) return '—'; return p.slice(0,4)+'****'+p.slice(-3); }
+function relTime(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (diff < 1) return 'الآن';
+  if (diff < 60) return diff + ' دقيقة';
+  if (diff < 1440) return Math.floor(diff/60) + ' ساعة';
+  return Math.floor(diff/1440) + ' يوم';
+}
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function emptyState(icon, t, sub) {
+  return `<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-text">${t}</div><div style="font-size:.72rem;color:var(--border);margin-top:6px">${sub}</div></div>`;
+}
+
+// ════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════
+loadOverview();
+setInterval(loadOverview, 60000);
+</script>
+</body>
+</html>

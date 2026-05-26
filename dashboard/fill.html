@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مساعد — تعبئة الأرقام</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+.header { background: #1a1d27; border-bottom: 1px solid #2d3748; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+.header h1 { font-size: 1.1rem; color: #fff; }
+.header .prog { margin-right: auto; font-size: .9rem; color: #a0aec0; }
+
+.progress-bar { height: 4px; background: #2d3748; }
+.progress-fill { height: 4px; background: linear-gradient(90deg, #667eea, #9ae6b4); transition: width .4s; }
+
+.container { max-width: 700px; margin: 32px auto; padding: 0 20px; }
+
+/* Current card */
+.lead-card {
+  background: #1a1d27; border: 2px solid #667eea; border-radius: 14px;
+  padding: 28px; margin-bottom: 20px; animation: fadeIn .3s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+
+.lead-card .num { font-size: .8rem; color: #667eea; margin-bottom: 6px; font-weight: bold; }
+.lead-card .city { display: inline-block; background: #2d3748; color: #a0aec0; padding: 2px 10px; border-radius: 4px; font-size: .8rem; margin-bottom: 10px; }
+.lead-card .title { font-size: 1.1rem; color: #fff; margin-bottom: 18px; line-height: 1.5; }
+
+.open-btn {
+  display: block; width: 100%; text-align: center;
+  background: #2d3748; color: #a0aec0; padding: 11px;
+  border-radius: 8px; text-decoration: none; margin-bottom: 18px;
+  font-size: .9rem; transition: background .2s;
+}
+.open-btn:hover { background: #4a5568; color: #fff; }
+
+.phone-row { display: flex; gap: 10px; align-items: center; }
+.phone-input {
+  flex: 1; background: #12141c; border: 2px solid #4a5568; color: #9ae6b4;
+  padding: 13px 16px; border-radius: 8px; font-size: 1.2rem; font-family: monospace;
+  direction: ltr; text-align: center; outline: none; transition: border-color .2s;
+}
+.phone-input:focus { border-color: #667eea; }
+.phone-input::placeholder { color: #4a5568; font-size: 1rem; }
+
+.save-btn {
+  background: #276749; color: #9ae6b4; border: none; padding: 13px 28px;
+  border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: bold;
+  transition: background .2s; white-space: nowrap;
+}
+.save-btn:hover { background: #2f855a; }
+.save-btn:disabled { background: #2d3748; color: #718096; cursor: default; }
+
+.skip-btn {
+  display: block; width: 100%; text-align: center; margin-top: 12px;
+  color: #4a5568; background: none; border: none; cursor: pointer;
+  font-size: .85rem; padding: 8px;
+}
+.skip-btn:hover { color: #718096; }
+
+/* Queue */
+.queue { display: flex; flex-direction: column; gap: 8px; }
+.queue-item {
+  background: #1a1d27; border: 1px solid #2d3748; border-radius: 8px;
+  padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+  font-size: .85rem;
+}
+.queue-item .q-num { color: #4a5568; min-width: 24px; }
+.queue-item .q-title { flex: 1; color: #718096; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-item .q-done { color: #9ae6b4; font-family: monospace; direction: ltr; font-size: .8rem; }
+.queue-item.done { opacity: .5; }
+
+/* Done screen */
+.done-screen { text-align: center; padding: 60px 20px; }
+.done-screen .icon { font-size: 4rem; margin-bottom: 16px; }
+.done-screen h2 { font-size: 1.5rem; color: #9ae6b4; margin-bottom: 8px; }
+.done-screen p { color: #718096; }
+
+/* Toast */
+#toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #276749; color: #9ae6b4; padding: 10px 22px; border-radius: 8px;
+  font-size: .9rem; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 999; }
+#toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span>📱</span>
+  <h1>تعبئة الأرقام المخفية</h1>
+  <span class="prog" id="progText">جاري التحميل...</span>
+</div>
+<div class="progress-bar"><div class="progress-fill" id="progBar" style="width:0%"></div></div>
+
+<div class="container">
+  <div id="currentCard"></div>
+  <div class="queue" id="queueList"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '/api';
+let leads = [];
+let idx = 0;
+
+async function load() {
+  const r = await fetch(`${API}/leads?status=new&limit=200`);
+  const d = await r.json();
+  leads = (d.leads || []).filter(l => l.phone_hidden && l.url);
+  if (!leads.length) { showDone(); return; }
+  render();
+}
+
+function render() {
+  updateProgress();
+  renderCard();
+  renderQueue();
+}
+
+function updateProgress() {
+  const done = leads.filter(l => !l.phone_hidden).length;
+  const total = leads.length;
+  const pct = total ? Math.round((idx / total) * 100) : 0;
+  document.getElementById('progText').textContent = `${idx} / ${total} — ${pct}%`;
+  document.getElementById('progBar').style.width = pct + '%';
+}
+
+function renderCard() {
+  if (idx >= leads.length) { showDone(); return; }
+  const l = leads[idx];
+  document.getElementById('currentCard').innerHTML = `
+    <div class="lead-card">
+      <div class="num">الطلب ${idx + 1} من ${leads.length}</div>
+      <span class="city">${escHtml(l.city || 'غير محدد')}</span>
+      <div class="title">${escHtml(l.title || '')}</div>
+      <a class="open-btn" href="${escHtml(l.url)}" target="_blank" onclick="focusInput()">
+        🔗 افتح الإعلان في حراج ←
+      </a>
+      <div class="phone-row">
+        <input id="phoneInput" class="phone-input" type="tel"
+          placeholder="05XXXXXXXX"
+          onkeydown="if(event.key==='Enter') savePhone()"
+          oninput="this.value=this.value.replace(/[^0-9+]/g,'')">
+        <button class="save-btn" onclick="savePhone()">حفظ ←</button>
+      </div>
+      <button class="skip-btn" onclick="skip()">تخطى ←</button>
+    </div>`;
+  setTimeout(() => document.getElementById('phoneInput')?.focus(), 100);
+}
+
+function focusInput() {
+  setTimeout(() => document.getElementById('phoneInput')?.focus(), 800);
+}
+
+async function savePhone() {
+  const input = document.getElementById('phoneInput');
+  const raw = (input?.value || '').trim();
+  if (!raw || raw.length < 9) { toast('أدخل رقم صحيح'); input?.focus(); return; }
+
+  const btn = document.querySelector('.save-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+
+  try {
+    const r = await fetch(`${API}/leads/${leads[idx].id}/phone`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({phone: raw})
+    });
+    const d = await r.json();
+    if (d.success) {
+      leads[idx].phone_hidden = false;
+      leads[idx].phone = d.phone;
+      toast(`✅ ${d.phone}`);
+      idx++;
+      render();
+    } else {
+      toast('خطأ في الحفظ'); btn.disabled = false; btn.textContent = 'حفظ ←';
+    }
+  } catch(e) {
+    toast('⚠️ تعذر الاتصال'); btn.disabled = false; btn.textContent = 'حفظ ←';
+  }
+}
+
+function skip() {
+  idx++;
+  render();
+}
+
+function renderQueue() {
+  const list = document.getElementById('queueList');
+  list.innerHTML = leads.map((l, i) => `
+    <div class="queue-item ${i < idx ? 'done' : ''}">
+      <span class="q-num">${i + 1}</span>
+      <span class="q-title">${escHtml(l.title || '')}</span>
+      ${i < idx && l.phone ? `<span class="q-done">${l.phone}</span>` : ''}
+      ${i === idx ? '<span style="color:#667eea;font-size:.75rem">← الحالي</span>' : ''}
+    </div>`).join('');
+}
+
+function showDone() {
+  document.getElementById('currentCard').innerHTML = `
+    <div class="done-screen">
+      <div class="icon">🎉</div>
+      <h2>تم الانتهاء</h2>
+      <p>تم تعبئة جميع الأرقام</p>
+      <a href="extract.html" style="display:inline-block;margin-top:20px;color:#667eea">← العودة للوحة</a>
+    </div>`;
+  document.getElementById('queueList').innerHTML = '';
+  document.getElementById('progBar').style.width = '100%';
+}
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+load();
+</script>
+</body>
+</html>

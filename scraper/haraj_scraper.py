@@ -17,11 +17,31 @@ DB_USER = os.getenv("POSTGRES_USER", "sanad")
 DB_PASS = os.getenv("POSTGRES_PASSWORD", os.getenv("PG_SANAD_PWD", ""))
 
 CITIES = ["جدة", "الرياض", "مكة", "المدينة", "الدمام"]
+
+# Queries phrased as requests — not "apartment for rent" but "looking for apartment"
 SEARCH_QUERIES = [
+    "ابحث عن شقة للايجار",
+    "محتاج شقة ايجار",
+    "مطلوب شقة للايجار",
+    "ابغى شقة ايجار",
+    "احتاج شقة للإيجار",
     "طالب ايجار شقة",
-    "مطلوب شقة ايجار",
-    "أبحث عن شقة للايجار",
-    "طلب شقة",
+]
+
+# Must have at least one request keyword in title or first 300 chars of body
+REQUEST_KW = [
+    'طالب', 'أبحث', 'ابحث', 'مطلوب', 'نبحث', 'نريد', 'محتاج',
+    'احتاج', 'ابغى', 'ابغي', 'أبغى', 'أبغي', 'بدور', 'عايز',
+    'نبغى', 'نبغي', 'نحتاج', 'أريد شقة', 'اريد شقة',
+]
+
+# Exclude listings that are clearly offers (owner-side posts)
+OFFER_KW = [
+    'للإيجار', 'للايجار', 'لإيجار', 'للأيجار',
+    'نؤجر', 'يتوفر', 'لدينا', 'عندنا', 'نوفر',
+    'عرض خاص', 'تواصل للحجز', 'ايجار يومي', 'ايجار شهري',
+    'ايجار سنوي', 'شقق عزاب', 'شقه عزاب', 'شقة عزاب',
+    'للتمليك', 'فندقية', 'مفروشة يومي',
 ]
 
 PHONE_PATTERN = re.compile(r'(?:966|0)?5\d{8}')
@@ -112,26 +132,29 @@ async def scrape_haraj(query: str, city: str = "") -> list[dict]:
         phone = phones[0] if phones else None
         phone_hidden = phone is None
 
-        # Only keep posts that look like rental REQUESTS
-        title_lower = (item.get('title', '') + ' ' + body).lower()
-        is_request = any(kw in title_lower for kw in [
-            'طالب', 'أبحث', 'ابحث', 'مطلوب', 'نبحث', 'نريد',
-            'wanted', 'looking', 'seek'
-        ])
+        title = item.get('title', '')
+        title_lower = title.lower()
+
+        # Request = keyword in TITLE only (body is unreliable — offers mention request words too)
+        is_request = any(kw in title_lower for kw in REQUEST_KW)
+        is_offer   = any(kw in title_lower for kw in OFFER_KW)
+
+        # Skip: not a request in title, OR clearly an offer in title
+        if not is_request or is_offer:
+            continue
 
         lead = {
             'source': 'haraj',
             'external_id': item['id'],
             'url': f"https://haraj.com.sa/{item['url']}" if item['url'] else None,
-            'title': item['title'][:300],
+            'title': title[:300],
             'body': body[:2000],
             'city': item.get('city', city) or city,
             'phone': phone,
             'phone_hidden': phone_hidden,
         }
 
-        if is_request or not phone_hidden:
-            leads.append(lead)
+        leads.append(lead)
 
     return leads
 
