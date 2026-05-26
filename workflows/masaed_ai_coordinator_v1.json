@@ -1,0 +1,364 @@
+{
+  "name": "مساعد — AI Coordinator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "masaed-inbound",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "masaed-inbound-v3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw=$input.first().json;\nconst b=raw.body||raw;\nconst sender=(b.senderData?.sender||'').replace('@c.us','');\nconst text=b.messageData?.textMessageData?.textMessage||b.messageData?.extendedTextMessageData?.text||'';\nif(!sender||!text||b.typeWebhook!=='incomingMessageReceived')return[];\nreturn[{json:{sender,text}}];"
+      },
+      "id": "ex1",
+      "name": "Extract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.id, s.requester_phone, s.owner_phone, s.context, (SELECT string_agg(m.direction||': '||m.text, ' | ' ORDER BY m.sent_at DESC) FROM (SELECT direction, text, sent_at FROM sanad.masaed_messages WHERE session_id=s.id ORDER BY sent_at DESC LIMIT 12) m) AS history FROM sanad.masaed_sessions s WHERE s.status='active' AND (s.requester_phone='{{ $json.sender }}' OR s.owner_phone='{{ $json.sender }}') LIMIT 1",
+        "options": {}
+      },
+      "id": "pg1",
+      "name": "Load Session",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "sanadPg00000000000001",
+          "name": "Sanad Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sender=$('Extract').first().json.sender;\nconst text=$('Extract').first().json.text;\nconst rows=$input.all().map(i=>i.json);\nconst s=rows[0];\nif(!s||!s.id)return[];\n\nconst isReq=s.requester_phone===sender;\nconst role=isReq?'المهتم بالإيجار':'صاحب العقار';\nconst otherRole=isReq?'صاحب العقار':'المهتم بالإيجار';\nconst otherPhone=isReq?s.owner_phone:s.requester_phone;\n\nlet ctx={};\ntry{ctx=JSON.parse(s.context||'{}');}catch(e){}\nconst history=s.history||'لا توجد رسائل سابقة';\n\nconst system=`أنت \"مساعد\" — مفاوض عقاري محترف وشرس في السوق السعودي. مهمتك الوحيدة: إغلاق الصفقة.\n\n═══ هويتك ═══\n• أنت لستَ موصّل رسائل — أنت مفاوض نشط يدير الحوار بذكاء.\n• كلا الطرفين يثقان بك وحدك؛ لا يعرف أي منهما رقم الآخر ولن تُفصح عنه أبداً.\n• أسلوبك: حازم، ودود، موجّه نحو الإغلاق في كل رسالة.\n\n═══ تكتيكات التفاوض التي تستخدمها ═══\n1. الوسطية الذكية: إذا كان هناك فجوة بين الطرفين (سعر مثلاً)، اقترح حلاً وسطاً مباشرةً بدل نقل الرقم حرفياً.\n2. الإلحاح المحسوب: عند تردد أحد الطرفين، ألمح إلى وجود اهتمام من أطراف أخرى.\n3. ربط المكاسب: \"إذا قبل بالسعر، فبإمكانه الدخول مبكراً\" — اجعل التنازل مقابل مكسب.\n4. إعادة التأطير: قدّم كل عرض بصورة إيجابية (\"السعر يشمل الفواتير وهذا يوفر عليك...\").\n5. الخطوة التالية دائماً: اختم كل رسالة بسؤال أو مقترح يُبقي الحوار متحركاً نحو الإغلاق.\n6. التسلسل المنطقي: لا تفتح ملف السعر قبل أن تُثبّت الاهتمام بالموقع والمواصفات.\n\n═══ السياق المخزّن ═══\n${JSON.stringify(ctx,null,2)}\n\n═══ آخر رسائل الجلسة ═══\n${history}`;\n\nconst userMsg=`الطرف المُرسِل: ${role}\nرسالته: \"${text}\"\n\nحلّل الرسالة، ثم قرّر كمفاوض:\n- ماذا تردّ على ${role} الآن؟\n- هل تحتاج أن تبعث رسالة لـ${otherRole}؟ (ليس مجرد نقل — بل رسالة تفاوضية مصاغة بذكاء)\n- ما المعلومات التي تستخلصها لتخزينها؟\n\nأجب بـ JSON فقط، بدون markdown:\n{\n  \"reply_to_sender\": \"ردّك على ${role} — موجز وحازم وموجّه نحو الإغلاق\",\n  \"message_other_party\": \"رسالتك التفاوضية لـ${otherRole} إن لزم، وإلا null\",\n  \"context_update\": {\n    \"negotiation_stage\": \"info_gathering|negotiating|near_deal|closed\",\n    \"property\": {},\n    \"requirements\": {},\n    \"last_offer\": null\n  }\n}`;\n\nreturn[{json:{\n  session_id:s.id,sender,text,role,otherRole,isReq,\n  chatId:sender+'@c.us',\n  otherChatId:otherPhone+'@c.us',\n  existingCtx:ctx,sysMsg:system,userMsg\n}}];"
+      },
+      "id": "bp1",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:\"deepseek-chat\",max_tokens:700,temperature:0.7,messages:[{role:\"system\",content:$json.sysMsg},{role:\"user\",content:$json.userMsg}]}) }}",
+        "options": {}
+      },
+      "id": "ai1",
+      "name": "DeepSeek",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "AhRih3XafjOKbyYE",
+          "name": "DeepSeek Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw=$input.first().json;\nconst build=$('Build Prompt').first().json;\nconst content=raw.choices?.[0]?.message?.content||'{}';\nlet parsed={};\ntry{const m=content.match(/\\{[\\s\\S]*\\}/);if(m)parsed=JSON.parse(m[0]);}catch(e){}\nconst reply=parsed.reply_to_sender||'عذراً، حدث خطأ. حاول مرة أخرى.';\nconst msgOther=parsed.message_other_party||null;\nconst ctxPatch=parsed.context_update||{};\n\n// Deep merge context\nfunction deepMerge(base, patch){\n  if(!patch||typeof patch!=='object')return base;\n  const out={...base};\n  for(const k of Object.keys(patch)){\n    if(patch[k]&&typeof patch[k]==='object'&&!Array.isArray(patch[k]))\n      out[k]=deepMerge(base[k]||{},patch[k]);\n    else if(patch[k]!==null&&patch[k]!==undefined&&patch[k]!=='')\n      out[k]=patch[k];\n  }\n  return out;\n}\nconst newCtx=JSON.stringify(deepMerge(build.existingCtx,ctxPatch));\nreturn[{json:{\n  session_id:build.session_id,\n  sender:build.sender,text:build.text,\n  chatId:build.chatId,otherChatId:build.otherChatId,\n  label:build.isReq?'🔍 المهتم':'🏠 صاحب العقار',\n  reply,msgOther,newCtx\n}}];"
+      },
+      "id": "pr1",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "sanad"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "masaed_sessions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.session_id }}",
+            "context": "={{ $json.newCtx }}"
+          },
+          "matchingColumns": [
+            "id"
+          ]
+        },
+        "options": {}
+      },
+      "id": "uc1",
+      "name": "Update Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1640,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "sanadPg00000000000001",
+          "name": "Sanad Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "sanad"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "masaed_messages"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $json.session_id }}",
+            "from_phone": "={{ $json.sender }}",
+            "to_phone": "={{ $json.chatId }}",
+            "text": "={{ $json.text }}",
+            "direction": "={{ $json.label }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sm1",
+      "name": "Save Message",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1640,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "sanadPg00000000000001",
+          "name": "Sanad Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.green-api.com/waInstance7107624780/sendMessage/40a35a3c71754f85b49bc2ace0e7217ae306d341258f4f93bc",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chatId:$json.chatId,message:$json.reply}) }}",
+        "options": {}
+      },
+      "id": "rs1",
+      "name": "Reply to Sender",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1640,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.msgOther }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if2",
+      "name": "Msg Other?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1640,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.green-api.com/waInstance7107624780/sendMessage/40a35a3c71754f85b49bc2ace0e7217ae306d341258f4f93bc",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({chatId:$json.otherChatId,message:$json.msgOther}) }}",
+        "options": {}
+      },
+      "id": "mo1",
+      "name": "Message Other Party",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        580
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract": {
+      "main": [
+        [
+          {
+            "node": "Load Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Session": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek": {
+      "main": [
+        [
+          {
+            "node": "Parse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [
+          {
+            "node": "Update Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reply to Sender",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Msg Other?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Msg Other?": {
+      "main": [
+        [
+          {
+            "node": "Message Other Party",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

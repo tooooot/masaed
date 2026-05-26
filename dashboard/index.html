@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مساعد — لوحة التحكم العقارية</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#111b21;--card:#202c33;--border:#2a3942;
+  --green:#00a884;--red:#ef4444;--yellow:#f59e0b;--blue:#3b82f6;--purple:#8b5cf6;--orange:#f97316;
+  --text:#e9edef;--muted:#8696a0;--hover:#253035;--r:10px;
+}
+body{background:var(--bg);color:var(--text);font-family:'Tajawal',sans-serif;font-size:14px;min-height:100vh;display:flex;flex-direction:column;}
+a{color:var(--green);text-decoration:none;}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ── Top Bar ── */
+.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:0 20px;height:56px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:200;flex-shrink:0;}
+.logo{font-size:1.5rem;}
+.brand{font-weight:700;font-size:1rem;}
+.brand-sub{font-size:0.68rem;color:var(--muted);}
+.topbar-right{margin-right:auto;display:flex;align-items:center;gap:12px;}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;}
+.status-dot.live{background:var(--green);animation:pulse 2s infinite;}
+.status-text{font-size:0.72rem;color:var(--muted);}
+.last-run{font-size:0.68rem;color:var(--muted);background:var(--hover);padding:3px 8px;border-radius:6px;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Shell ── */
+.shell{display:flex;flex:1;overflow:hidden;height:calc(100vh - 56px);}
+
+/* ── Sidebar ── */
+.sidebar{width:200px;background:var(--card);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+.nav-section{padding:12px 12px 4px;font-size:0.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:0.82rem;font-weight:500;color:var(--muted);transition:.15s;}
+.nav-item:hover{background:var(--hover);color:var(--text);}
+.nav-item.active{background:#00a88415;color:var(--green);border-right:3px solid var(--green);}
+.nav-icon{font-size:1rem;flex-shrink:0;}
+.nav-badge{margin-right:auto;background:var(--green);color:#000;font-size:0.62rem;font-weight:700;padding:1px 7px;border-radius:10px;}
+.nav-badge.red{background:var(--red);color:#fff;}
+.nav-badge.yellow{background:var(--yellow);color:#000;}
+
+/* ── Main ── */
+.main{flex:1;overflow-y:auto;background:var(--bg);}
+.page{display:none;padding:20px;max-width:1200px;}
+.page.active{display:block;}
+
+/* ── Page Header ── */
+.page-hd{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px;flex-wrap:wrap;}
+.page-hd-icon{font-size:2rem;background:var(--card);border-radius:12px;width:52px;height:52px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);flex-shrink:0;}
+.page-hd-title{font-size:1.15rem;font-weight:700;}
+.page-hd-sub{font-size:0.78rem;color:var(--muted);margin-top:2px;}
+.page-hd-actions{margin-right:auto;display:flex;gap:8px;flex-wrap:wrap;}
+
+/* ── Stats ── */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+.stat-card{background:var(--card);border-radius:var(--r);border:1px solid var(--border);padding:14px 16px;position:relative;overflow:hidden;}
+.stat-card::before{content:'';position:absolute;top:0;right:0;width:3px;height:100%;}
+.stat-card.green::before{background:var(--green);}
+.stat-card.blue::before{background:var(--blue);}
+.stat-card.yellow::before{background:var(--yellow);}
+.stat-card.purple::before{background:var(--purple);}
+.stat-card.orange::before{background:var(--orange);}
+.stat-num{font-size:1.8rem;font-weight:700;color:var(--green);}
+.stat-card.blue .stat-num{color:var(--blue);}
+.stat-card.yellow .stat-num{color:var(--yellow);}
+.stat-card.purple .stat-num{color:var(--purple);}
+.stat-card.orange .stat-num{color:var(--orange);}
+.stat-label{font-size:0.74rem;color:var(--muted);margin-top:2px;}
+.stat-sub{font-size:0.68rem;color:var(--muted);margin-top:4px;}
+
+/* ── Filter Bar ── */
+.filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+.filter-chip{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:4px 12px;font-size:0.74rem;cursor:pointer;transition:.15s;color:var(--muted);}
+.filter-chip.active{background:#00a88418;border-color:var(--green);color:var(--green);}
+.search-input{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:5px 12px;font-size:0.74rem;color:var(--text);outline:none;font-family:'Tajawal',sans-serif;margin-right:auto;width:180px;}
+.search-input::placeholder{color:var(--muted);}
+
+/* ── Table ── */
+.table-wrap{background:var(--card);border-radius:var(--r);border:1px solid var(--border);overflow:hidden;margin-bottom:16px;}
+.table-wrap table{width:100%;border-collapse:collapse;}
+.table-wrap th{background:var(--hover);padding:10px 12px;font-size:0.72rem;font-weight:700;color:var(--muted);text-align:right;border-bottom:1px solid var(--border);}
+.table-wrap td{padding:10px 12px;font-size:0.78rem;border-bottom:1px solid var(--border);vertical-align:middle;}
+.table-wrap tr:last-child td{border-bottom:none;}
+.table-wrap tr:hover td{background:var(--hover);}
+.badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:0.68rem;font-weight:700;}
+.badge-sale{background:#3b82f622;color:var(--blue);}
+.badge-rent{background:#00a88422;color:var(--green);}
+.badge-apt{background:#8b5cf622;color:var(--purple);}
+.badge-villa{background:#f9731622;color:var(--orange);}
+.badge-land{background:#f59e0b22;color:var(--yellow);}
+.badge-active{background:#00a88422;color:var(--green);}
+.badge-closed{background:#ef444422;color:var(--red);}
+.badge-pending{background:#f59e0b22;color:var(--yellow);}
+.badge-approved{background:#00a88422;color:var(--green);}
+.badge-rejected{background:#ef444422;color:var(--red);}
+.phone-link{color:var(--green);font-size:0.75rem;font-family:monospace;}
+.price-val{font-weight:700;color:var(--text);}
+.city-tag{background:var(--hover);border-radius:5px;padding:2px 7px;font-size:0.7rem;}
+
+/* ── Match Cards ── */
+.match-card{background:var(--card);border-radius:var(--r);border:1px solid var(--border);padding:14px 16px;margin-bottom:10px;}
+.match-header{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.score-ring{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.9rem;font-weight:700;border:3px solid var(--border);flex-shrink:0;}
+.score-ring.high{border-color:var(--green);color:var(--green);}
+.score-ring.mid{border-color:var(--yellow);color:var(--yellow);}
+.score-ring.low{border-color:var(--muted);color:var(--muted);}
+.match-meta{flex:1;}
+.match-date{font-size:0.7rem;color:var(--muted);}
+.match-reason{font-size:0.82rem;margin-top:3px;}
+.match-status-badge{padding:3px 10px;border-radius:10px;font-size:0.7rem;font-weight:700;}
+.match-body{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-bottom:12px;}
+.match-party{background:var(--hover);border-radius:8px;padding:10px 12px;}
+.match-party-label{font-size:0.65rem;color:var(--muted);margin-bottom:4px;font-weight:700;text-transform:uppercase;}
+.match-party-name{font-weight:700;font-size:0.88rem;margin-bottom:3px;}
+.match-party-detail{font-size:0.72rem;color:var(--muted);line-height:1.5;}
+.match-arrow{font-size:1.4rem;color:var(--muted);text-align:center;}
+.match-actions{display:flex;gap:8px;justify-content:flex-end;}
+
+/* ── Session Cards ── */
+.session-card{background:var(--card);border-radius:var(--r);border:1px solid var(--border);padding:14px 16px;margin-bottom:10px;}
+.session-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.session-icon{font-size:1.5rem;}
+.session-id{font-size:0.7rem;color:var(--muted);font-family:monospace;}
+.session-status{margin-right:auto;}
+.session-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.session-party{background:var(--hover);border-radius:8px;padding:8px 10px;}
+.session-party-role{font-size:0.65rem;color:var(--muted);margin-bottom:2px;}
+.session-party-phone{font-size:0.78rem;font-family:monospace;color:var(--green);}
+.session-msgs{font-size:0.72rem;color:var(--muted);}
+.session-footer{display:flex;align-items:center;gap:8px;font-size:0.72rem;color:var(--muted);}
+.session-footer .msg-count{background:var(--hover);padding:2px 8px;border-radius:5px;font-weight:700;color:var(--text);}
+
+/* ── Log View ── */
+.log-box{background:#0d1418;border-radius:var(--r);border:1px solid var(--border);padding:14px;font-family:monospace;font-size:0.75rem;line-height:1.7;max-height:400px;overflow-y:auto;}
+.log-line{margin-bottom:2px;}
+.log-time{color:var(--muted);}
+.log-info{color:var(--blue);}
+.log-success{color:var(--green);}
+.log-warn{color:var(--yellow);}
+.log-err{color:var(--red);}
+
+/* ── Buttons ── */
+.btn{padding:7px 14px;border-radius:7px;font-size:0.78rem;font-weight:600;cursor:pointer;border:none;font-family:'Tajawal',sans-serif;transition:.15s;display:inline-flex;align-items:center;gap:5px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.btn-green{background:var(--green);color:#000;}
+.btn-green:hover:not(:disabled){background:#00c09a;}
+.btn-red{background:#ef444420;color:var(--red);border:1px solid #ef444438;}
+.btn-red:hover:not(:disabled){background:#ef444430;}
+.btn-outline{background:transparent;color:var(--muted);border:1px solid var(--border);}
+.btn-outline:hover{color:var(--text);border-color:var(--muted);}
+.btn-yellow{background:#f59e0b20;color:var(--yellow);border:1px solid #f59e0b38;}
+.btn-blue{background:#3b82f620;color:var(--blue);border:1px solid #3b82f638;}
+.btn-sm{padding:4px 10px;font-size:0.72rem;}
+
+/* ── Loading / Empty ── */
+.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:50px 20px;color:var(--muted);}
+.empty-icon{font-size:2.5rem;margin-bottom:10px;}
+.empty-text{font-size:0.82rem;}
+.empty-sub{font-size:0.74rem;color:var(--border);margin-top:6px;}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(60px);background:#202c33;border:1px solid var(--green);color:var(--text);padding:10px 20px;border-radius:10px;font-size:0.82rem;transition:.3s;opacity:0;z-index:999;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ── Bottom Nav ── */
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--card);border-top:1px solid var(--border);z-index:200;justify-content:space-around;align-items:center;}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:6px 2px;gap:3px;position:relative;}
+.bn-icon{font-size:1.2rem;}
+.bn-label{font-size:0.56rem;color:var(--muted);font-weight:600;}
+.bn-item.active .bn-label{color:var(--green);}
+.bn-bdg{position:absolute;top:4px;right:calc(50% - 18px);background:var(--green);color:#000;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:8px;}
+
+/* ── Divider ── */
+.divider{border:none;border-top:1px solid var(--border);margin:16px 0;}
+
+@media(max-width:768px){
+  .sidebar{display:none;}
+  .bottom-nav{display:flex;}
+  .shell{height:calc(100vh - 56px - 60px);}
+  .page{padding:12px 12px 20px;}
+  .stats-row{grid-template-columns:repeat(2,1fr);}
+  .match-body{grid-template-columns:1fr;gap:6px;}
+  .match-arrow{display:none;}
+  .session-parties{grid-template-columns:1fr;}
+  #toast{bottom:70px;}
+  .search-input{width:120px;}
+  .page-hd-actions{width:100%;margin-right:0;}
+}
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="logo">🏠</div>
+  <div>
+    <div class="brand">مساعد</div>
+    <div class="brand-sub">الوكيل العقاري الذكي</div>
+  </div>
+  <div class="topbar-right">
+    <span class="status-dot" id="status-dot"></span>
+    <span class="status-text" id="status-text">جارٍ الاتصال...</span>
+    <span class="last-run" id="last-run">—</span>
+  </div>
+</div>
+
+<div class="shell">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-section">المراقبة</div>
+    <div class="nav-item active" onclick="showPage('overview',this)">
+      <span class="nav-icon">📊</span> نظرة عامة
+    </div>
+    <div class="nav-item" onclick="showPage('listings',this)">
+      <span class="nav-icon">🏘️</span> العروض
+      <span class="nav-badge blue" id="nb-listings" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('requests',this)">
+      <span class="nav-icon">🔍</span> الطلبات
+      <span class="nav-badge blue" id="nb-requests" style="display:none">0</span>
+    </div>
+    <div class="nav-section">العمليات</div>
+    <div class="nav-item" onclick="showPage('matches',this)">
+      <span class="nav-icon">🎯</span> التوفيقات
+      <span class="nav-badge" id="nb-matches" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('sessions',this)">
+      <span class="nav-icon">💬</span> الجلسات
+      <span class="nav-badge yellow" id="nb-sessions" style="display:none">0</span>
+    </div>
+    <div class="nav-section">النظام</div>
+    <div class="nav-item" onclick="showPage('logs',this)">
+      <span class="nav-icon">📋</span> السجلات
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- ══ PAGE: OVERVIEW ══ -->
+    <div class="page active" id="page-overview">
+      <div class="page-hd">
+        <div class="page-hd-icon">📊</div>
+        <div>
+          <div class="page-hd-title">نظرة عامة</div>
+          <div class="page-hd-sub">إحصائيات مساعد العقاري اليومية</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-yellow btn-sm" onclick="triggerScrape(this)">⬇️ اسحب الآن</button>
+          <button class="btn btn-green btn-sm" onclick="triggerMatch(this)">⚡ وفّق الآن</button>
+          <button class="btn btn-outline btn-sm" onclick="loadAll()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <div class="stats-row" id="overview-stats">
+        <div class="stat-card green">
+          <div class="stat-num" id="ov-listings">—</div>
+          <div class="stat-label">عروض اليوم</div>
+          <div class="stat-sub" id="ov-listings-total">إجمالي: —</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-num" id="ov-requests">—</div>
+          <div class="stat-label">طلبات اليوم</div>
+          <div class="stat-sub" id="ov-requests-total">إجمالي: —</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-num" id="ov-pending">—</div>
+          <div class="stat-label">توفيقات بانتظار موافقة</div>
+          <div class="stat-sub">تحتاج مراجعتك</div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-num" id="ov-sessions">—</div>
+          <div class="stat-label">جلسات نشطة</div>
+          <div class="stat-sub">حوار جارٍ بين طرفين</div>
+        </div>
+        <div class="stat-card orange">
+          <div class="stat-num" id="ov-closed">—</div>
+          <div class="stat-label">صفقات مكتملة</div>
+          <div class="stat-sub">جلسات أُغلقت</div>
+        </div>
+      </div>
+
+      <!-- Quick matches preview -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <div style="font-size:0.9rem;font-weight:700;">أحدث التوفيقات</div>
+        <button class="btn btn-outline btn-sm" onclick="showPage('matches',document.querySelector('.nav-item:nth-child(5)'))">عرض الكل ←</button>
+      </div>
+      <div id="overview-matches">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: LISTINGS ══ -->
+    <div class="page" id="page-listings">
+      <div class="page-hd">
+        <div class="page-hd-icon">🏘️</div>
+        <div>
+          <div class="page-hd-title">العروض العقارية</div>
+          <div class="page-hd-sub">عقارات مسحوبة من حراج وغيره</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadListings()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterTable('listings','',this)">الكل</div>
+        <div class="filter-chip" onclick="filterTable('listings','شقة',this)">شقق</div>
+        <div class="filter-chip" onclick="filterTable('listings','فيلا',this)">فلل</div>
+        <div class="filter-chip" onclick="filterTable('listings','أرض',this)">أراضي</div>
+        <div class="filter-chip" onclick="filterTable('listings','تجاري',this)">تجاري</div>
+        <input class="search-input" id="listings-search" placeholder="ابحث بالمدينة أو الحي..." oninput="searchTable('listings',this.value)">
+      </div>
+
+      <div id="listings-table">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: REQUESTS ══ -->
+    <div class="page" id="page-requests">
+      <div class="page-hd">
+        <div class="page-hd-icon">🔍</div>
+        <div>
+          <div class="page-hd-title">الطلبات</div>
+          <div class="page-hd-sub">أشخاص يبحثون عن عقار</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadRequests()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterTable('requests','',this)">الكل</div>
+        <div class="filter-chip" onclick="filterTable('requests','إيجار',this)">إيجار</div>
+        <div class="filter-chip" onclick="filterTable('requests','شراء',this)">شراء</div>
+        <div class="filter-chip" onclick="filterTable('requests','شقة',this)">شقق</div>
+        <div class="filter-chip" onclick="filterTable('requests','فيلا',this)">فلل</div>
+        <input class="search-input" id="requests-search" placeholder="ابحث بالمدينة أو الحي..." oninput="searchTable('requests',this.value)">
+      </div>
+
+      <div id="requests-table">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: MATCHES ══ -->
+    <div class="page" id="page-matches">
+      <div class="page-hd">
+        <div class="page-hd-icon">🎯</div>
+        <div>
+          <div class="page-hd-title">التوفيقات</div>
+          <div class="page-hd-sub">طلب ↔ عرض — راجع وافق أو ارفض</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-yellow btn-sm" onclick="triggerMatch(this)">⚡ وفّق الآن</button>
+          <button class="btn btn-outline btn-sm" onclick="loadMatches()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterMatches('pending',this)">بانتظار الموافقة</div>
+        <div class="filter-chip" onclick="filterMatches('approved',this)">موافق عليها</div>
+        <div class="filter-chip" onclick="filterMatches('rejected',this)">مرفوضة</div>
+        <div class="filter-chip" onclick="filterMatches('session_created',this)">فُتحت جلسة</div>
+      </div>
+
+      <div id="matches-list">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: SESSIONS ══ -->
+    <div class="page" id="page-sessions">
+      <div class="page-hd">
+        <div class="page-hd-icon">💬</div>
+        <div>
+          <div class="page-hd-title">جلسات الحوار</div>
+          <div class="page-hd-sub">محادثات جارية بين الطرفين عبر مساعد</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadSessions()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterSessions('active',this)">نشطة</div>
+        <div class="filter-chip" onclick="filterSessions('closed',this)">مغلقة</div>
+        <div class="filter-chip" onclick="filterSessions('all',this)">الكل</div>
+      </div>
+
+      <div id="sessions-list">
+        <div class="empty"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: LOGS ══ -->
+    <div class="page" id="page-logs">
+      <div class="page-hd">
+        <div class="page-hd-icon">📋</div>
+        <div>
+          <div class="page-hd-title">سجلات النظام</div>
+          <div class="page-hd-sub">آخر عمليات السحب والتوفيق</div>
+        </div>
+        <div class="page-hd-actions">
+          <button class="btn btn-outline btn-sm" onclick="loadLogs()">🔄 تحديث</button>
+        </div>
+      </div>
+
+      <div class="log-box" id="log-box">
+        <div class="log-line"><span class="log-time">—</span> <span class="log-info">جارٍ تحميل السجلات...</span></div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- Bottom Nav -->
+<div class="bottom-nav">
+  <div class="bn-item active" id="bn-overview" onclick="showPage('overview',this)">
+    <span class="bn-icon">📊</span><span class="bn-label">عام</span>
+  </div>
+  <div class="bn-item" id="bn-listings" onclick="showPage('listings',this)">
+    <span class="bn-icon">🏘️</span><span class="bn-label">العروض</span>
+  </div>
+  <div class="bn-item" id="bn-requests" onclick="showPage('requests',this)">
+    <span class="bn-icon">🔍</span><span class="bn-label">الطلبات</span>
+  </div>
+  <div class="bn-item" id="bn-matches" onclick="showPage('matches',this)">
+    <span class="bn-icon">🎯</span><span class="bn-label">التوفيق</span>
+    <span class="bn-bdg" id="nb-matches-m" style="display:none">0</span>
+  </div>
+  <div class="bn-item" id="bn-sessions" onclick="showPage('sessions',this)">
+    <span class="bn-icon">💬</span><span class="bn-label">الجلسات</span>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════
+const N8N = 'https://n8n.srv1506241.hstgr.cloud';
+const API_URL = N8N + '/webhook/masaed-api';
+
+async function api(action, params = {}) {
+  try {
+    const r = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...params })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// ══════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════
+const PAGE_MAP = { overview:0, listings:1, requests:2, matches:3, sessions:4, logs:5 };
+const PAGES = ['overview','listings','requests','matches','sessions','logs'];
+
+function showPage(id, el) {
+  PAGES.forEach(p => {
+    document.getElementById('page-'+p).classList.remove('active');
+    const bn = document.getElementById('bn-'+p);
+    if (bn) bn.classList.remove('active');
+  });
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  const bn = document.getElementById('bn-'+id);
+  if (bn) bn.classList.add('active');
+  if (el?.classList.contains('nav-item')) el.classList.add('active');
+  else {
+    const idx = PAGE_MAP[id];
+    const items = document.querySelectorAll('.nav-item');
+    if (items[idx]) items[idx].classList.add('active');
+  }
+  document.querySelector('.main').scrollTop = 0;
+  if (id === 'overview') loadOverview();
+  if (id === 'listings') loadListings();
+  if (id === 'requests') loadRequests();
+  if (id === 'matches') loadMatches();
+  if (id === 'sessions') loadSessions();
+  if (id === 'logs') loadLogs();
+}
+
+// ══════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════
+function toast(msg, dur = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// ══════════════════════════════════════════
+// STATUS
+// ══════════════════════════════════════════
+async function checkStatus() {
+  const d = await api('ping');
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  if (d.success) {
+    dot.classList.add('live');
+    txt.textContent = 'متصل ✓';
+    const lr = document.getElementById('last-run');
+    if (d.last_scrape) lr.textContent = 'آخر سحب: ' + relTime(d.last_scrape);
+  } else {
+    txt.textContent = 'API غير متصل بعد';
+  }
+}
+
+function relTime(iso) {
+  const d = new Date(iso), now = Date.now(), diff = Math.floor((now - d) / 60000);
+  if (diff < 1) return 'الآن';
+  if (diff < 60) return diff + ' دقيقة';
+  if (diff < 1440) return Math.floor(diff/60) + ' ساعة';
+  return Math.floor(diff/1440) + ' يوم';
+}
+
+// ══════════════════════════════════════════
+// OVERVIEW
+// ══════════════════════════════════════════
+async function loadOverview() {
+  const d = await api('stats');
+  if (d.success && d.data) {
+    const s = d.data;
+    document.getElementById('ov-listings').textContent = s.listings_today ?? '—';
+    document.getElementById('ov-listings-total').textContent = 'إجمالي: ' + (s.listings_total ?? '—');
+    document.getElementById('ov-requests').textContent = s.requests_today ?? '—';
+    document.getElementById('ov-requests-total').textContent = 'إجمالي: ' + (s.requests_total ?? '—');
+    document.getElementById('ov-pending').textContent = s.matches_pending ?? '—';
+    document.getElementById('ov-sessions').textContent = s.sessions_active ?? '—';
+    document.getElementById('ov-closed').textContent = s.sessions_closed ?? '—';
+    // badges
+    setNb('nb-listings', s.listings_today, 'blue');
+    setNb('nb-requests', s.requests_today, 'blue');
+    setNb('nb-matches', s.matches_pending, '');
+    setNb('nb-sessions', s.sessions_active, 'yellow');
+    setNb('nb-matches-m', s.matches_pending);
+  }
+  // Recent matches preview
+  const m = await api('matches', { status: 'pending', limit: 3 });
+  renderMatchCards('overview-matches', m.data || [], true);
+}
+
+function setNb(id, val, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (val > 0) { el.textContent = val; el.style.display = ''; if (cls) el.className = 'nav-badge ' + cls; }
+  else el.style.display = 'none';
+}
+
+// ══════════════════════════════════════════
+// LISTINGS TABLE
+// ══════════════════════════════════════════
+let listingsData = [], requestsData = [];
+
+async function loadListings() {
+  document.getElementById('listings-table').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const d = await api('listings', { limit: 200 });
+  listingsData = d.data || [];
+  renderListingsTable(listingsData);
+}
+
+function renderListingsTable(data) {
+  const el = document.getElementById('listings-table');
+  if (!data.length) {
+    el.innerHTML = emptyState('🏘️', 'لا توجد عروض بعد', 'اضغط "اسحب الآن" لجلب عقارات حراج');
+    return;
+  }
+  el.innerHTML = `
+<div class="table-wrap">
+<table>
+<thead><tr>
+  <th>النوع</th><th>المدينة / الحي</th><th>الغرف</th><th>السعر</th><th>الهدف</th><th>رقم التواصل</th><th>تاريخ النشر</th><th>المصدر</th>
+</tr></thead>
+<tbody>${data.map(r => `
+<tr>
+  <td><span class="badge ${typeBadge(r.property_type)}">${r.property_type||'—'}</span></td>
+  <td><span class="city-tag">${r.city||'—'}</span>${r.district?' / '+r.district:''}</td>
+  <td>${r.bedrooms ? r.bedrooms + ' غرف' : '—'}</td>
+  <td class="price-val">${r.price ? r.price.toLocaleString('ar') + ' ر' : '—'}</td>
+  <td><span class="badge ${r.purpose==='بيع'?'badge-sale':'badge-rent'}">${r.purpose||'—'}</span></td>
+  <td><a class="phone-link" href="tel:${r.phone}">${r.phone||'—'}</a></td>
+  <td style="color:var(--muted);font-size:.72rem">${r.posted_at ? new Date(r.posted_at).toLocaleDateString('ar') : '—'}</td>
+  <td style="font-size:.7rem;color:var(--muted)">${r.source||'حراج'}</td>
+</tr>`).join('')}
+</tbody>
+</table>
+</div>`;
+}
+
+function typeBadge(t) {
+  if (!t) return '';
+  if (t.includes('شقة')) return 'badge-apt';
+  if (t.includes('فيلا')) return 'badge-villa';
+  if (t.includes('أرض')) return 'badge-land';
+  return 'badge-sale';
+}
+
+// ══════════════════════════════════════════
+// REQUESTS TABLE
+// ══════════════════════════════════════════
+async function loadRequests() {
+  document.getElementById('requests-table').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const d = await api('requests', { limit: 200 });
+  requestsData = d.data || [];
+  renderRequestsTable(requestsData);
+}
+
+function renderRequestsTable(data) {
+  const el = document.getElementById('requests-table');
+  if (!data.length) {
+    el.innerHTML = emptyState('🔍', 'لا توجد طلبات بعد', 'اضغط "اسحب الآن" لجلب طلبات من حراج');
+    return;
+  }
+  el.innerHTML = `
+<div class="table-wrap">
+<table>
+<thead><tr>
+  <th>النوع</th><th>الهدف</th><th>المدينة / الحي</th><th>الغرف</th><th>الميزانية</th><th>رقم التواصل</th><th>تاريخ الطلب</th>
+</tr></thead>
+<tbody>${data.map(r => `
+<tr>
+  <td><span class="badge ${typeBadge(r.property_type)}">${r.property_type||'—'}</span></td>
+  <td><span class="badge ${r.purpose==='شراء'?'badge-sale':'badge-rent'}">${r.purpose||'إيجار'}</span></td>
+  <td><span class="city-tag">${r.city||'—'}</span>${r.district?' / '+r.district:''}</td>
+  <td>${r.bedrooms ? r.bedrooms + ' غرف' : '—'}</td>
+  <td class="price-val">${r.budget_max ? r.budget_max.toLocaleString('ar') + ' ر' : '—'}</td>
+  <td><a class="phone-link" href="tel:${r.phone}">${r.phone||'—'}</a></td>
+  <td style="color:var(--muted);font-size:.72rem">${r.posted_at ? new Date(r.posted_at).toLocaleDateString('ar') : '—'}</td>
+</tr>`).join('')}
+</tbody>
+</table>
+</div>`;
+}
+
+// ══════════════════════════════════════════
+// MATCHES
+// ══════════════════════════════════════════
+let matchesCache = { pending:[], approved:[], rejected:[], session_created:[] };
+let currentMatchStatus = 'pending';
+
+async function loadMatches() {
+  document.getElementById('matches-list').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const [p, a, r, s] = await Promise.all([
+    api('matches', { status:'pending', limit:100 }),
+    api('matches', { status:'approved', limit:50 }),
+    api('matches', { status:'rejected', limit:50 }),
+    api('matches', { status:'session_created', limit:50 }),
+  ]);
+  matchesCache = {
+    pending: p.data||[], approved: a.data||[],
+    rejected: r.data||[], session_created: s.data||[]
+  };
+  setNb('nb-matches', p.data?.length, '');
+  setNb('nb-matches-m', p.data?.length);
+  renderMatchCards('matches-list', matchesCache[currentMatchStatus], false);
+}
+
+function filterMatches(status, el) {
+  document.querySelectorAll('#page-matches .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  currentMatchStatus = status;
+  renderMatchCards('matches-list', matchesCache[status], false);
+}
+
+function renderMatchCards(containerId, data, compact) {
+  const el = document.getElementById(containerId);
+  if (!data || !data.length) {
+    el.innerHTML = emptyState('🎯', 'لا توجد توفيقات', 'اضغط "وفّق الآن" لتشغيل محرك المطابقة');
+    return;
+  }
+  const items = compact ? data.slice(0,3) : data;
+  el.innerHTML = items.map(m => {
+    const score = m.score || 0;
+    const cls = score >= 70 ? 'high' : score >= 50 ? 'mid' : 'low';
+    const isPending = m.status === 'pending';
+    const statusLabel = { pending:'بانتظار الموافقة', approved:'موافق عليها', rejected:'مرفوضة', session_created:'فُتحت جلسة' };
+    const statusBadge = { pending:'badge-pending', approved:'badge-approved', rejected:'badge-rejected', session_created:'badge-active' };
+    return `
+<div class="match-card">
+  <div class="match-header">
+    <div class="score-ring ${cls}">${score}%</div>
+    <div class="match-meta">
+      <div class="match-date">${m.matched_at ? new Date(m.matched_at).toLocaleString('ar') : '—'}</div>
+      <div class="match-reason">${m.reason || '—'}</div>
+    </div>
+    <span class="badge match-status-badge ${statusBadge[m.status]||''}">${statusLabel[m.status]||m.status}</span>
+  </div>
+  <div class="match-body">
+    <div class="match-party">
+      <div class="match-party-label">🔍 الباحث</div>
+      <div class="match-party-name">${m.requester_name || 'غير مسمى'}</div>
+      <div class="match-party-detail">
+        ${m.req_city||'—'} ${m.req_district?' / '+m.req_district:''}
+        ${m.req_type?'• '+m.req_type:''} ${m.req_rooms?'• '+m.req_rooms+' غرف':''}
+        ${m.req_budget?'<br>الميزانية: '+m.req_budget.toLocaleString('ar')+' ر':''}
+        ${m.req_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.req_phone+'</span>':''}
+      </div>
+    </div>
+    <div class="match-arrow">⇄</div>
+    <div class="match-party">
+      <div class="match-party-label">🏠 العقار</div>
+      <div class="match-party-name">${m.listing_title || 'عقار'}</div>
+      <div class="match-party-detail">
+        ${m.lst_city||'—'} ${m.lst_district?' / '+m.lst_district:''}
+        ${m.lst_type?'• '+m.lst_type:''} ${m.lst_rooms?'• '+m.lst_rooms+' غرف':''}
+        ${m.lst_price?'<br>السعر: '+m.lst_price.toLocaleString('ar')+' ر':''}
+        ${m.lst_phone?'<br><span style="color:var(--green);font-family:monospace">'+m.lst_phone+'</span>':''}
+      </div>
+    </div>
+  </div>
+  ${isPending ? `
+  <div class="match-actions">
+    <button class="btn btn-red btn-sm" onclick="matchAction('${m.id}','reject',this)">✕ رفض</button>
+    <button class="btn btn-green btn-sm" onclick="matchAction('${m.id}','approve',this)">✓ موافق — أعلم الطرفين</button>
+  </div>` : ''}
+</div>`;
+  }).join('');
+}
+
+async function matchAction(id, action, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  const d = await api('match-' + action, { id });
+  if (d.success) {
+    toast(action === 'approve' ? '✅ تمت الموافقة — سيُرسَل تنبيه للطرفين عند توفر واتساب' : 'تم الرفض');
+    loadMatches();
+    loadOverview();
+  } else {
+    toast('❌ ' + (d.error || 'خطأ'), 3000);
+    btn.disabled = false;
+    btn.innerHTML = action === 'approve' ? '✓ موافق' : '✕ رفض';
+  }
+}
+
+// ══════════════════════════════════════════
+// SESSIONS
+// ══════════════════════════════════════════
+let currentSessionFilter = 'active';
+
+async function loadSessions() {
+  document.getElementById('sessions-list').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const d = await api('sessions', { status: currentSessionFilter === 'all' ? undefined : currentSessionFilter, limit: 100 });
+  renderSessionCards(d.data || []);
+}
+
+function filterSessions(status, el) {
+  document.querySelectorAll('#page-sessions .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  currentSessionFilter = status;
+  loadSessions();
+}
+
+function renderSessionCards(data) {
+  const el = document.getElementById('sessions-list');
+  if (!data.length) {
+    el.innerHTML = emptyState('💬', 'لا توجد جلسات', 'ستظهر هنا بعد الموافقة على التوفيقات');
+    return;
+  }
+  el.innerHTML = data.map(s => `
+<div class="session-card">
+  <div class="session-header">
+    <div class="session-icon">💬</div>
+    <div>
+      <div style="font-size:.82rem;font-weight:700">جلسة #${s.id||'—'}</div>
+      <div class="session-id">${s.match_id ? 'توفيق: ' + s.match_id : ''}</div>
+    </div>
+    <div class="session-status">
+      <span class="badge ${s.status==='active'?'badge-active':'badge-closed'}">${s.status==='active'?'نشطة':'مغلقة'}</span>
+    </div>
+  </div>
+  <div class="session-parties">
+    <div class="session-party">
+      <div class="session-party-role">🔍 الباحث</div>
+      <div class="session-party-phone">${maskPhone(s.requester_phone)}</div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:2px">${s.req_last_msg ? 'آخر رسالة: ' + relTime(s.req_last_msg) : '—'}</div>
+    </div>
+    <div class="session-party">
+      <div class="session-party-role">🏠 المالك</div>
+      <div class="session-party-phone">${maskPhone(s.owner_phone)}</div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:2px">${s.own_last_msg ? 'آخر رسالة: ' + relTime(s.own_last_msg) : '—'}</div>
+    </div>
+  </div>
+  <div class="session-footer">
+    <span>فُتحت: ${s.created_at ? new Date(s.created_at).toLocaleDateString('ar') : '—'}</span>
+    <span class="msg-count">${s.message_count || 0} رسالة</span>
+    ${s.status === 'active' ? `<button class="btn btn-red btn-sm" style="margin-right:auto" onclick="closeSession('${s.id}',this)">إغلاق الجلسة</button>` : ''}
+  </div>
+</div>`).join('');
+}
+
+function maskPhone(phone) {
+  if (!phone) return '—';
+  return phone.slice(0,4) + '****' + phone.slice(-3);
+}
+
+async function closeSession(id, btn) {
+  if (!confirm('هل تريد إغلاق هذه الجلسة؟')) return;
+  btn.disabled = true;
+  const d = await api('session-close', { id });
+  toast(d.success ? 'تم إغلاق الجلسة' : '❌ ' + d.error, 2500);
+  if (d.success) loadSessions();
+  else btn.disabled = false;
+}
+
+// ══════════════════════════════════════════
+// LOGS
+// ══════════════════════════════════════════
+async function loadLogs() {
+  const d = await api('logs', { limit: 100 });
+  const box = document.getElementById('log-box');
+  if (!d.success || !d.data?.length) {
+    box.innerHTML = '<div class="log-line"><span class="log-time">—</span> <span class="log-warn">لا توجد سجلات بعد. يتم إنشاؤها عند تشغيل عمليات السحب والتوفيق.</span></div>';
+    return;
+  }
+  box.innerHTML = d.data.map(l => {
+    const cls = l.level === 'error' ? 'log-err' : l.level === 'warn' ? 'log-warn' : l.level === 'success' ? 'log-success' : 'log-info';
+    return `<div class="log-line"><span class="log-time">${l.time ? new Date(l.time).toLocaleString('ar') : '—'}</span> <span class="${cls}">[${(l.level||'info').toUpperCase()}]</span> ${esc(l.message||'')}${l.count?` (${l.count})`:''}</div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+// ══════════════════════════════════════════
+// SCRAPE / MATCH TRIGGERS
+// ══════════════════════════════════════════
+async function triggerScrape(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '⏳ جارٍ السحب...';
+  const d = await api('scrape-now');
+  toast(d.success ? '⬇️ بدأ سحب العقارات — تحقق بعد دقيقة' : '❌ ' + (d.error||'تعذّر'), 3000);
+  setTimeout(() => { btn.disabled = false; btn.innerHTML = '⬇️ اسحب الآن'; loadAll(); }, 8000);
+}
+
+async function triggerMatch(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '⏳ يُوفّق...';
+  const d = await api('match-now');
+  toast(d.success ? '⚡ بدأ محرك التوفيق — النتائج خلال دقيقة' : '❌ ' + (d.error||'تعذّر'), 3000);
+  setTimeout(() => { btn.disabled = false; btn.innerHTML = '⚡ وفّق الآن'; loadMatches(); loadOverview(); }, 10000);
+}
+
+// ══════════════════════════════════════════
+// TABLE FILTERS
+// ══════════════════════════════════════════
+function filterTable(type, val, el) {
+  const bar = el.closest('.filter-bar');
+  bar.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  if (type === 'listings') renderListingsTable(val ? listingsData.filter(r => JSON.stringify(r).includes(val)) : listingsData);
+  if (type === 'requests') renderRequestsTable(val ? requestsData.filter(r => JSON.stringify(r).includes(val)) : requestsData);
+}
+
+function searchTable(type, val) {
+  const q = val.toLowerCase();
+  if (type === 'listings') renderListingsTable(q ? listingsData.filter(r => (r.city+r.district+r.description+'').toLowerCase().includes(q)) : listingsData);
+  if (type === 'requests') renderRequestsTable(q ? requestsData.filter(r => (r.city+r.district+'').toLowerCase().includes(q)) : requestsData);
+}
+
+// ══════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════
+function emptyState(icon, title, sub) {
+  return `<div class="empty"><div class="empty-icon">${icon}</div><div class="empty-text">${title}</div><div class="empty-sub">${sub}</div></div>`;
+}
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function loadAll() { loadOverview(); }
+
+// ══════════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════════
+checkStatus();
+loadOverview();
+setInterval(checkStatus, 60000);
+</script>
+</body>
+</html>
