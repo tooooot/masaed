@@ -523,6 +523,133 @@ def stats():
     return jsonify(dict(zip(cols, row)))
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# BOT ENDPOINTS — مساعد المسجّل
+# ══════════════════════════════════════════════════════════════════════════════
+
+ALLOWED_INSTANCE = os.getenv("MASAED_GREEN_INSTANCE", "")
+
+@app.route("/bot/webhook", methods=["POST"])
+def bot_webhook():
+    from bot import parse_webhook, handle_message, wa_send
+    data = request.get_json(silent=True) or {}
+
+    # Validate request is from our Green API instance
+    # Green API puts idInstance in instanceData.idInstance
+    instance_id = (
+        str(data.get("instanceData", {}).get("idInstance", "")) or
+        str(data.get("instanceId", "")) or
+        str(data.get("body", {}).get("instanceId", ""))
+    )
+    if ALLOWED_INSTANCE and instance_id and str(instance_id) != str(ALLOWED_INSTANCE):
+        print(f"[WEBHOOK] Rejected unknown instance: {instance_id}")
+        return jsonify({"ok": True})
+
+    phone, text, media_url = parse_webhook(data)
+    if not phone:
+        return jsonify({"ok": True})
+    try:
+        reply = handle_message(phone, text, media_url)
+        if reply:
+            wa_send(phone, reply)
+    except Exception as e:
+        print(f"[BOT ERROR] {e}")
+    return jsonify({"ok": True})
+
+
+@app.route("/bot/test", methods=["POST"])
+def bot_test():
+    """Test bot without WhatsApp — body: {phone, text, media_url?}"""
+    from bot import handle_message
+    data      = request.get_json() or {}
+    phone     = data.get("phone", "966500000000")
+    text      = data.get("text", "") or ""
+    media_url = data.get("media_url") or None
+    if not text and not media_url:
+        text = "مرحبا"
+    reply = handle_message(phone, text or None, media_url)
+    return jsonify({"reply": reply})
+
+
+@app.route("/bot/reset", methods=["POST"])
+def bot_reset():
+    """Reset a phone's active conversation for testing."""
+    data = request.get_json() or {}
+    phone = data.get("phone", "")
+    if not phone:
+        return jsonify({"error": "phone required"}), 400
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE sanad.masaed_registrations
+            SET status = 'abandoned'
+            WHERE phone = %s AND status = 'collecting'
+        """, (phone,))
+        conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/profile/<int:reg_id>")
+def get_profile(reg_id):
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, name, type, slug, city, district,
+                   property_type, rooms, bathrooms, floor_num,
+                   furnished, price_annual, price_monthly, for_family,
+                   location_desc, photos, features,
+                   budget_annual, preferred_districts, move_date, special_notes,
+                   status, created_at
+            FROM sanad.masaed_registrations WHERE id = %s
+        """, (reg_id,))
+        cols = [d[0] for d in cur.description]
+        row  = cur.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    reg = dict(zip(cols, row))
+    if reg.get("created_at"):
+        reg["created_at"] = reg["created_at"].isoformat()
+    reg["wa_phone"] = os.getenv("MASAED_WA_PHONE", os.getenv("MASAED_GREEN_INSTANCE", ""))
+    return jsonify(reg)
+
+
+@app.route("/registrations")
+def list_registrations():
+    limit  = int(request.args.get("limit", 50))
+    status = request.args.get("status", "all")
+    conn = get_conn()
+    with conn.cursor() as cur:
+        if status != "all":
+            cur.execute("""
+                SELECT id, name, type, city, property_type, rooms,
+                       price_annual, budget_annual, status, created_at
+                FROM sanad.masaed_registrations
+                WHERE status = %s ORDER BY created_at DESC LIMIT %s
+            """, (status, limit))
+        else:
+            cur.execute("""
+                SELECT id, name, type, city, property_type, rooms,
+                       price_annual, budget_annual, status, created_at
+                FROM sanad.masaed_registrations
+                ORDER BY created_at DESC LIMIT %s
+            """, (limit,))
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    conn.close()
+    for r in rows:
+        if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"registrations": rows, "count": len(rows)})
+
+
+@app.route("/photos/<path:filename>")
+def serve_photo(filename):
+    from flask import send_from_directory
+    photos_dir = os.path.join(os.path.dirname(__file__), "photos")
+    return send_from_directory(photos_dir, filename)
+
+
 if __name__ == "__main__":
     port = int(os.getenv("SCRAPER_PORT", 5555))
     app.run(host="0.0.0.0", port=port, debug=False)

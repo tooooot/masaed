@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta property="og:title" content="عقاري في مساعد">
+<meta property="og:image" content="/og-cover.png">
+<title>مساعد العقاري</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0d1117;--surface:#161b22;--card:#21262d;--border:#30363d;
+  --green:#2ea043;--green-l:#3fb950;--blue:#58a6ff;--yellow:#e3b341;
+  --red:#f85149;--purple:#bc8cff;--orange:#f0883e;
+  --text:#f0f6fc;--muted:#8b949e;--subtle:#484f58;
+}
+html,body{min-height:100%;background:var(--bg);font-family:'Tajawal',sans-serif;color:var(--text);}
+
+/* ── Hero Background ── */
+.hero-bg{
+  position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse 80% 60% at 50% -10%, #1a3a2a 0%, transparent 60%),
+             radial-gradient(ellipse 50% 40% at 80% 80%, #0d2340 0%, transparent 50%),
+             var(--bg);
+}
+.hero-bg::after{
+  content:'';position:absolute;inset:0;
+  background-image:radial-gradient(circle, #30363d 1px, transparent 1px);
+  background-size:32px 32px;opacity:.25;
+}
+
+/* ── Content ── */
+.wrap{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px 60px;}
+
+/* ── Badge ── */
+.system-badge{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:.7rem;color:var(--muted);margin-bottom:28px;margin-top:8px;}
+.system-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--green-l);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Main Card ── */
+.main-card{width:100%;max-width:520px;background:var(--surface);border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:0 25px 80px rgba(0,0,0,.6);}
+
+/* ── Card Top (gradient header) ── */
+.card-top{padding:32px 28px 28px;background:linear-gradient(145deg,#1a3a2a 0%,#161b22 60%);}
+.type-icon{font-size:3.5rem;margin-bottom:12px;display:block;filter:drop-shadow(0 4px 16px rgba(46,160,67,.4));}
+.listing-type-badge{display:inline-flex;align-items:center;gap:5px;background:#2ea04320;border:1px solid #2ea04340;border-radius:12px;padding:3px 12px;font-size:.7rem;color:var(--green-l);font-weight:700;margin-bottom:10px;}
+.listing-type-badge.request-badge{background:#58a6ff20;border-color:#58a6ff40;color:var(--blue);}
+.owner-name{font-size:1.5rem;font-weight:900;color:var(--text);margin-bottom:4px;line-height:1.2;}
+.property-headline{font-size:1rem;color:var(--muted);line-height:1.5;}
+.city-row{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--muted);font-size:.82rem;}
+
+/* ── Photo Gallery ── */
+.photos-section{padding:0 20px 20px;}
+.photos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:16px;}
+.photo-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;border:1px solid var(--border);}
+.photos-label{font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding-top:20px;padding-right:4px;}
+
+/* ── Specs Grid ── */
+.specs-section{padding:0 20px 20px;}
+.specs-label{font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;}
+.specs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.spec-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center;}
+.spec-icon{font-size:1.4rem;margin-bottom:6px;}
+.spec-val{font-size:1.1rem;font-weight:700;color:var(--text);}
+.spec-lbl{font-size:.65rem;color:var(--muted);margin-top:2px;}
+
+/* ── Price Hero ── */
+.price-section{padding:0 20px 20px;}
+.price-card{background:linear-gradient(135deg,#2ea04315,#2ea04308);border:1px solid #2ea04340;border-radius:14px;padding:20px;text-align:center;}
+.price-card.request{background:linear-gradient(135deg,#58a6ff15,#58a6ff08);border-color:#58a6ff40;}
+.price-label{font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+.price-amount{font-size:2.2rem;font-weight:900;color:var(--green-l);line-height:1;}
+.price-card.request .price-amount{color:var(--blue);}
+.price-unit{font-size:.78rem;color:var(--muted);margin-top:4px;}
+.price-monthly{font-size:.78rem;color:var(--subtle);margin-top:6px;}
+
+/* ── Features ── */
+.features-section{padding:0 20px 20px;}
+.features-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+.feature-chip{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:.75rem;color:var(--text);}
+
+/* ── Location ── */
+.location-section{padding:0 20px 20px;}
+.location-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:flex-start;gap:10px;}
+.loc-icon{font-size:1.4rem;flex-shrink:0;margin-top:2px;}
+.loc-text{font-size:.85rem;color:var(--text);line-height:1.6;}
+.loc-text a{color:var(--blue);}
+
+/* ── Hero Media ── */
+.hero-media{position:relative;width:100%;height:260px;overflow:hidden;border-radius:20px 20px 0 0;}
+.hero-img{width:100%;height:100%;object-fit:cover;display:block;}
+.hero-video{width:100%;height:100%;object-fit:cover;display:block;}
+.hero-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,#161b22ee 100%);}
+.card-top.has-hero{padding-top:20px;}
+
+/* ── Divider ── */
+.divider{border:none;border-top:1px solid var(--border);margin:4px 20px 20px;}
+
+/* ── Registration Seal ── */
+.seal-section{padding:0 20px 24px;}
+.seal{background:linear-gradient(135deg,#2ea04310,#3fb95008);border:1px solid #2ea04330;border-radius:14px;padding:18px 20px;display:flex;align-items:center;gap:14px;}
+.seal-icon{font-size:2rem;flex-shrink:0;}
+.seal-text .seal-title{font-size:.88rem;font-weight:700;color:var(--green-l);margin-bottom:3px;}
+.seal-text .seal-sub{font-size:.72rem;color:var(--muted);}
+.seal-check{margin-right:auto;font-size:1.5rem;}
+
+/* ── Actions ── */
+.actions{padding:0 20px 28px;display:flex;gap:10px;flex-wrap:wrap;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:12px 20px;border-radius:10px;font-size:.85rem;font-weight:700;border:none;cursor:pointer;text-decoration:none;font-family:'Tajawal',sans-serif;transition:all .15s;flex:1;justify-content:center;}
+.btn:active{transform:scale(.97);}
+.btn-wa{background:#25D366;color:#000;}
+.btn-wa:active{background:#20bd5a;}
+.btn-share{background:var(--card);border:1px solid var(--border);color:var(--muted);}
+.btn-share:active{color:var(--text);}
+
+/* ── Request specific ── */
+.preferred-section{padding:0 20px 20px;}
+.pref-label{font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
+.pref-list{display:flex;flex-wrap:wrap;gap:8px;}
+.pref-chip{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-size:.78rem;color:var(--blue);}
+
+/* ── Loading ── */
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:var(--muted);font-size:.9rem;}
+
+/* ── Error ── */
+.error-card{text-align:center;padding:60px 20px;}
+.error-icon{font-size:3rem;margin-bottom:16px;opacity:.5;}
+.error-title{font-size:1.1rem;font-weight:700;color:var(--muted);}
+
+/* ── Footer ── */
+.footer{margin-top:32px;text-align:center;color:var(--subtle);font-size:.7rem;}
+.footer a{color:var(--subtle);}
+
+@media(max-width:400px){
+  .specs-grid{grid-template-columns:repeat(2,1fr);}
+  .actions{flex-direction:column;}
+}
+</style>
+</head>
+<body>
+
+<div class="hero-bg"></div>
+
+<div class="wrap">
+  <div class="system-badge">
+    <span class="dot"></span>
+    مساعد العقاري الذكي
+  </div>
+
+  <div id="content">
+    <div class="loading">
+      <div class="spinner"></div>
+      <div class="loading-text">جارٍ تحميل البيانات...</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="/">مساعد.wardyat.net</a> • النظام العقاري الذكي
+  </div>
+</div>
+
+<script>
+const regId = location.pathname.split('/').filter(Boolean).pop();
+
+async function load() {
+  try {
+    const r = await fetch(`/api/profile/${regId}`);
+    if (!r.ok) throw new Error('not found');
+    const d = await r.json();
+    render(d);
+  } catch(e) {
+    document.getElementById('content').innerHTML = `
+<div class="error-card">
+  <div class="error-icon">🏚️</div>
+  <div class="error-title">لم يتم العثور على الصفحة</div>
+  <div style="font-size:.8rem;color:var(--subtle);margin-top:8px">تأكد من الرابط أو تواصل مع مساعد</div>
+</div>`;
+  }
+}
+
+function fmt(n) {
+  if (!n) return null;
+  return Number(n).toLocaleString('ar-SA');
+}
+
+function render(d) {
+  const isListing = d.type === 'listing';
+  const name = d.name || 'العميل';
+  const city = d.city || '';
+  const district = d.district || '';
+  const location = [city, district].filter(Boolean).join(' — ');
+
+  // Determine headline
+  let headline = '';
+  if (isListing) {
+    const parts = [];
+    if (d.property_type) parts.push(d.property_type);
+    if (d.rooms) parts.push(d.rooms + ' غرف');
+    if (d.furnished !== null && d.furnished !== undefined) parts.push(d.furnished ? 'مفروشة' : 'غير مفروشة');
+    if (d.for_family === 'family') parts.push('للعوائل');
+    else if (d.for_family === 'bachelor') parts.push('للعزاب');
+    headline = parts.join(' • ');
+  } else {
+    const parts = [];
+    if (d.rooms) parts.push('يبحث عن ' + d.rooms + ' غرف');
+    if (d.furnished !== null) parts.push(d.furnished ? 'مفروشة' : 'غير مفروشة');
+    headline = parts.join(' • ') || 'باحث عن عقار';
+  }
+
+  const typeLabel = isListing ? '🏠 عرض عقار' : '🔍 طلب إيجار';
+  const typeBadgeClass = isListing ? '' : 'request-badge';
+  const typeIcon = isListing ? '🏠' : '🔍';
+  const date = d.created_at ? new Date(d.created_at).toLocaleDateString('ar-SA', {year:'numeric',month:'long',day:'numeric'}) : '';
+
+  // Specs
+  let specsHtml = '';
+  if (isListing) {
+    const specs = [
+      d.rooms         ? {icon:'🛏', val: d.rooms + ' غرف', lbl: 'غرف النوم'} : null,
+      d.bathrooms     ? {icon:'🚿', val: d.bathrooms + ' حمام', lbl: 'الحمامات'} : null,
+      d.floor_num     ? {icon:'🏢', val: 'الطابق ' + d.floor_num, lbl: 'الطابق'} : null,
+      d.for_family    ? {icon: d.for_family==='family'?'👨‍👩‍👧':'👤', val: d.for_family==='family'?'عوائل':d.for_family==='bachelor'?'عزاب':'الكل', lbl: 'السكن'} : null,
+      d.furnished !== null ? {icon:'🛋️', val: d.furnished ? 'مفروشة' : 'غير مفروشة', lbl: 'التأثيث'} : null,
+    ].filter(Boolean);
+    specsHtml = specs.map(s => `
+<div class="spec-card">
+  <div class="spec-icon">${s.icon}</div>
+  <div class="spec-val">${s.val}</div>
+  <div class="spec-lbl">${s.lbl}</div>
+</div>`).join('');
+  } else {
+    const specs = [
+      d.rooms         ? {icon:'🛏', val: d.rooms + ' غرف', lbl: 'غرف مطلوبة'} : null,
+      d.city          ? {icon:'📍', val: d.city, lbl: 'المدينة'} : null,
+      d.furnished !== null ? {icon:'🛋️', val: d.furnished ? 'مفروشة' : 'غير مفروشة', lbl: 'التأثيث'} : null,
+      {icon: d.is_family ? '👨‍👩‍👧' : '👤', val: d.is_family ? 'عوائل' : 'عزاب', lbl: 'نوع السكن'},
+    ].filter(Boolean);
+    specsHtml = specs.map(s => `
+<div class="spec-card">
+  <div class="spec-icon">${s.icon}</div>
+  <div class="spec-val">${s.val}</div>
+  <div class="spec-lbl">${s.lbl}</div>
+</div>`).join('');
+  }
+
+  // Photos & Videos — normalize to {url, type} objects
+  const rawMedia = d.photos || [];
+  const media = rawMedia.map(p => typeof p === 'string' ? {url: p, type: 'image'} : p);
+  const heroMedia = media[0] || null;
+  const restMedia = media.slice(1);
+
+  // Hero media (first photo/video as full-width header)
+  const heroHtml = heroMedia ? (
+    heroMedia.type === 'video'
+      ? `<div class="hero-media"><video class="hero-video" src="${heroMedia.url}" autoplay muted loop playsinline></video><div class="hero-overlay"></div></div>`
+      : `<div class="hero-media"><img class="hero-img" src="${heroMedia.url}" onerror="this.parentElement.style.display='none'"></div>`
+  ) : '';
+
+  // Rest of media grid
+  const photosHtml = restMedia.length ? `
+<div class="photos-section">
+  <div class="photos-label">📸 المزيد من الصور</div>
+  <div class="photos-grid">
+    ${restMedia.map(p => p.type === 'video'
+      ? `<video class="photo-thumb" src="${p.url}" muted loop playsinline onclick="this.paused?this.play():this.pause()"></video>`
+      : `<img class="photo-thumb" src="${p.url}" loading="lazy" onerror="this.style.display='none'">`
+    ).join('')}
+  </div>
+</div>
+<hr class="divider">` : '';
+
+  // Price
+  const price = isListing ? d.price_annual : d.budget_annual;
+  const priceLabel = isListing ? 'السعر السنوي' : 'الميزانية السنوية';
+  const priceHtml = price ? `
+<div class="price-section">
+  <div class="price-card ${isListing ? '' : 'request'}">
+    <div class="price-label">${priceLabel}</div>
+    <div class="price-amount">${fmt(price)}</div>
+    <div class="price-unit">ريال سعودي / سنة</div>
+    ${isListing && d.price_monthly ? `<div class="price-monthly">أو ${fmt(d.price_monthly)} ريال / شهر</div>` : ''}
+    ${!isListing && d.budget_annual ? `<div class="price-monthly">≈ ${fmt(Math.round(d.budget_annual/12))} ريال / شهر</div>` : ''}
+  </div>
+</div>
+<hr class="divider">` : '';
+
+  // Features
+  const features = d.features || [];
+  const featuresHtml = features.length ? `
+<div class="features-section">
+  <div class="specs-label">✨ المميزات</div>
+  <div class="features-list">
+    ${features.map(f => `<span class="feature-chip">✓ ${f}</span>`).join('')}
+  </div>
+</div>
+<hr class="divider">` : '';
+
+  // Location
+  const locationHtml = d.location_desc ? `
+<div class="location-section">
+  <div class="specs-label">📍 الموقع</div>
+  <div class="location-card">
+    <span class="loc-icon">📍</span>
+    <div class="loc-text">${d.location_desc.includes('http') ? `<a href="${d.location_desc}" target="_blank">📎 رابط الخريطة</a>` : d.location_desc}</div>
+  </div>
+</div>
+<hr class="divider">` : '';
+
+  // Preferred districts (request)
+  const prefDists = d.preferred_districts || [];
+  const prefHtml = prefDists.length ? `
+<div class="preferred-section">
+  <div class="pref-label">📍 الأحياء المفضلة</div>
+  <div class="pref-list">
+    ${prefDists.map(p => `<span class="pref-chip">📍 ${p}</span>`).join('')}
+  </div>
+</div>
+<hr class="divider">` : '';
+
+  // Special notes
+  const notesHtml = d.special_notes ? `
+<div class="location-section">
+  <div class="specs-label">💬 ملاحظات إضافية</div>
+  <div class="location-card">
+    <span class="loc-icon">💬</span>
+    <div class="loc-text">${d.special_notes}</div>
+  </div>
+</div>
+<hr class="divider">` : '';
+
+  // Move date (request)
+  const moveDateHtml = d.move_date ? `
+<div class="features-section">
+  <div class="features-list">
+    <span class="feature-chip">📅 الانتقال: ${d.move_date}</span>
+  </div>
+</div>
+<hr class="divider">` : '';
+
+  // WhatsApp contact
+  const waPhone = d.wa_phone || '966500000000';
+  const waBtn = `<a class="btn btn-wa" href="https://wa.me/${waPhone}?text=${encodeURIComponent('مرحباً مساعد، أريد الاستفسار عن العقار رقم ' + regId)}" target="_blank">💬 تواصل مع مساعد</a>`;
+
+  const shareBtn = `<button class="btn btn-share" onclick="share()">📤 شارك الصفحة</button>`;
+
+  document.getElementById('content').innerHTML = `
+<div class="main-card">
+
+  ${heroHtml}
+
+  <div class="card-top ${heroMedia ? 'has-hero' : ''}">
+    <span class="type-icon">${typeIcon}</span>
+    <div class="listing-type-badge ${typeBadgeClass}">${typeLabel}</div>
+    <div class="owner-name">${name}</div>
+    <div class="property-headline">${headline}</div>
+    ${location ? `<div class="city-row">📍 ${location}</div>` : ''}
+  </div>
+
+  <hr class="divider" style="margin-top:0">
+
+  ${photosHtml}
+
+  ${specsHtml ? `
+  <div class="specs-section">
+    <div class="specs-label">${isListing ? '🏗️ تفاصيل العقار' : '📋 متطلبات الطلب'}</div>
+    <div class="specs-grid">${specsHtml}</div>
+  </div>
+  <hr class="divider">` : ''}
+
+  ${priceHtml}
+  ${featuresHtml}
+  ${locationHtml}
+  ${prefHtml}
+  ${moveDateHtml}
+  ${notesHtml}
+
+  <div class="seal-section">
+    <div class="seal">
+      <span class="seal-icon">🏅</span>
+      <div class="seal-text">
+        <div class="seal-title">✅ تم التسجيل في نظام مساعد</div>
+        <div class="seal-sub">${date} • رقم التسجيل: #${regId}</div>
+      </div>
+      <span class="seal-check">✓</span>
+    </div>
+  </div>
+
+  <div class="actions">
+    ${waBtn}
+    ${shareBtn}
+  </div>
+</div>`;
+
+  // Update page title
+  document.title = `${name} — ${isListing ? 'عقار للإيجار' : 'طلب إيجار'} | مساعد`;
+}
+
+function share() {
+  if (navigator.share) {
+    navigator.share({
+      title: document.title,
+      url: location.href
+    }).catch(() => copyToClipboard());
+  } else {
+    copyToClipboard();
+  }
+}
+
+function copyToClipboard() {
+  navigator.clipboard.writeText(location.href)
+    .then(() => showToast('تم نسخ الرابط ✓'))
+    .catch(() => showToast(location.href));
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#21262d;border:1px solid #30363d;color:#f0f6fc;padding:10px 20px;border-radius:10px;font-size:.82rem;z-index:999;font-family:Tajawal,sans-serif;';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+load();
+</script>
+</body>
+</html>
