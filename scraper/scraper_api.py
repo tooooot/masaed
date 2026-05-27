@@ -307,6 +307,202 @@ def mark_contacted(lead_id):
     return jsonify({"error": "not found"}), 404
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# LISTINGS ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/listings/scrape", methods=["POST"])
+def scrape_listings():
+    from haraj_scraper import run_scrape_listings
+    data = request.get_json() or {}
+    cities = data.get("cities")
+    queries = data.get("queries")
+    try:
+        new_count = run_async(run_scrape_listings(cities=cities, queries=queries))
+        return jsonify({"status": "ok", "new_listings": new_count})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/listings")
+def get_listings():
+    city   = request.args.get("city")
+    limit  = int(request.args.get("limit", 100))
+    status = request.args.get("status", "active")
+
+    where, params = [], []
+    if status != "all":
+        where.append("status = %s"); params.append(status)
+    if city:
+        where.append("city ILIKE %s"); params.append(f"%{city}%")
+
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    params.append(limit)
+
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT id, source, external_id, url, title, city,
+                   property_type, rooms, price, phone, phone_hidden, status, scraped_at
+            FROM sanad.masaed_listings
+            {where_sql}
+            ORDER BY scraped_at DESC LIMIT %s
+        """, params)
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    conn.close()
+    for r in rows:
+        if r.get("scraped_at"): r["scraped_at"] = r["scraped_at"].isoformat()
+    return jsonify({"listings": rows, "count": len(rows)})
+
+
+@app.route("/listings/stats")
+def listings_stats():
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE phone_hidden=FALSE) as with_phone,
+                COUNT(*) FILTER (WHERE phone_hidden=TRUE)  as hidden_phone,
+                COUNT(*) FILTER (WHERE status='contacted') as contacted,
+                COUNT(DISTINCT city) as cities
+            FROM sanad.masaed_listings
+        """)
+        cols = [d[0] for d in cur.description]
+        row  = cur.fetchone()
+    conn.close()
+    return jsonify(dict(zip(cols, row)))
+
+
+@app.route("/listings/<int:lst_id>/contacted", methods=["POST"])
+def listing_contacted(lst_id):
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE sanad.masaed_listings SET status='contacted' WHERE id=%s RETURNING phone",
+            (lst_id,)
+        )
+        result = cur.fetchone()
+        conn.commit()
+    conn.close()
+    if result:
+        return jsonify({"success": True, "phone": result[0]})
+    return jsonify({"error": "not found"}), 404
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MATCHING ENGINE — find top 5 listings for a given lead
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extract_rooms(text: str):
+    from haraj_scraper import extract_rooms
+    return extract_rooms(text)
+
+def _extract_price(text: str):
+    from haraj_scraper import extract_price
+    return extract_price(text)
+
+def _extract_type(text: str):
+    from haraj_scraper import extract_type
+    return extract_type(text)
+
+def score_match(lead: dict, listing: dict) -> tuple:
+    score = 0
+    reasons = []
+
+    # ── City match (40 pts) ──────────────────────────────────────────────────
+    lc = (lead.get('city') or '').strip()
+    rc = (listing.get('city') or '').strip()
+    if lc and rc:
+        if lc == rc:
+            score += 40; reasons.append(f"نفس المدينة ({rc})")
+        elif lc in rc or rc in lc:
+            score += 20; reasons.append(f"مدينة قريبة")
+
+    full_lead    = (lead.get('title','') + ' ' + (lead.get('body') or ''))[:600]
+    full_listing = (listing.get('title','') + ' ' + (listing.get('body') or ''))[:600]
+
+    # ── Rooms match (25 pts) ─────────────────────────────────────────────────
+    lr = _extract_rooms(full_lead)
+    rr = listing.get('rooms') or _extract_rooms(full_listing)
+    if lr and rr:
+        if lr == rr:
+            score += 25; reasons.append(f"{rr} غرف متطابقة")
+        elif abs(lr - rr) == 1:
+            score += 10; reasons.append(f"غرف قريبة ({rr}±1)")
+
+    # ── Property type (15 pts) ───────────────────────────────────────────────
+    lt = _extract_type(full_lead)
+    rt = listing.get('property_type') or _extract_type(full_listing)
+    if lt and rt and lt == rt:
+        score += 15; reasons.append(f"نوع العقار: {rt}")
+
+    # ── Budget match (20 pts) ────────────────────────────────────────────────
+    lb = _extract_price(full_lead)
+    rp = listing.get('price') or _extract_price(full_listing)
+    if lb and rp:
+        if rp <= lb:
+            score += 20; reasons.append(f"السعر مناسب ({rp:,} ≤ {lb:,})")
+        elif rp <= lb * 1.15:
+            score += 8; reasons.append(f"السعر قريب ({rp:,})")
+
+    reason_str = ' • '.join(reasons) if reasons else 'تطابق جغرافي'
+    return min(score, 100), reason_str
+
+
+@app.route("/match/<int:lead_id>")
+def match_lead(lead_id):
+    conn = get_conn()
+
+    # Load lead
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, title, body, city, phone, status
+            FROM sanad.masaed_leads WHERE id = %s
+        """, (lead_id,))
+        cols = [d[0] for d in cur.description]
+        row  = cur.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "lead not found"}), 404
+
+    lead = dict(zip(cols, row))
+
+    # Load candidate listings (same city preferred, all active)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, title, body, city, property_type, rooms, price,
+                   phone, phone_hidden, url, status, scraped_at
+            FROM sanad.masaed_listings
+            WHERE status = 'active'
+            ORDER BY
+                CASE WHEN city = %s THEN 0 ELSE 1 END,
+                scraped_at DESC
+            LIMIT 200
+        """, (lead.get('city') or '',))
+        cols = [d[0] for d in cur.description]
+        listings = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    conn.close()
+
+    # Score and rank
+    scored = []
+    for lst in listings:
+        if lst.get("scraped_at"): lst["scraped_at"] = lst["scraped_at"].isoformat()
+        sc, reason = score_match(lead, lst)
+        scored.append({**lst, "score": sc, "reason": reason})
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    top5 = scored[:5]
+
+    return jsonify({
+        "lead": lead,
+        "matches": top5,
+        "total_searched": len(listings)
+    })
+
+
 @app.route("/stats")
 def stats():
     conn = get_conn()
