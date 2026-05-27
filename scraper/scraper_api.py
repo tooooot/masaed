@@ -609,15 +609,23 @@ def negotiate_agree(neg_id):
     price = agreed_price if agreed_price is not None else listing_price
     _close(neg_id, "agreed", price)
 
-    p_str     = f" بسعر {price:,} ر/سنة" if price else ""
+    import time as _time
+    p_str     = f"{price:,} ر/سنة" if price else "متفق عليه"
     title_str = listing_title or "العقار"
     msg = (
-        f"🎉 تم الاتفاق{p_str}!\n"
-        f"العقار: {title_str}\n\n"
-        f"تهانينا! سيتواصل معك الطرف الآخر لإتمام الإجراءات.\n"
+        f"🎉 تم الاتفاق!\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🏠 {title_str}\n"
+        f"💰 السعر: {p_str}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"الخطوات التالية:\n"
+        f"١. تواصل مباشرة مع الطرف الآخر لترتيب المعاينة\n"
+        f"٢. توقيع العقد وسداد الدفعة الأولى\n"
+        f"٣. استلام المفاتيح\n\n"
         f"شكراً لاستخدامكم مساعد العقاري 🏠"
     )
     wa_send(lead_phone,    msg)
+    _time.sleep(0.5)
     wa_send(listing_phone, msg)
 
     print(f"[AGREE] Admin closed neg #{neg_id} as agreed, price={price}", flush=True)
