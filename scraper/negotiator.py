@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """
 مساعد المفاوض — وسيط بين المالك والمستأجر عبر واتساب
-المبدأ: البوت ناقل فقط، لا يفاوض ولا يقرر ولا يغلق صفقة بدون إذن الإدارة
+المبدأ:
+  - الإدارة هي من تقرر بدء التفاوض من لوحة التحكم (ضغط الزر = الموافقة)
+  - البوت يُبلّغ الطرفين ويبدأ فوراً — لا يستأذنهم
+  - البوت ناقل فقط، لا يفاوض ولا يقرر ولا يغلق صفقة
+  - الإغلاق يتم من الإدارة حصراً عبر /negotiate/<id>/agree
 """
 import os, json, re, time
 from datetime import datetime, timezone
 from bot import get_conn, wa_send, _phone_lock
 
-CONFIRM_WORDS = {"نعم","أيوه","ايوه","اوك","ok","yes","موافق","أكيد","اكيد","يلا","تمام"}
-CANCEL_WORDS  = {"لا","كلا","لأ","لا شكرا","مو مهتم","لا يهمني","إلغاء","الغاء",
-                 "cancel","stop","انهاء","إنهاء","خلاص","مو رايه"}
+CANCEL_WORDS = {"لا","كلا","لأ","لا شكرا","مو مهتم","لا يهمني","إلغاء","الغاء",
+                "cancel","stop","انهاء","إنهاء","خلاص","مو رايه"}
 
 def _words(text: str) -> set:
-    """Split Arabic/English text into whole words for exact matching."""
     return set(re.split(r'[\s،,؟?!.،؛؟]+', text.strip().lower()))
 
-def _has_word(text: str, wordset: set) -> bool:
-    return bool(_words(text) & wordset)
+def _has_cancel(text: str) -> bool:
+    return bool(_words(text) & CANCEL_WORDS)
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -31,24 +33,18 @@ def ensure_table():
                 listing_id      INT,
                 lead_phone      TEXT,
                 listing_phone   TEXT,
-                status          TEXT DEFAULT 'pending',
-                confirmations   JSONB DEFAULT '{"lead":false,"listing":false}',
+                status          TEXT DEFAULT 'active',
                 agreed_price    INT,
                 lead_name       TEXT,
                 listing_title   TEXT,
                 listing_city    TEXT,
                 listing_price   INT,
                 chat_log        JSONB DEFAULT '[]',
-                expires_at      TIMESTAMPTZ DEFAULT NOW() + INTERVAL '24 hours',
+                expires_at      TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
                 created_at      TIMESTAMPTZ DEFAULT NOW(),
                 updated_at      TIMESTAMPTZ DEFAULT NOW()
             )
         """)
-        for col, defn in [
-            ("confirmations", "JSONB DEFAULT '{\"lead\":false,\"listing\":false}'"),
-            ("expires_at",    "TIMESTAMPTZ DEFAULT NOW() + INTERVAL '24 hours'"),
-        ]:
-            cur.execute(f"ALTER TABLE sanad.masaed_negotiations ADD COLUMN IF NOT EXISTS {col} {defn}")
         conn.commit()
     conn.close()
 
@@ -58,11 +54,11 @@ def _load_neg(phone: str) -> dict | None:
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, lead_id, listing_id, lead_phone, listing_phone,
-                   status, confirmations, lead_name, listing_title,
-                   listing_city, listing_price, chat_log, expires_at
+                   status, lead_name, listing_title,
+                   listing_city, listing_price, chat_log
             FROM sanad.masaed_negotiations
             WHERE (lead_phone = %s OR listing_phone = %s)
-              AND status IN ('pending','active')
+              AND status = 'active'
               AND (expires_at IS NULL OR expires_at > NOW())
             ORDER BY created_at DESC LIMIT 1
         """, (phone, phone))
@@ -71,11 +67,9 @@ def _load_neg(phone: str) -> dict | None:
     if not row:
         return None
     cols = ['id','lead_id','listing_id','lead_phone','listing_phone',
-            'status','confirmations','lead_name','listing_title',
-            'listing_city','listing_price','chat_log','expires_at']
+            'status','lead_name','listing_title','listing_city','listing_price','chat_log']
     d = dict(zip(cols, row))
-    d['confirmations'] = d['confirmations'] or {"lead": False, "listing": False}
-    d['chat_log']      = d['chat_log'] or []
+    d['chat_log'] = d['chat_log'] or []
     return d
 
 
@@ -111,72 +105,16 @@ def _close(neg_id: int, status: str, agreed_price: int = None):
     _update_neg(neg_id, status=status, agreed_price=agreed_price)
 
 
-# ── مرحلة التأكيد (pending) ────────────────────────────────────────────────────
-
-def _handle_pending(neg: dict, phone: str, text: str) -> bool:
-    neg_id        = neg["id"]
-    is_lead       = (phone == neg["lead_phone"])
-    side          = "lead" if is_lead else "listing"
-    other         = neg["listing_phone"] if is_lead else neg["lead_phone"]
-    my_label      = "مستأجر" if is_lead else "مالك"
-    confirmations = dict(neg["confirmations"])
-    t             = text.strip().lower()
-
-    if _has_word(text, CANCEL_WORDS):
-        _close(neg_id, "cancelled")
-        _append_log(neg_id, my_label, text)
-        wa_send(phone, "تم الإلغاء. يمكنك التواصل معنا في أي وقت 🙏")
-        time.sleep(0.5)
-        wa_send(other, "عذراً، أحد الطرفين اعتذر عن هذه الصفقة.")
-        return True
-
-    if _has_word(text, CONFIRM_WORDS):
-        confirmations[side] = True
-        _update_neg(neg_id, confirmations=json.dumps(confirmations))
-        _append_log(neg_id, my_label, text)
-
-        if confirmations["lead"] and confirmations["listing"]:
-            _update_neg(neg_id, status="active")
-            title = neg.get("listing_title") or "العقار"
-            city  = neg.get("listing_city") or ""
-            price = neg.get("listing_price")
-            p_str = f"{price:,} ر/سنة" if price else "قابل للتفاوض"
-            msg = (
-                f"✅ بدأ التفاوض!\n"
-                f"📍 {title}\n"
-                f"💰 {p_str}\n\n"
-                f"ابدأ بطرح أسئلتك أو عرضك مباشرة.\n"
-                f"رسائلك ستصل للطرف الآخر عبر مساعد."
-            )
-            wa_send(neg["lead_phone"],    msg)
-            time.sleep(0.5)
-            wa_send(neg["listing_phone"], msg)
-        else:
-            wa_send(phone, "✅ سُجّلت موافقتك. بانتظار موافقة الطرف الآخر...")
-        return True
-
-    wa_send(phone, "رد بـ *نعم* للموافقة أو *لا* للرفض.")
-    return True
-
-
-# ── مرحلة التفاوض النشط (active) — ناقل بحت ──────────────────────────────────
+# ── الناقل (active) ────────────────────────────────────────────────────────────
 
 def _handle_active(neg: dict, phone: str, text: str) -> bool:
-    """
-    البوت ناقل فقط:
-    • يُعيد إرسال كل رسالة للطرف الآخر بتسمية المُرسِل
-    • لا يفاوض ولا يقترح ولا يغلق الصفقة
-    • فقط كلمة الإلغاء تُنهي من طرف واحد
-    • الإغلاق كـ"متفق" يتم من الإدارة حصراً
-    """
-    neg_id   = neg["id"]
-    is_lead  = (phone == neg["lead_phone"])
-    my_role  = "مستأجر" if is_lead else "مالك"
-    other    = neg["listing_phone"] if is_lead else neg["lead_phone"]
-    t        = text.strip().lower()
+    neg_id  = neg["id"]
+    is_lead = (phone == neg["lead_phone"])
+    my_role = "مستأجر" if is_lead else "مالك"
+    other   = neg["listing_phone"] if is_lead else neg["lead_phone"]
 
-    # إلغاء: الطرف يخرج باختياره
-    if _has_word(text, CANCEL_WORDS):
+    # إلغاء بطلب صريح من الطرف
+    if _has_cancel(text):
         _close(neg_id, "cancelled")
         _append_log(neg_id, my_role, text)
         wa_send(phone, "تم إنهاء التفاوض. شكراً 🙏")
@@ -184,16 +122,14 @@ def _handle_active(neg: dict, phone: str, text: str) -> bool:
         wa_send(other, "أُنهي التفاوض من الطرف الآخر.")
         return True
 
-    # سجّل رسالة المُرسِل
+    # سجّل ثم أعد الإرسال للطرف الآخر
     _append_log(neg_id, my_role, text)
-
-    # أرسلها للطرف الآخر مع تسمية المُرسِل
     fwd = f"💬 *{my_role}:*\n{text}"
     time.sleep(0.5)
     wa_send(other, fwd)
     _append_log(neg_id, "relay", fwd)
 
-    print(f"[NEG #{neg_id}] relay {my_role} → other: {text[:60]}", flush=True)
+    print(f"[NEG #{neg_id}] {my_role} → other: {text[:60]}", flush=True)
     return True
 
 
@@ -204,14 +140,10 @@ def handle_negotiation_message(phone: str, text: str) -> bool:
         neg = _load_neg(phone)
         if not neg:
             return False
-        if neg["status"] == "pending":
-            return _handle_pending(neg, phone, text)
-        if neg["status"] == "active":
-            return _handle_active(neg, phone, text)
-    return False
+        return _handle_active(neg, phone, text)
 
 
-# ── بدء تفاوض جديد ────────────────────────────────────────────────────────────
+# ── بدء تفاوض — الإدارة هي من تقرر ─────────────────────────────────────────
 
 def start_negotiation(lead_id: int, listing_id: int,
                       lead_phone: str, listing_phone: str,
@@ -223,7 +155,7 @@ def start_negotiation(lead_id: int, listing_id: int,
         return {"ok": False, "error": "لا يمكن التفاوض مع نفس الرقم"}
 
     existing = _load_neg(lead_phone)
-    if existing and existing["listing_id"] == listing_id:
+    if existing and existing.get("listing_id") == listing_id:
         return {"ok": False, "error": "التفاوض جارٍ بالفعل", "neg_id": existing["id"]}
 
     conn = get_conn()
@@ -232,10 +164,9 @@ def start_negotiation(lead_id: int, listing_id: int,
             INSERT INTO sanad.masaed_negotiations
                 (lead_id, listing_id, lead_phone, listing_phone,
                  lead_name, listing_title, listing_city, listing_price,
-                 status, confirmations, expires_at)
+                 status, expires_at)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,
-                    'pending','{"lead":false,"listing":false}',
-                    NOW() + INTERVAL '24 hours')
+                    'active', NOW() + INTERVAL '7 days')
             RETURNING id
         """, (lead_id, listing_id, lead_phone, listing_phone,
               lead_name, listing_title, listing_city, listing_price))
@@ -243,24 +174,29 @@ def start_negotiation(lead_id: int, listing_id: int,
         conn.commit()
     conn.close()
 
-    price_str = f"{listing_price:,} ر/سنة" if listing_price else "سعر قابل للتفاوض"
-    city_str  = listing_city or "غير محددة"
-    name_str  = f" يا {lead_name}" if lead_name else ""
+    price_str = f"{listing_price:,} ر/سنة" if listing_price else "قابل للتفاوض"
+    city_str  = listing_city or ""
+    title_str = listing_title or "عقار للإيجار"
+    name_str  = f" {lead_name}" if lead_name else ""
 
+    # المستأجر: إبلاغ مباشر بدون استئذان
     wa_send(lead_phone,
-        f"مرحباً{name_str}! 🏠\n"
-        f"لديك عرض يناسب طلبك:\n"
-        f"📍 {city_str} — {listing_title or 'عقار للإيجار'}\n"
+        f"مرحباً{name_str} 🏠\n"
+        f"ربطك مساعد العقاري بعرض يناسب طلبك:\n"
+        f"📍 {title_str}" + (f" — {city_str}" if city_str else "") + f"\n"
         f"💰 {price_str}\n\n"
-        f"رد بـ *نعم* إذا أنت مهتم، أو *لا* للتخطي."
+        f"تواصل مباشرة — رسائلك تصل للمالك عبر مساعد."
     )
     time.sleep(0.5)
+
+    # المالك: إبلاغ مباشر بدون استئذان
     wa_send(listing_phone,
-        f"مرحباً! 🏠\n"
-        f"شخص مهتم بعقارك في {city_str}.\n"
-        f"سيُدار الحوار بينكما عبر مساعد بشكل سري.\n\n"
-        f"رد بـ *نعم* للبدء، أو *لا* للتخطي."
+        f"مرحباً 🏠\n"
+        f"ربطك مساعد العقاري بمستأجر مهتم بعقارك"
+        + (f" في {city_str}" if city_str else "") + f".\n"
+        f"💰 {price_str}\n\n"
+        f"تواصل مباشرة — رسائلك تصل للمستأجر عبر مساعد."
     )
 
-    print(f"[NEG] Pending #{neg_id}: {lead_phone} ↔ {listing_phone}", flush=True)
+    print(f"[NEG] Active #{neg_id}: {lead_phone} ↔ {listing_phone}", flush=True)
     return {"ok": True, "neg_id": neg_id}
