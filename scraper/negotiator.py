@@ -3,13 +3,20 @@
 مساعد المفاوض — وسيط بين المالك والمستأجر عبر واتساب
 المبدأ: البوت ناقل فقط، لا يفاوض ولا يقرر ولا يغلق صفقة بدون إذن الإدارة
 """
-import os, json, time
+import os, json, re, time
 from datetime import datetime, timezone
 from bot import get_conn, wa_send, _phone_lock
 
 CONFIRM_WORDS = {"نعم","أيوه","ايوه","اوك","ok","yes","موافق","أكيد","اكيد","يلا","تمام"}
 CANCEL_WORDS  = {"لا","كلا","لأ","لا شكرا","مو مهتم","لا يهمني","إلغاء","الغاء",
                  "cancel","stop","انهاء","إنهاء","خلاص","مو رايه"}
+
+def _words(text: str) -> set:
+    """Split Arabic/English text into whole words for exact matching."""
+    return set(re.split(r'[\s،,؟?!.،؛؟]+', text.strip().lower()))
+
+def _has_word(text: str, wordset: set) -> bool:
+    return bool(_words(text) & wordset)
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -115,7 +122,7 @@ def _handle_pending(neg: dict, phone: str, text: str) -> bool:
     confirmations = dict(neg["confirmations"])
     t             = text.strip().lower()
 
-    if any(w in t for w in CANCEL_WORDS):
+    if _has_word(text, CANCEL_WORDS):
         _close(neg_id, "cancelled")
         _append_log(neg_id, my_label, text)
         wa_send(phone, "تم الإلغاء. يمكنك التواصل معنا في أي وقت 🙏")
@@ -123,7 +130,7 @@ def _handle_pending(neg: dict, phone: str, text: str) -> bool:
         wa_send(other, "عذراً، أحد الطرفين اعتذر عن هذه الصفقة.")
         return True
 
-    if any(w in t for w in CONFIRM_WORDS):
+    if _has_word(text, CONFIRM_WORDS):
         confirmations[side] = True
         _update_neg(neg_id, confirmations=json.dumps(confirmations))
         _append_log(neg_id, my_label, text)
@@ -169,7 +176,7 @@ def _handle_active(neg: dict, phone: str, text: str) -> bool:
     t        = text.strip().lower()
 
     # إلغاء: الطرف يخرج باختياره
-    if any(w in t for w in CANCEL_WORDS):
+    if _has_word(text, CANCEL_WORDS):
         _close(neg_id, "cancelled")
         _append_log(neg_id, my_role, text)
         wa_send(phone, "تم إنهاء التفاوض. شكراً 🙏")
