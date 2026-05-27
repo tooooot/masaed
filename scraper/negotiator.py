@@ -136,7 +136,7 @@ def _handle_pending(neg: dict, phone: str, text: str) -> bool:
             p_str = f"{price:,} ر/سنة" if price else "قابل للتفاوض"
             msg = (
                 f"✅ بدأ التفاوض!\n"
-                f"📍 {title}" + (f" — {city}" if city else "") + f"\n"
+                f"📍 {title}\n"
                 f"💰 {p_str}\n\n"
                 f"ابدأ بطرح أسئلتك أو عرضك مباشرة.\n"
                 f"رسائلك ستصل للطرف الآخر عبر مساعد."

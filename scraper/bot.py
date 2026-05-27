@@ -393,7 +393,19 @@ def save_photo(reg_id: int, url: str):
     save_media(reg_id, url, "image")
 
 # ── Green API ─────────────────────────────────────────────────────────────────
+
+# Thread-local dry-run interceptor — set by /bot/test to prevent real WA sends
+_wa_test_local = threading.local()
+
 def wa_send(phone: str, text: str):
+    # Dry-run mode: capture message without sending
+    if getattr(_wa_test_local, 'active', False):
+        if not hasattr(_wa_test_local, 'log'):
+            _wa_test_local.log = []
+        _wa_test_local.log.append({"to": phone, "text": text})
+        print(f"[WA DRY-RUN] → {phone}: {text[:80]}", flush=True)
+        return
+
     if not GREEN_INSTANCE or not GREEN_TOKEN:
         print(f"[WA MOCK] → {phone}: {text[:80]}")
         return

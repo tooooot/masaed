@@ -693,8 +693,12 @@ def bot_webhook():
 
 @app.route("/bot/test", methods=["POST"])
 def bot_test():
-    """Test bot without WhatsApp — body: {phone, text, media_url?}"""
-    from bot import handle_message, wa_send
+    """
+    Dry-run test — NO real WhatsApp messages sent.
+    Body: {phone, text, media_url?}
+    Returns: {reply, wa_sent: [{to, text}, ...]}
+    """
+    from bot import handle_message, _wa_test_local
     from negotiator import handle_negotiation_message
     data      = request.get_json() or {}
     phone     = data.get("phone", "966500000000")
@@ -702,11 +706,24 @@ def bot_test():
     media_url = data.get("media_url") or None
     if not text and not media_url:
         text = "مرحبا"
-    # Same routing as webhook
-    if text and handle_negotiation_message(phone, text):
-        return jsonify({"reply": f"[negotiator handled — WA sent to {phone}]"})
-    reply = handle_message(phone, text or None, media_url)
-    return jsonify({"reply": reply})
+
+    # Enable dry-run: all wa_send calls are captured, nothing reaches real phones
+    _wa_test_local.active = True
+    _wa_test_local.log    = []
+    try:
+        reply = None
+        if text and handle_negotiation_message(phone, text):
+            reply = "[negotiator]"
+        else:
+            reply = handle_message(phone, text or None, media_url)
+        return jsonify({
+            "reply":    reply,
+            "wa_sent":  list(_wa_test_local.log),
+            "dry_run":  True,
+        })
+    finally:
+        _wa_test_local.active = False
+        _wa_test_local.log    = []
 
 
 @app.route("/bot/reset", methods=["POST"])

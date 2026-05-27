@@ -104,43 +104,42 @@ fi
 sleep 1
 
 # ══ 5: المستأجر يوافق ══
-step "5️⃣  المستأجر يرسل: \"نعم\" (قبول الدعوة)"
+show_wa(){ echo "$1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+wa=d.get('wa_sent',[])
+if wa:
+    for m in wa:
+        print(f'  📨 لو كان حقيقي → {m[\"to\"]}: {m[\"text\"][:80]}')
+else:
+    print('  (لا رسائل واتساب)')
+"; }
+
+step "5️⃣  المستأجر يرسل: \"نعم\" — DRY RUN (لن يصل لهاتفك)"
 R1=$(post "/bot/test" "{\"phone\":\"$TENANT\",\"text\":\"نعم\"}")
-echo "  نظام → المستأجر: $(echo $R1 | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("reply","[لا رد]"))')"
+show_wa "$R1"
 ok "سُجّلت موافقة المستأجر — انتظار المالك"
 sleep 1
 
-# ══ 6: المالك يوافق ══
-step "6️⃣  المالك يرسل: \"تمام\" (قبول الدعوة) → يبدأ التفاوض الرسمي"
+step "6️⃣  المالك يرسل: \"تمام\" — DRY RUN"
 R2=$(post "/bot/test" "{\"phone\":\"$OWNER\",\"text\":\"تمام\"}")
-echo "  نظام → المالك: $(echo $R2 | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("reply","[لا رد]"))')"
-ok "كلا الطرفين وافقا ✅ — التفاوض الرسمي بدأ!"
-echo ""
-msg "  ▶ رسالة تلقائية لكليهما:"
-echo "    ✅ بدأ التفاوض الرسمي!"
-echo "    📍 غرفة حي الجود — رابغ  💰 12,000 ر/سنة"
-echo "    تفضّل بطرح أسئلتك أو عرضك."
+show_wa "$R2"
+ok "كلا الطرفين وافقا ✅ — التفاوض الرسمي بدأ (dry run)"
 sleep 1
 
-# ══ 7: المستأجر يطلب تخفيضاً ══
-step "7️⃣  المستأجر يفاوض على السعر"
-echo "  [المستأجر]: السعر كثير، هل ممكن 10000 ريال؟"
+step "7️⃣  المستأجر: \"السعر كثير، هل ممكن 10000؟\" — DRY RUN"
 R3=$(post "/bot/test" "{\"phone\":\"$TENANT\",\"text\":\"السعر كثير، هل ممكن 10000 ريال؟\"}")
-echo "  المفاوض → المستأجر: $(echo $R3 | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("reply","[لا رد]"))')"
+show_wa "$R3"
 sleep 1
 
-# ══ 8: المالك يرد ══
-step "8️⃣  المالك يرد على طلب التخفيض"
-echo "  [المالك]: والله أقل شي 11000"
+step "8️⃣  المالك: \"والله أقل شي 11000\" — DRY RUN"
 R4=$(post "/bot/test" "{\"phone\":\"$OWNER\",\"text\":\"والله أقل شي 11000\"}")
-echo "  المفاوض → المالك: $(echo $R4 | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("reply","[لا رد]"))')"
+show_wa "$R4"
 sleep 1
 
-# ══ 9: المستأجر يقبل ══
-step "9️⃣  المستأجر يقبل العرض الأخير"
-echo "  [المستأجر]: حسناً موافق على 11000"
+step "9️⃣  المستأجر: \"حسناً موافق على 11000\" — DRY RUN"
 R5=$(post "/bot/test" "{\"phone\":\"$TENANT\",\"text\":\"حسناً موافق على 11000\"}")
-echo "  المفاوض → المستأجر: $(echo $R5 | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("reply","[لا رد]"))')"
+show_wa "$R5"
 sleep 1
 
 # ══ 10: الإدارة تغلق الصفقة ══
