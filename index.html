@@ -494,14 +494,14 @@ async function loadHome() {
     if(s.new>0){ showDot('bnd-leads'); showBadge('sb-leads',s.new,'green'); }
   } else { dot('sdot','stxt',false); }
 
-  const ss = await n8n('sessions',{status:'active',limit:3});
+  const ss = await sfetch('/negotiate/active');
   const el = document.getElementById('h-sessions');
-  const data = ss.data||[];
+  const data = (ss.negotiations||[]).filter(n=>n.status==='active'||n.status==='pending').slice(0,3);
   if(!data.length){
-    el.innerHTML = empty('💬','لا توجد جلسات نشطة','ستظهر هنا بعد إنشاء جلسة تفاوض');
+    el.innerHTML = empty('💬','لا توجد جلسات نشطة','ابدأ تفاوضاً من صفحة الطلبات');
     return;
   }
-  el.innerHTML = data.map(s=>sessionCard(s,true)).join('');
+  el.innerHTML = data.map(n=>negCard(n,true)).join('');
 }
 
 // ── LEADS ──
@@ -622,43 +622,71 @@ async function saveFill(id){
   else toast('❌ '+(r.error||'خطأ'));
 }
 
-// ── SESSIONS ──
+// ── SESSIONS (مساعد المفاوض) ──
 let sessF='active';
 async function loadSessions(){
   document.getElementById('sessions-list').innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
-  const d=await n8n('sessions',{status:sessF==='all'?undefined:sessF,limit:100});
-  const data=d.data||[];
+  const d = await sfetch('/negotiate/active');
+  let data = d.negotiations || [];
+  if(sessF==='active')      data=data.filter(n=>n.status==='active'||n.status==='pending');
+  else if(sessF==='closed') data=data.filter(n=>['agreed','cancelled','failed'].includes(n.status));
   const el=document.getElementById('sessions-list');
-  if(!data.length){el.innerHTML=empty('💬','لا توجد جلسات','تظهر هنا بعد إنشاء جلسة تفاوض');return;}
-  el.innerHTML=data.map(s=>sessionCard(s,false)).join('');
+  if(!data.length){el.innerHTML=empty('💬','لا توجد جلسات','ابدأ تفاوضاً من صفحة الطلبات ← عروض');return;}
+  el.innerHTML=data.map(n=>negCard(n,false)).join('');
 }
 function filterSess(s,el){
   document.querySelectorAll('#page-sessions .filter').forEach(c=>c.classList.remove('active'));
   el.classList.add('active'); sessF=s; loadSessions();
 }
-function sessionCard(s,compact){
+
+function negCard(n,compact){
+  const SM={
+    pending:  ['badge-pending','⏳ انتظار تأكيد'],
+    active:   ['badge-active', '💬 نشطة'],
+    agreed:   ['badge-approved','🎉 متفق عليها'],
+    cancelled:['badge-closed', '❌ ملغية'],
+    failed:   ['badge-closed', '❌ فشلت'],
+  };
+  const [bc,sl]=SM[n.status]||['badge-closed',n.status];
+  const isOpen=n.status==='active'||n.status==='pending';
+  const price=n.listing_price?n.listing_price.toLocaleString('ar')+' ر/سنة':'قابل للتفاوض';
+  const agreedLine=n.status==='agreed'&&n.agreed_price
+    ?`<div style="font-size:.75rem;color:var(--green-light);margin-bottom:8px;font-weight:700">✅ سعر الاتفاق: ${n.agreed_price.toLocaleString('ar')} ر/سنة</div>`:'';
   return `<div class="session-card">
   <div class="session-head">
-    <span class="session-id">جلسة #${s.id||'—'}</span>
-    <span class="badge badge-${s.status==='active'?'active':'closed'}">${s.status==='active'?'نشطة':'مغلقة'}</span>
+    <span class="session-id">تفاوض #${n.id}</span>
+    <span class="badge ${bc}">${sl}</span>
   </div>
+  <div style="font-size:.82rem;color:var(--text);margin-bottom:4px;font-weight:600">${esc(n.listing_title||'عقار')}</div>
+  <div style="font-size:.72rem;color:var(--muted);margin-bottom:8px">📍 ${esc(n.listing_city||'—')} · 💰 ${price}</div>
+  ${agreedLine}
   <div class="session-parties">
-    <div class="session-party"><div class="party-role">🔍 الباحث</div><div class="party-phone">${mask(s.requester_phone)}</div></div>
-    <div class="session-party"><div class="party-role">🏠 المالك</div><div class="party-phone">${mask(s.owner_phone)}</div></div>
+    <div class="session-party"><div class="party-role">🏠 المالك</div><div class="party-phone">${mask(n.listing_phone)}</div></div>
+    <div class="session-party"><div class="party-role">🔍 المستأجر</div><div class="party-phone">${mask(n.lead_phone)}</div></div>
   </div>
   <div class="session-foot">
-    <span>آخر نشاط: ${s.updated_at?relTime(s.updated_at):'—'}</span>
-    <span class="msg-badge">${s.message_count||0} رسالة</span>
-    ${!compact&&s.status==='active'?`<button class="btn btn-red btn-sm" style="margin-right:auto" onclick="closeSession('${s.id}',this)">إغلاق</button>`:''}
+    <span>${n.created_at?relTime(n.created_at):'—'}</span>
+    ${!compact&&isOpen?`<button class="btn btn-primary btn-sm" style="margin-right:auto" onclick="agreeNeg(${n.id},${n.listing_price||0},this)">✅ تم الاتفاق</button>`:''}
   </div>
 </div>`;
 }
-async function closeSession(id,btn){
-  if(!confirm('إغلاق هذه الجلسة؟'))return;
-  btn.disabled=true;
-  const d=await n8n('session-close',{id});
-  toast(d.success?'تم الإغلاق':'❌ '+d.error);
-  if(d.success)loadSessions(); else btn.disabled=false;
+
+async function agreeNeg(negId,suggestedPrice,btn){
+  const raw=prompt(`السعر المتفق عليه (ر/سنة)\nالمقترح: ${suggestedPrice?suggestedPrice.toLocaleString('ar'):'-'}`,suggestedPrice||'');
+  if(raw===null)return;
+  const price=parseInt(raw)||null;
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  const d=await sfetch(`/negotiate/${negId}/agree`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({agreed_price:price})
+  });
+  if(d.ok){
+    toast('🎉 تم الاتفاق — أُرسلت التهاني للطرفين!',4000);
+    loadSessions(); loadHome();
+  } else {
+    btn.disabled=false; btn.textContent='✅ تم الاتفاق';
+    toast('❌ '+(d.error||'خطأ'));
+  }
 }
 
 // ── MATCHES ──

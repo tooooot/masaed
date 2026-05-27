@@ -555,13 +555,13 @@ def negotiate_start():
 
 @app.route("/negotiate/active")
 def negotiate_active():
-    """List active negotiations."""
+    """List all negotiations (any status)."""
     conn = get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, lead_phone, listing_phone, listing_title,
-                       listing_city, listing_price, status, created_at
+                       listing_city, listing_price, status, agreed_price, created_at
                 FROM sanad.masaed_negotiations
                 ORDER BY created_at DESC LIMIT 50
             """)
@@ -574,6 +574,54 @@ def negotiate_active():
         return jsonify({"negotiations": [], "error": str(e)})
     finally:
         conn.close()
+
+
+@app.route("/negotiate/<int:neg_id>/agree", methods=["POST"])
+def negotiate_agree(neg_id):
+    """Admin manually closes a negotiation as agreed. Body: {agreed_price?}"""
+    from negotiator import _close
+    from bot import wa_send
+    data = request.get_json() or {}
+    agreed_price = data.get("agreed_price")
+    if agreed_price is not None:
+        try:
+            agreed_price = int(agreed_price)
+        except (ValueError, TypeError):
+            agreed_price = None
+
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, lead_phone, listing_phone, listing_title, listing_price, status
+            FROM sanad.masaed_negotiations WHERE id = %s
+        """, (neg_id,))
+        row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "negotiation not found"}), 404
+
+    _, lead_phone, listing_phone, listing_title, listing_price, status = row
+
+    if status in ('agreed', 'cancelled', 'failed'):
+        return jsonify({"error": f"التفاوض مُغلق بالفعل ({status})"}), 400
+
+    price = agreed_price if agreed_price is not None else listing_price
+    _close(neg_id, "agreed", price)
+
+    p_str     = f" بسعر {price:,} ر/سنة" if price else ""
+    title_str = listing_title or "العقار"
+    msg = (
+        f"🎉 تم الاتفاق{p_str}!\n"
+        f"العقار: {title_str}\n\n"
+        f"تهانينا! سيتواصل معك الطرف الآخر لإتمام الإجراءات.\n"
+        f"شكراً لاستخدامكم مساعد العقاري 🏠"
+    )
+    wa_send(lead_phone,    msg)
+    wa_send(listing_phone, msg)
+
+    print(f"[AGREE] Admin closed neg #{neg_id} as agreed, price={price}", flush=True)
+    return jsonify({"ok": True, "neg_id": neg_id, "agreed_price": price})
 
 
 @app.route("/stats")
