@@ -1,18 +1,42 @@
 #!/usr/bin/env python3
 """
-مساعد المفاوض — وسيط بين المالك والمستأجر عبر واتساب
+مساعد المفاوض — وكيل عقاري ذكي يتحدث مع كل طرف بشكل مستقل
 المبدأ:
-  - الإدارة هي من تقرر بدء التفاوض من لوحة التحكم (ضغط الزر = الموافقة)
-  - البوت يُبلّغ الطرفين ويبدأ فوراً — لا يستأذنهم
-  - البوت ناقل فقط، لا يفاوض ولا يقرر ولا يغلق صفقة
-  - الإغلاق يتم من الإدارة حصراً عبر /negotiate/<id>/agree
+  - كل طرف يتحدث مع "مساعد" مباشرة، لا مع الطرف الآخر
+  - مساعد يدير المعلومات بين الطرفين بذكاء وبقرار
+  - الإدارة هي من تبدأ التفاوض وتغلق الصفقة
 """
 import os, json, re, time
 from datetime import datetime, timezone
-from bot import get_conn, wa_send, _phone_lock
+from bot import get_conn, wa_send, _phone_lock, ANTHROPIC_KEY
 
-CANCEL_WORDS = {"لا","كلا","لأ","لا شكرا","مو مهتم","لا يهمني","إلغاء","الغاء",
-                "cancel","stop","انهاء","إنهاء","خلاص","مو رايه"}
+CANCEL_WORDS = {"لا شكرا","مو مهتم","لا يهمني","إلغاء","الغاء",
+                "cancel","stop","انهاء","إنهاء","مو رايه"}
+
+DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
+
+SYSTEM_PROMPT = """\
+أنت "مساعد العقاري" — وكيل عقاري محترف.
+تتحدث مع طرف واحد في كل مرة: إما المالك أو المستأجر.
+لديك سجل كامل بمحادثتك مع الطرفين.
+
+مهمتك:
+- تحدّث بشكل طبيعي مع من يكلمك: أجب، اقترح، وضّح
+- انقل المعلومات المهمة للطرف الآخر متى رأيت ذلك مناسباً (ليس كل رسالة)
+- اقترح تسويات وسطى عند اختلاف السعر
+- لا تكشف رقم هاتف أي طرف
+
+قواعد صارمة:
+- لا تقل أبداً "تم الاتفاق" أو ما يشير لإغلاق الصفقة — هذا قرار الإدارة فقط
+- إذا وصل الطرفان لاتفاق واضح، قل: "يبدو أنكما قريبان من الاتفاق، سأُبلغ الإدارة لإتمام الصفقة"
+
+أعد JSON فقط — لا نص خارجه:
+{
+  "reply": "ردّك على من أرسل الرسالة الآن",
+  "notify_other": "رسالة تُرسل للطرف الآخر إن لزم — null إذا لا حاجة"
+}
+"""
+
 
 def _words(text: str) -> set:
     return set(re.split(r'[\s،,؟?!.،؛؟]+', text.strip().lower()))
@@ -105,7 +129,91 @@ def _close(neg_id: int, status: str, agreed_price: int = None):
     _update_neg(neg_id, status=status, agreed_price=agreed_price)
 
 
-# ── الناقل (active) ────────────────────────────────────────────────────────────
+# ── AI agent ──────────────────────────────────────────────────────────────────
+
+def _build_messages(log: list, current_role: str, current_text: str, context: str) -> list:
+    """Build AI message list from full chat log."""
+    system_with_ctx = SYSTEM_PROMPT + f"\n\nسياق الصفقة:\n{context}\nالمتحدث الآن: {current_role}"
+
+    # Build conversation history
+    history = []
+    for entry in log[-20:]:
+        role = entry.get("role", "")
+        text = entry.get("text", "")
+        if role in ("مالك", "مستأجر"):
+            history.append({"role": "user", "content": f"[{role}]: {text}"})
+        elif role.startswith("bot"):
+            history.append({"role": "assistant", "content": text})
+
+    # Add current message
+    history.append({"role": "user", "content": f"[{current_role}]: {current_text}"})
+
+    # Ensure valid alternation (first must be user)
+    if history and history[0]["role"] == "assistant":
+        history = history[1:]
+
+    return system_with_ctx, history
+
+
+def _parse_response(raw: str) -> dict | None:
+    m = re.search(r'\{.*\}', raw, re.DOTALL)
+    if m:
+        try:
+            d = json.loads(m.group())
+            return {
+                "reply":        str(d.get("reply") or "").strip(),
+                "notify_other": str(d.get("notify_other") or "").strip() or None,
+            }
+        except Exception:
+            pass
+    return None
+
+
+def _ai_respond(neg: dict, my_role: str, text: str) -> dict:
+    title = neg.get("listing_title") or "العقار"
+    city  = neg.get("listing_city") or ""
+    price = neg.get("listing_price")
+    p_str = f"{price:,} ر/سنة" if price else "قابل للتفاوض"
+    context = f"العقار: {title}" + (f" — {city}" if city else "") + f"\nالسعر: {p_str}"
+
+    system, messages = _build_messages(neg["chat_log"], my_role, text, context)
+
+    # Anthropic
+    if ANTHROPIC_KEY:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+            resp = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=300, system=system, messages=messages
+            )
+            result = _parse_response(resp.content[0].text.strip())
+            if result and result["reply"]:
+                return result
+        except Exception as e:
+            print(f"[NEG] Anthropic: {e}", flush=True)
+
+    # DeepSeek fallback
+    if DEEPSEEK_KEY:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com/v1")
+            msgs = [{"role": "system", "content": system}] + messages
+            resp = client.chat.completions.create(
+                model="deepseek-chat", messages=msgs,
+                response_format={"type": "json_object"}, max_tokens=300
+            )
+            result = _parse_response(resp.choices[0].message.content.strip())
+            if result and result["reply"]:
+                return result
+        except Exception as e:
+            print(f"[NEG] DeepSeek: {e}", flush=True)
+
+    # Fallback: plain acknowledgment, hold message
+    return {"reply": "وصلت رسالتك، سأتابع معك قريباً.", "notify_other": None}
+
+
+# ── معالج الرسائل النشطة ───────────────────────────────────────────────────────
 
 def _handle_active(neg: dict, phone: str, text: str) -> bool:
     neg_id  = neg["id"]
@@ -113,7 +221,7 @@ def _handle_active(neg: dict, phone: str, text: str) -> bool:
     my_role = "مستأجر" if is_lead else "مالك"
     other   = neg["listing_phone"] if is_lead else neg["lead_phone"]
 
-    # إلغاء بطلب صريح من الطرف
+    # إلغاء صريح
     if _has_cancel(text):
         _close(neg_id, "cancelled")
         _append_log(neg_id, my_role, text)
@@ -122,14 +230,24 @@ def _handle_active(neg: dict, phone: str, text: str) -> bool:
         wa_send(other, "أُنهي التفاوض من الطرف الآخر.")
         return True
 
-    # سجّل ثم أعد الإرسال للطرف الآخر
+    # سجّل رسالة المرسل
     _append_log(neg_id, my_role, text)
-    fwd = f"💬 *{my_role}:*\n{text}"
-    time.sleep(0.5)
-    wa_send(other, fwd)
-    _append_log(neg_id, "relay", fwd)
 
-    print(f"[NEG #{neg_id}] {my_role} → other: {text[:60]}", flush=True)
+    # مساعد يرد
+    result = _ai_respond(neg, my_role, text)
+
+    # الرد على المرسل
+    if result["reply"]:
+        _append_log(neg_id, f"bot→{my_role}", result["reply"])
+        wa_send(phone, result["reply"])
+
+    # إبلاغ الطرف الآخر إن قرر المساعد ذلك
+    if result["notify_other"]:
+        time.sleep(0.5)
+        _append_log(neg_id, f"bot→{'مالك' if is_lead else 'مستأجر'}", result["notify_other"])
+        wa_send(other, result["notify_other"])
+
+    print(f"[NEG #{neg_id}] {my_role}: {text[:50]} → reply:{bool(result['reply'])} notify:{bool(result['notify_other'])}", flush=True)
     return True
 
 
@@ -143,7 +261,7 @@ def handle_negotiation_message(phone: str, text: str) -> bool:
         return _handle_active(neg, phone, text)
 
 
-# ── بدء تفاوض — الإدارة هي من تقرر ─────────────────────────────────────────
+# ── بدء تفاوض — الإدارة هي من تقرر ──────────────────────────────────────────
 
 def start_negotiation(lead_id: int, listing_id: int,
                       lead_phone: str, listing_phone: str,
@@ -165,8 +283,7 @@ def start_negotiation(lead_id: int, listing_id: int,
                 (lead_id, listing_id, lead_phone, listing_phone,
                  lead_name, listing_title, listing_city, listing_price,
                  status, expires_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,
-                    'active', NOW() + INTERVAL '7 days')
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s, 'active', NOW() + INTERVAL '7 days')
             RETURNING id
         """, (lead_id, listing_id, lead_phone, listing_phone,
               lead_name, listing_title, listing_city, listing_price))
@@ -179,23 +296,20 @@ def start_negotiation(lead_id: int, listing_id: int,
     title_str = listing_title or "عقار للإيجار"
     name_str  = f" {lead_name}" if lead_name else ""
 
-    # المستأجر: إبلاغ مباشر بدون استئذان
     wa_send(lead_phone,
-        f"مرحباً{name_str} 🏠\n"
-        f"ربطك مساعد العقاري بعرض يناسب طلبك:\n"
+        f"مرحباً{name_str}، أنا مساعد العقاري 🏠\n"
+        f"ربطتك بعرض يناسب طلبك:\n"
         f"📍 {title_str}" + (f" — {city_str}" if city_str else "") + f"\n"
         f"💰 {price_str}\n\n"
-        f"تواصل مباشرة — رسائلك تصل للمالك عبر مساعد."
+        f"تحدّث معي مباشرة — أنا هنا أساعدك في التفاوض."
     )
     time.sleep(0.5)
-
-    # المالك: إبلاغ مباشر بدون استئذان
     wa_send(listing_phone,
-        f"مرحباً 🏠\n"
-        f"ربطك مساعد العقاري بمستأجر مهتم بعقارك"
+        f"مرحباً، أنا مساعد العقاري 🏠\n"
+        f"لديك مستأجر مهتم بعقارك"
         + (f" في {city_str}" if city_str else "") + f".\n"
         f"💰 {price_str}\n\n"
-        f"تواصل مباشرة — رسائلك تصل للمستأجر عبر مساعد."
+        f"تحدّث معي مباشرة — أنا هنا أساعدك في التفاوض."
     )
 
     print(f"[NEG] Active #{neg_id}: {lead_phone} ↔ {listing_phone}", flush=True)
