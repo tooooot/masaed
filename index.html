@@ -792,14 +792,16 @@ async function loadMatch(leadId) {
     el.innerHTML = empty('🏠', 'لا توجد عروض بعد', 'اضغط "سحب عروض" لجلب إعلانات الملاك من حراج');
     return;
   }
+  const currentLeadId = leadId;
   el.innerHTML = `
 <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px;">
   بحثت في ${d.total_searched} عرض — أفضل ${matches.length} نتيجة:
 </div>
 ` + matches.map((m, i) => {
-    const sc = m.score || 0;
+    const sc  = m.score || 0;
     const cls = sc >= 60 ? 'hi' : sc >= 35 ? 'mid' : 'lo';
     const medal = ['🥇','🥈','🥉','4️⃣','5️⃣'][i] || '';
+    const canNeg = !m.phone_hidden && m.phone;
     return `<div class="match-card">
   <div class="match-top">
     <div class="score-ring ${cls}">${sc}%</div>
@@ -812,18 +814,50 @@ async function loadMatch(leadId) {
         ${m.property_type ? `<span class="match-chip">${esc(m.property_type)}</span>` : ''}
         ${m.phone_hidden ? `<span class="match-chip">🔒 رقم مخفي</span>` : `<span class="match-chip green">📱 ${m.phone||''}</span>`}
       </div>
-      <div class="match-reason">${esc(m.reason||'')}</div>
+      <div class="match-reason" style="color:var(--green-light);margin-top:4px;">
+        ${m.reason ? `✅ ${esc(m.reason)}` : ''}
+      </div>
+      ${m.missing ? `<div class="match-reason" style="color:var(--muted);margin-top:2px;">
+        ⚠️ ${esc(m.missing)}
+      </div>` : ''}
     </div>
   </div>
-  <div class="match-actions">
-    ${m.url ? `<a class="btn btn-ghost btn-sm" href="${esc(m.url)}" target="_blank">🔗 فتح الإعلان</a>` : ''}
-    ${!m.phone_hidden && m.phone ? `
-      <a class="btn btn-wa btn-sm" href="https://wa.me/${m.phone}?text=${encodeURIComponent('السلام عليكم، رأيت إعلانك في حراج وأود الاستفسار عن الوحدة المعروضة للإيجار.')}" target="_blank">💬 راسل المالك</a>
-      <button class="btn btn-blue btn-sm" onclick="markListingContacted(${m.id},this)">✓ تواصلت</button>
+  <div class="match-actions" style="margin-top:10px;">
+    ${m.url ? `<a class="btn btn-ghost btn-sm" href="${esc(m.url)}" target="_blank">🔗 الإعلان</a>` : ''}
+    ${canNeg ? `
+      <button class="btn btn-primary btn-sm" id="neg-btn-${m.id}"
+        onclick="startNegotiation(${currentLeadId},${m.id},this)">
+        🤝 ابدأ التفاوض
+      </button>
     ` : `<button class="btn btn-yellow btn-sm" onclick="window.open('${esc(m.url||'')}','_blank')">📱 استخرج الرقم</button>`}
   </div>
 </div>`;
   }).join('');
+}
+
+async function startNegotiation(leadId, listingId, btn) {
+  btn.disabled = true;
+  btn.textContent = '⏳ جارٍ الإرسال...';
+  try {
+    const d = await sfetch('/negotiate/start', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({lead_id: leadId, listing_id: listingId})
+    });
+    if (d.ok) {
+      btn.textContent = '✅ بدأ التفاوض';
+      btn.className = 'btn btn-ghost btn-sm';
+      toast('🤝 تم إرسال رسائل التفاوض للطرفين!', 4000);
+    } else {
+      btn.disabled = false;
+      btn.textContent = '🤝 ابدأ التفاوض';
+      toast('⚠️ ' + (d.error || 'خطأ في بدء التفاوض'));
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '🤝 ابدأ التفاوض';
+    toast('⚠️ تعذّر الاتصال بالسيرفر');
+  }
 }
 
 async function scrapeListings(btn, city) {

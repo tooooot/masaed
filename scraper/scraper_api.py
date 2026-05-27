@@ -408,10 +408,15 @@ def _extract_type(text: str):
     return extract_type(text)
 
 def score_match(lead: dict, listing: dict) -> tuple:
-    score = 0
+    """Returns (score, reasons_str, missing_str)."""
+    score   = 0
     reasons = []
+    missing = []
 
-    # ── City match (40 pts) ──────────────────────────────────────────────────
+    full_lead    = (lead.get('title','') + ' ' + (lead.get('body') or ''))[:600]
+    full_listing = (listing.get('title','') + ' ' + (listing.get('body') or ''))[:600]
+
+    # ── City (40 pts) ─────────────────────────────────────────────────────────
     lc = (lead.get('city') or '').strip()
     rc = (listing.get('city') or '').strip()
     if lc and rc:
@@ -419,11 +424,13 @@ def score_match(lead: dict, listing: dict) -> tuple:
             score += 40; reasons.append(f"نفس المدينة ({rc})")
         elif lc in rc or rc in lc:
             score += 20; reasons.append(f"مدينة قريبة")
+            missing.append(f"المدينة غير متطابقة تماماً (−20)")
+        else:
+            missing.append(f"مدينة مختلفة: الطلب {lc} / العرض {rc} (−40)")
+    elif not rc:
+        missing.append("المدينة غير محددة في العرض (−40)")
 
-    full_lead    = (lead.get('title','') + ' ' + (lead.get('body') or ''))[:600]
-    full_listing = (listing.get('title','') + ' ' + (listing.get('body') or ''))[:600]
-
-    # ── Rooms match (25 pts) ─────────────────────────────────────────────────
+    # ── Rooms (25 pts) ────────────────────────────────────────────────────────
     lr = _extract_rooms(full_lead)
     rr = listing.get('rooms') or _extract_rooms(full_listing)
     if lr and rr:
@@ -431,34 +438,48 @@ def score_match(lead: dict, listing: dict) -> tuple:
             score += 25; reasons.append(f"{rr} غرف متطابقة")
         elif abs(lr - rr) == 1:
             score += 10; reasons.append(f"غرف قريبة ({rr}±1)")
+            missing.append(f"فارق غرفة واحدة: الطلب {lr} / العرض {rr} (−15)")
+        else:
+            missing.append(f"فارق كبير في الغرف: الطلب {lr} / العرض {rr} (−25)")
+    elif not rr:
+        missing.append("عدد الغرف غير محدد في العرض (−25)")
 
-    # ── Property type (15 pts) ───────────────────────────────────────────────
+    # ── Property type (15 pts) ────────────────────────────────────────────────
     lt = _extract_type(full_lead)
     rt = listing.get('property_type') or _extract_type(full_listing)
-    if lt and rt and lt == rt:
-        score += 15; reasons.append(f"نوع العقار: {rt}")
+    if lt and rt:
+        if lt == rt:
+            score += 15; reasons.append(f"نوع العقار: {rt}")
+        else:
+            missing.append(f"نوع مختلف: الطلب {lt} / العرض {rt} (−15)")
+    elif lt and not rt:
+        missing.append(f"نوع العقار غير محدد في العرض (−15)")
 
-    # ── Budget match (20 pts) ────────────────────────────────────────────────
+    # ── Budget (20 pts) ───────────────────────────────────────────────────────
     lb = _extract_price(full_lead)
     rp = listing.get('price') or _extract_price(full_listing)
     if lb and rp:
         if rp <= lb:
             score += 20; reasons.append(f"السعر مناسب ({rp:,} ≤ {lb:,})")
         elif rp <= lb * 1.15:
-            score += 8; reasons.append(f"السعر قريب ({rp:,})")
+            score += 8;  reasons.append(f"السعر قريب ({rp:,})")
+            missing.append(f"السعر أعلى قليلاً من الميزانية ({rp:,} > {lb:,}) (−12)")
+        else:
+            missing.append(f"السعر أعلى من الميزانية ({rp:,} > {lb:,}) (−20)")
+    elif not rp:
+        missing.append("السعر غير محدد في العرض (−20)")
 
-    reason_str = ' • '.join(reasons) if reasons else 'تطابق جغرافي'
-    return min(score, 100), reason_str
+    reason_str  = ' • '.join(reasons) if reasons else 'تطابق جغرافي'
+    missing_str = ' • '.join(missing) if missing else ''
+    return min(score, 100), reason_str, missing_str
 
 
 @app.route("/match/<int:lead_id>")
 def match_lead(lead_id):
     conn = get_conn()
-
-    # Load lead
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT id, title, body, city, phone, status
+            SELECT id, title, body, city, phone, phone_hidden, status
             FROM sanad.masaed_leads WHERE id = %s
         """, (lead_id,))
         cols = [d[0] for d in cur.description]
@@ -466,41 +487,93 @@ def match_lead(lead_id):
     if not row:
         conn.close()
         return jsonify({"error": "lead not found"}), 404
-
     lead = dict(zip(cols, row))
 
-    # Load candidate listings (same city preferred, all active)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, title, body, city, property_type, rooms, price,
                    phone, phone_hidden, url, status, scraped_at
             FROM sanad.masaed_listings
             WHERE status = 'active'
-            ORDER BY
-                CASE WHEN city = %s THEN 0 ELSE 1 END,
-                scraped_at DESC
+            ORDER BY CASE WHEN city = %s THEN 0 ELSE 1 END, scraped_at DESC
             LIMIT 200
         """, (lead.get('city') or '',))
         cols = [d[0] for d in cur.description]
         listings = [dict(zip(cols, r)) for r in cur.fetchall()]
-
     conn.close()
 
-    # Score and rank
     scored = []
     for lst in listings:
         if lst.get("scraped_at"): lst["scraped_at"] = lst["scraped_at"].isoformat()
-        sc, reason = score_match(lead, lst)
-        scored.append({**lst, "score": sc, "reason": reason})
+        sc, reason, missing = score_match(lead, lst)
+        scored.append({**lst, "score": sc, "reason": reason, "missing": missing})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    top5 = scored[:5]
+    return jsonify({"lead": lead, "matches": scored[:5], "total_searched": len(listings)})
 
-    return jsonify({
-        "lead": lead,
-        "matches": top5,
-        "total_searched": len(listings)
-    })
+
+@app.route("/negotiate/start", methods=["POST"])
+def negotiate_start():
+    """Start negotiation between a lead and a listing."""
+    from negotiator import start_negotiation, ensure_table
+    ensure_table()
+    data       = request.get_json() or {}
+    lead_id    = data.get("lead_id")
+    listing_id = data.get("listing_id")
+    if not lead_id or not listing_id:
+        return jsonify({"error": "lead_id and listing_id required"}), 400
+
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, phone, title, city FROM sanad.masaed_leads WHERE id=%s", (lead_id,))
+        lead_row = cur.fetchone()
+        cur.execute("SELECT id, phone, phone_hidden, title, city, price FROM sanad.masaed_listings WHERE id=%s", (listing_id,))
+        lst_row  = cur.fetchone()
+    conn.close()
+
+    if not lead_row or not lst_row:
+        return jsonify({"error": "lead or listing not found"}), 404
+
+    lead_phone    = (lead_row[1] or "").replace("+","").replace(" ","")
+    listing_phone = (lst_row[1] or "").replace("+","").replace(" ","")
+
+    if not lead_phone or lst_row[2]:  # phone_hidden
+        return jsonify({"error": "رقم أحد الطرفين غير متاح"}), 400
+
+    result = start_negotiation(
+        lead_id    = lead_id,
+        listing_id = listing_id,
+        lead_phone    = lead_phone,
+        listing_phone = listing_phone,
+        lead_name     = None,
+        listing_title = lst_row[3],
+        listing_city  = lst_row[4],
+        listing_price = lst_row[5],
+    )
+    return jsonify(result)
+
+
+@app.route("/negotiate/active")
+def negotiate_active():
+    """List active negotiations."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, lead_phone, listing_phone, listing_title,
+                       listing_city, listing_price, status, created_at
+                FROM sanad.masaed_negotiations
+                ORDER BY created_at DESC LIMIT 50
+            """)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        for r in rows:
+            if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
+        return jsonify({"negotiations": rows})
+    except Exception as e:
+        return jsonify({"negotiations": [], "error": str(e)})
+    finally:
+        conn.close()
 
 
 @app.route("/stats")
@@ -549,24 +622,33 @@ def bot_webhook():
     if not phone:
         return jsonify({"ok": True})
     try:
-        reply = handle_message(phone, text, media_url)
-        if reply:
-            wa_send(phone, reply)
+        # Route: negotiation takes priority over registration bot
+        from negotiator import handle_negotiation_message
+        if text and handle_negotiation_message(phone, text):
+            pass  # handled by negotiator
+        else:
+            reply = handle_message(phone, text, media_url)
+            if reply:
+                wa_send(phone, reply)
     except Exception as e:
-        print(f"[BOT ERROR] {e}")
+        print(f"[BOT ERROR] {e}", flush=True)
     return jsonify({"ok": True})
 
 
 @app.route("/bot/test", methods=["POST"])
 def bot_test():
     """Test bot without WhatsApp — body: {phone, text, media_url?}"""
-    from bot import handle_message
+    from bot import handle_message, wa_send
+    from negotiator import handle_negotiation_message
     data      = request.get_json() or {}
     phone     = data.get("phone", "966500000000")
     text      = data.get("text", "") or ""
     media_url = data.get("media_url") or None
     if not text and not media_url:
         text = "مرحبا"
+    # Same routing as webhook
+    if text and handle_negotiation_message(phone, text):
+        return jsonify({"reply": f"[negotiator handled — WA sent to {phone}]"})
     reply = handle_message(phone, text or None, media_url)
     return jsonify({"reply": reply})
 
