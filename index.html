@@ -51,6 +51,15 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
 .bn-dot{position:absolute;top:8px;right:calc(50% - 14px);width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid var(--surface);display:none;}
 .bn-dot.show{display:block;}
 
+/* ── Chat Bubbles ── */
+.chat-log{display:flex;flex-direction:column;gap:6px;padding:10px 0;}
+.chat-msg{max-width:80%;padding:8px 12px;border-radius:12px;font-size:.78rem;line-height:1.5;word-break:break-word;}
+.chat-msg.tenant{background:#2ea04320;border:1px solid #2ea04340;align-self:flex-start;border-radius:4px 12px 12px 12px;}
+.chat-msg.owner{background:#58a6ff20;border:1px solid #58a6ff40;align-self:flex-end;text-align:right;border-radius:12px 4px 12px 12px;}
+.chat-msg.bot{background:var(--card);border:1px solid var(--border);align-self:center;text-align:center;font-size:.72rem;color:var(--muted);max-width:90%;}
+.chat-role{font-size:.6rem;font-weight:700;color:var(--muted);margin-bottom:2px;}
+.chat-day{text-align:center;font-size:.62rem;color:var(--subtle);margin:8px 0 4px;}
+
 /* ── Stats Grid ── */
 .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;}
 .stat{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px 14px;position:relative;overflow:hidden;}
@@ -441,6 +450,19 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
   </div>
 </div>
 
+<!-- ── Chat Log Modal ── -->
+<div class="modal-overlay hidden" id="chatModal" onclick="closeChatModal(event)">
+  <div class="match-panel" onclick="event.stopPropagation()" style="max-height:85vh">
+    <div class="match-panel-head">
+      <span style="font-size:1.2rem">💬</span>
+      <span class="match-panel-title" id="chatModalTitle">المحادثة</span>
+      <button class="btn btn-ghost btn-sm" onclick="closeChatModal()">✕</button>
+    </div>
+    <div class="match-panel-body" id="chatBody" style="padding:0 12px 12px;overflow-y:auto"></div>
+    <div id="chatFooter" style="padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -680,7 +702,7 @@ function negCard(n,compact){
     ?Math.round((n.lead_max_price+n.owner_min_price)/2/500)*500
     :(n.listing_price||0);
 
-  return `<div class="session-card" style="${borderStyle}">
+  return `<div class="session-card" style="${borderStyle}cursor:pointer" onclick="openChat(${n.id})">
   <div class="session-head">
     <span class="session-id">تفاوض #${n.id}</span>
     ${needsAdmin?`<span style="background:var(--yellow);color:#000;font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:10px">🔔 يحتاج قرار</span>`:`<span class="badge ${bc}">${sl}</span>`}
@@ -696,9 +718,9 @@ function negCard(n,compact){
     <span>${n.created_at?relTime(n.created_at):'—'}</span>
     ${!compact&&isOpen?`
       <button class="btn btn-primary btn-sm" style="margin-right:auto"
-        onclick="agreeNeg(${n.id},${suggestedMid},this)">✅ تم الاتفاق</button>
+        onclick="event.stopPropagation();agreeNeg(${n.id},${suggestedMid},this)">✅ تم الاتفاق</button>
       ${needsAdmin?`<button class="btn btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
-        onclick="dismissNeg(${n.id},this)">تجاهل</button>`:''}
+        onclick="event.stopPropagation();dismissNeg(${n.id},this)">تجاهل</button>`:''}
     `:''}
   </div>
 </div>`;
@@ -956,6 +978,92 @@ function closeMatchModal(event) {
 // ── Desktop sidebar ──
 if(window.innerWidth>=768){
   document.getElementById('sidebar').style.display='flex';
+}
+
+// ── Chat Modal ──
+async function openChat(negId){
+  document.getElementById('chatModal').classList.remove('hidden');
+  document.getElementById('chatBody').innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  document.getElementById('chatFooter').innerHTML='';
+
+  const d = await sfetch(`/negotiate/${negId}/log`);
+  if(d.error){ document.getElementById('chatBody').innerHTML=`<p style="color:var(--red);padding:16px">${d.error}</p>`; return; }
+
+  const title = d.listing_title||'العقار';
+  const city  = d.listing_city  ? ` — ${d.listing_city}` : '';
+  document.getElementById('chatModalTitle').textContent=`${title}${city}`;
+
+  // بناء فقاعات المحادثة
+  const log = d.chat_log||[];
+  let html='<div class="chat-log">';
+  let lastDay='';
+  for(const e of log){
+    const role=e.role||'';
+    const txt =(e.text||'').replace(/\n/g,'<br>');
+    const ts  =e.ts?new Date(e.ts):null;
+    const day =ts?ts.toLocaleDateString('ar-SA',{day:'numeric',month:'short'}):'';
+    if(day&&day!==lastDay){ html+=`<div class="chat-day">${day}</div>`; lastDay=day; }
+    const time=ts?ts.toLocaleTimeString('ar',{hour:'2-digit',minute:'2-digit'}):'';
+
+    if(role.startsWith('bot')){
+      html+=`<div class="chat-msg bot"><span style="opacity:.6">🤖</span> ${txt} <span style="opacity:.4;font-size:.6rem">${time}</span></div>`;
+    } else if(role==='مستأجر'){
+      html+=`<div class="chat-msg tenant"><div class="chat-role">👤 مستأجر ${time}</div>${txt}</div>`;
+    } else if(role==='مالك'){
+      html+=`<div class="chat-msg owner"><div class="chat-role">🏠 مالك ${time}</div>${txt}</div>`;
+    }
+  }
+  html+='</div>';
+  document.getElementById('chatBody').innerHTML=html;
+  // تمرير للأسفل
+  setTimeout(()=>{ const b=document.getElementById('chatBody'); b.scrollTop=b.scrollHeight; },50);
+
+  // أزرار الفوتر
+  const isOpen=d.status==='active'||d.status==='pending';
+  if(!isOpen){ document.getElementById('chatFooter').innerHTML=`<span style="color:var(--muted);font-size:.75rem;padding:4px">التفاوض مُغلق — ${d.status}</span>`; return; }
+
+  const lead  = d.lead_max_price;
+  const owner = d.owner_min_price;
+  const mid   = (lead&&owner) ? Math.round((lead+owner)/2/500)*500 : null;
+  const sug   = d.proposed_price||mid||d.listing_price||0;
+
+  let footer='';
+  if(d.proposed_price){
+    footer+=`<div style="font-size:.72rem;color:var(--yellow);padding:4px 0">
+      💡 اقتراح قائم: ${d.proposed_price.toLocaleString('ar')} ر/سنة
+      · مستأجر: ${d.lead_accepted?'✅':'⏳'} · مالك: ${d.owner_accepted?'✅':'⏳'}
+    </div>`;
+  }
+  footer+=`<button class="btn btn-primary btn-sm" onclick="agreeNeg(${negId},${sug},this)">✅ أغلق الصفقة</button>`;
+  if(mid){
+    footer+=`<button class="btn btn-sm" style="background:#e3b34120;color:var(--yellow);border:1px solid #e3b34140"
+      onclick="proposePrice(${negId},${mid},this)">💡 اقترح ${mid.toLocaleString('ar')} ر</button>`;
+  }
+  document.getElementById('chatFooter').innerHTML=footer;
+}
+
+function closeChatModal(e){
+  if(!e||e.target===document.getElementById('chatModal'))
+    document.getElementById('chatModal').classList.add('hidden');
+}
+
+async function proposePrice(negId,price,btn){
+  const raw=prompt(`السعر المقترح للطرفين (ر/سنة)`,price||'');
+  if(raw===null)return;
+  const p=parseInt(raw)||null;
+  if(!p)return;
+  btn.disabled=true; btn.textContent='...';
+  const d=await sfetch(`/negotiate/${negId}/propose`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({proposed_price:p})
+  });
+  if(d.ok){
+    toast(`💡 تم إرسال اقتراح ${p.toLocaleString('ar')} ر للطرفين`,4000);
+    closeChatModal(); loadSessions();
+  } else {
+    btn.disabled=false; btn.textContent='💡 اقترح';
+    toast('❌ '+(d.error||'خطأ'));
+  }
 }
 
 async function checkPending(){

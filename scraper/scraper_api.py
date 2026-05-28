@@ -662,6 +662,90 @@ def negotiate_agree(neg_id):
     return jsonify({"ok": True, "neg_id": neg_id, "agreed_price": price})
 
 
+@app.route("/negotiate/<int:neg_id>/log")
+def negotiate_log(neg_id):
+    """Return full chat log for a negotiation."""
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, listing_title, listing_city, listing_price,
+                   lead_phone, listing_phone, status, agreed_price,
+                   lead_max_price, owner_min_price, proposed_price,
+                   lead_accepted, owner_accepted, needs_admin, admin_reason,
+                   chat_log, created_at
+            FROM sanad.masaed_negotiations WHERE id = %s
+        """, (neg_id,))
+        row = cur.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    cols = ['id','listing_title','listing_city','listing_price',
+            'lead_phone','listing_phone','status','agreed_price',
+            'lead_max_price','owner_min_price','proposed_price',
+            'lead_accepted','owner_accepted','needs_admin','admin_reason',
+            'chat_log','created_at']
+    d = dict(zip(cols, row))
+    if d.get('created_at'): d['created_at'] = d['created_at'].isoformat()
+    d['chat_log'] = d['chat_log'] or []
+    return jsonify(d)
+
+
+@app.route("/negotiate/<int:neg_id>/propose", methods=["POST"])
+def negotiate_propose(neg_id):
+    """Admin proposes a middle price to both parties. Body: {proposed_price}"""
+    from negotiator import _update_neg, _append_log
+    from bot import wa_send
+
+    data = request.get_json() or {}
+    proposed_price = data.get("proposed_price")
+    if not proposed_price:
+        return jsonify({"error": "proposed_price required"}), 400
+    try:
+        proposed_price = int(proposed_price)
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid price"}), 400
+
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT lead_phone, listing_phone, listing_title, status
+            FROM sanad.masaed_negotiations WHERE id = %s
+        """, (neg_id,))
+        row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    lead_phone, listing_phone, listing_title, status = row
+
+    if status not in ('active', 'pending'):
+        return jsonify({"error": f"التفاوض مُغلق ({status})"}), 400
+
+    _update_neg(neg_id,
+                proposed_price=proposed_price,
+                lead_accepted=False,
+                owner_accepted=False,
+                needs_admin=False,
+                admin_reason=None)
+
+    p_str = f"{proposed_price:,}"
+    msg = (
+        f"💡 اقتراح من المسؤول\n"
+        f"━━━━━━━━━━━━\n"
+        f"السعر المقترح: {p_str} ر/سنة\n\n"
+        f"هل توافق على هذا السعر؟\n"
+        f"رد بـ نعم للموافقة أو لا للرفض."
+    )
+    _append_log(neg_id, "bot→مستأجر", msg)
+    wa_send(lead_phone, msg)
+    time.sleep(0.5)
+    _append_log(neg_id, "bot→مالك", msg)
+    wa_send(listing_phone, msg)
+
+    print(f"[PROPOSE] #{neg_id} proposed {proposed_price} to both parties", flush=True)
+    return jsonify({"ok": True, "proposed_price": proposed_price})
+
+
 @app.route("/stats")
 def stats():
     conn = get_conn()

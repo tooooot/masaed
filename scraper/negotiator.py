@@ -97,7 +97,8 @@ def _load_neg(phone: str) -> dict | None:
         cur.execute("""
             SELECT id, lead_id, listing_id, lead_phone, listing_phone,
                    status, lead_name, listing_title, listing_city,
-                   listing_price, lead_max_price, owner_min_price, chat_log
+                   listing_price, lead_max_price, owner_min_price,
+                   proposed_price, lead_accepted, owner_accepted, chat_log
             FROM sanad.masaed_negotiations
             WHERE (lead_phone = %s OR listing_phone = %s)
               AND status = 'active'
@@ -110,7 +111,8 @@ def _load_neg(phone: str) -> dict | None:
         return None
     cols = ['id','lead_id','listing_id','lead_phone','listing_phone',
             'status','lead_name','listing_title','listing_city',
-            'listing_price','lead_max_price','owner_min_price','chat_log']
+            'listing_price','lead_max_price','owner_min_price',
+            'proposed_price','lead_accepted','owner_accepted','chat_log']
     d = dict(zip(cols, row))
     d['chat_log'] = d['chat_log'] or []
     return d
@@ -278,6 +280,27 @@ def _handle_active(neg: dict, phone: str, text: str) -> bool:
         time.sleep(0.5)
         wa_send(other, "أُنهي التفاوض من الطرف الآخر.")
         return True
+
+    # ── تتبع الموافقة على سعر مقترح من الإدارة ─────────────────────────────
+    if neg.get("proposed_price") and not _has_cancel(text):
+        intent_quick = parse_intent(text)
+        if intent_quick["intent"] == "accept":
+            accepted_field = "lead_accepted" if is_lead else "owner_accepted"
+            _update_neg(neg_id, **{accepted_field: True})
+            neg[accepted_field] = True
+            _append_log(neg_id, my_role, text)
+
+            # هل وافق الطرفان؟
+            lead_ok  = neg.get("lead_accepted")  or (is_lead)
+            owner_ok = neg.get("owner_accepted") or (not is_lead)
+            p_str    = f"{neg['proposed_price']:,}"
+
+            if lead_ok and owner_ok:
+                wa_send(phone, f"ممتاز! تم تسجيل موافقتك على {p_str} ر/سنة ✅\nسيُبلَّغ المسؤول لإتمام الصفقة.")
+                _update_neg(neg_id, needs_admin=True, admin_reason=f"كلاهما وافق على {p_str} ر")
+            else:
+                wa_send(phone, f"تم تسجيل موافقتك على {p_str} ر/سنة ✅\nننتظر رد الطرف الآخر.")
+            return True
 
     # Layer 1: فهم النية
     intent = parse_intent(text)
