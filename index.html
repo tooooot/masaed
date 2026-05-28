@@ -415,8 +415,9 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
       <div class="bn-icon">📱</div><div class="bn-label">تعبئة</div>
       <div class="bn-dot" id="bnd-fill"></div>
     </div>
-    <div class="bn" id="bn-sessions" onclick="nav('sessions',this)">
+    <div class="bn" id="bn-sessions" onclick="nav('sessions',this)" style="position:relative">
       <div class="bn-icon">💬</div><div class="bn-label">جلسات</div>
+      <span id="pending-badge" style="display:none;position:absolute;top:4px;right:12px;background:var(--red);color:#fff;font-size:.55rem;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center"></span>
     </div>
     <div class="bn" id="bn-matches" onclick="nav('matches',this)">
       <div class="bn-icon">🎯</div><div class="bn-label">توفيق</div>
@@ -649,24 +650,56 @@ function negCard(n,compact){
   };
   const [bc,sl]=SM[n.status]||['badge-closed',n.status];
   const isOpen=n.status==='active'||n.status==='pending';
+  const needsAdmin=n.needs_admin&&isOpen;
   const price=n.listing_price?n.listing_price.toLocaleString('ar')+' ر/سنة':'قابل للتفاوض';
+
   const agreedLine=n.status==='agreed'&&n.agreed_price
     ?`<div style="font-size:.75rem;color:var(--green-light);margin-bottom:8px;font-weight:700">✅ سعر الاتفاق: ${n.agreed_price.toLocaleString('ar')} ر/سنة</div>`:'';
-  return `<div class="session-card">
+
+  // بناء سطر الأسعار المقترح عند needs_admin
+  let priceHint='';
+  if(needsAdmin&&n.lead_max_price&&n.owner_min_price){
+    const mid=Math.round((n.lead_max_price+n.owner_min_price)/2/500)*500;
+    const gap=n.owner_min_price-n.lead_max_price;
+    priceHint=`<div style="background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:.75rem">
+      <span style="color:var(--yellow);font-weight:700">⚡ ${n.admin_reason||'يحتاج قرار'}</span><br>
+      <span style="color:var(--muted)">المستأجر: <b style="color:var(--text)">${n.lead_max_price.toLocaleString('ar')} ر</b>
+       · المالك: <b style="color:var(--text)">${n.owner_min_price.toLocaleString('ar')} ر</b>
+       · الفجوة: <b style="color:var(--${gap<=0?'green-light':'yellow'})">${gap<=0?'يتقاطعان ✅':gap.toLocaleString('ar')+' ر'}</b>
+      </span><br>
+      <span style="color:var(--muted)">الوسط المقترح: <b style="color:var(--blue)">${mid.toLocaleString('ar')} ر/سنة</b></span>
+    </div>`;
+  } else if(needsAdmin){
+    priceHint=`<div style="background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:.75rem">
+      <span style="color:var(--yellow);font-weight:700">⚡ ${n.admin_reason||'يحتاج قرار'}</span>
+    </div>`;
+  }
+
+  const borderStyle=needsAdmin?'border:1.5px solid var(--yellow);':'';
+  const suggestedMid=n.lead_max_price&&n.owner_min_price
+    ?Math.round((n.lead_max_price+n.owner_min_price)/2/500)*500
+    :(n.listing_price||0);
+
+  return `<div class="session-card" style="${borderStyle}">
   <div class="session-head">
     <span class="session-id">تفاوض #${n.id}</span>
-    <span class="badge ${bc}">${sl}</span>
+    ${needsAdmin?`<span style="background:var(--yellow);color:#000;font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:10px">🔔 يحتاج قرار</span>`:`<span class="badge ${bc}">${sl}</span>`}
   </div>
   <div style="font-size:.82rem;color:var(--text);margin-bottom:4px;font-weight:600">${esc(n.listing_title||'عقار')}</div>
   <div style="font-size:.72rem;color:var(--muted);margin-bottom:8px">📍 ${esc(n.listing_city||'—')} · 💰 ${price}</div>
-  ${agreedLine}
+  ${agreedLine}${priceHint}
   <div class="session-parties">
     <div class="session-party"><div class="party-role">🏠 المالك</div><div class="party-phone">${mask(n.listing_phone)}</div></div>
     <div class="session-party"><div class="party-role">🔍 المستأجر</div><div class="party-phone">${mask(n.lead_phone)}</div></div>
   </div>
-  <div class="session-foot">
+  <div class="session-foot" style="gap:6px;flex-wrap:wrap">
     <span>${n.created_at?relTime(n.created_at):'—'}</span>
-    ${!compact&&isOpen?`<button class="btn btn-primary btn-sm" style="margin-right:auto" onclick="agreeNeg(${n.id},${n.listing_price||0},this)">✅ تم الاتفاق</button>`:''}
+    ${!compact&&isOpen?`
+      <button class="btn btn-primary btn-sm" style="margin-right:auto"
+        onclick="agreeNeg(${n.id},${suggestedMid},this)">✅ تم الاتفاق</button>
+      ${needsAdmin?`<button class="btn btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
+        onclick="dismissNeg(${n.id},this)">تجاهل</button>`:''}
+    `:''}
   </div>
 </div>`;
 }
@@ -687,6 +720,12 @@ async function agreeNeg(negId,suggestedPrice,btn){
     btn.disabled=false; btn.textContent='✅ تم الاتفاق';
     toast('❌ '+(d.error||'خطأ'));
   }
+}
+
+async function dismissNeg(negId,btn){
+  btn.disabled=true;
+  await sfetch(`/negotiate/${negId}/dismiss`,{method:'POST'});
+  loadSessions();
 }
 
 // ── MATCHES ──
@@ -919,9 +958,20 @@ if(window.innerWidth>=768){
   document.getElementById('sidebar').style.display='flex';
 }
 
+async function checkPending(){
+  try{
+    const d=await sfetch('/negotiate/pending');
+    const n=d.pending||0;
+    const el=document.getElementById('pending-badge');
+    if(el){el.textContent=n;el.style.display=n?'inline':'none';}
+  }catch(e){}
+}
+
 // ── Boot ──
 loadHome();
+checkPending();
 setInterval(loadHome,60000);
+setInterval(checkPending,30000);
 </script>
 </body>
 </html>

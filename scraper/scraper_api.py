@@ -4,7 +4,7 @@
 Flask API so n8n and the dashboard can trigger scraping and receive leads.
 Port 5555
 """
-import os, re, json, asyncio
+import os, re, json, asyncio, time, requests
 from urllib.parse import urlparse
 from flask import Flask, jsonify, request
 import psycopg2
@@ -561,9 +561,11 @@ def negotiate_active():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, lead_phone, listing_phone, listing_title,
-                       listing_city, listing_price, status, agreed_price, created_at
+                       listing_city, listing_price, status, agreed_price,
+                       needs_admin, admin_reason, lead_max_price, owner_min_price,
+                       created_at
                 FROM sanad.masaed_negotiations
-                ORDER BY created_at DESC LIMIT 50
+                ORDER BY needs_admin DESC NULLS LAST, created_at DESC LIMIT 50
             """)
             cols = [d[0] for d in cur.description]
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
@@ -574,6 +576,32 @@ def negotiate_active():
         return jsonify({"negotiations": [], "error": str(e)})
     finally:
         conn.close()
+
+
+@app.route("/negotiate/pending")
+def negotiate_pending():
+    """Count negotiations that need admin attention."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT COUNT(*) FROM sanad.masaed_negotiations
+                WHERE needs_admin = true AND status = 'active'
+            """)
+            count = cur.fetchone()[0]
+        return jsonify({"pending": count})
+    except Exception as e:
+        return jsonify({"pending": 0, "error": str(e)})
+    finally:
+        conn.close()
+
+
+@app.route("/negotiate/<int:neg_id>/dismiss", methods=["POST"])
+def negotiate_dismiss(neg_id):
+    """Admin dismisses the needs_admin flag without closing."""
+    from negotiator import _update_neg
+    _update_neg(neg_id, needs_admin=False, admin_reason=None)
+    return jsonify({"ok": True})
 
 
 @app.route("/negotiate/<int:neg_id>/agree", methods=["POST"])
@@ -608,6 +636,8 @@ def negotiate_agree(neg_id):
 
     price = agreed_price if agreed_price is not None else listing_price
     _close(neg_id, "agreed", price)
+    from negotiator import _update_neg
+    _update_neg(neg_id, needs_admin=False, admin_reason=None)
 
     import time as _time
     p_str     = f"{price:,} ر/سنة" if price else "متفق عليه"
@@ -805,6 +835,99 @@ def serve_photo(filename):
     return send_from_directory(photos_dir, filename)
 
 
+@app.route("/tg/callback", methods=["POST"])
+def tg_callback():
+    """Handle Telegram inline button presses from admin."""
+    from negotiator import _close, _update_neg
+    from bot import wa_send
+    import tg_notify
+
+    data = request.get_json(silent=True) or {}
+    cb   = data.get("callback_query")
+    if not cb:
+        return jsonify({"ok": True})
+
+    cb_id   = cb["id"]
+    cb_data = cb.get("data", "")
+    parts   = cb_data.split(":")
+    action  = parts[0] if parts else ""
+    neg_id  = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+
+    # أجب على Telegram فوراً لإزالة مؤشر التحميل
+    tg_token = os.getenv("TELEGRAM_MASAED_BOT_TOKEN",
+                         os.getenv("TELEGRAM_CROSSPOST_BOT_TOKEN", ""))
+    if tg_token:
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{tg_token}/answerCallbackQuery",
+                json={"callback_query_id": cb_id}, timeout=5
+            )
+        except Exception:
+            pass
+
+    if not neg_id:
+        return jsonify({"ok": True})
+
+    if action == "agree":
+        price = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() and parts[2] != "0" else None
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT lead_phone, listing_phone, lead_max_price, owner_min_price,
+                       listing_price, status
+                FROM sanad.masaed_negotiations WHERE id = %s
+            """, (neg_id,))
+            row = cur.fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({"ok": True})
+        lead_phone, listing_phone, lead_max, owner_min, listing_price, status = row
+
+        if status in ("agreed", "cancelled", "failed"):
+            return jsonify({"ok": True})
+
+        if not price:
+            if lead_max and owner_min:
+                price = round((lead_max + owner_min) / 2 / 500) * 500
+            else:
+                price = listing_price
+
+        _close(neg_id, "agreed", price)
+        p_str = f"{price:,} ر/سنة" if price else "متفق عليه"
+        wa_send(lead_phone,   f"🎉 تم الاتفاق! السعر: {p_str}\nسيتواصل معك الطرف الآخر لإتمام الإجراءات.")
+        time.sleep(0.5)
+        wa_send(listing_phone, f"🎉 تم الاتفاق! السعر: {p_str}\nسيتواصل معك الطرف الآخر لإتمام الإجراءات.")
+        print(f"[TG] Deal #{neg_id} agreed at {price}", flush=True)
+
+    elif action == "view":
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT chat_log, listing_title FROM sanad.masaed_negotiations WHERE id=%s", (neg_id,))
+            row = cur.fetchone()
+        conn.close()
+        if row:
+            log, title = row
+            log = log or []
+            lines = [f"📋 <b>محادثة #{neg_id} — {title or 'العقار'}</b>\n"]
+            for e in log[-12:]:
+                r = e.get("role", "")
+                t = (e.get("text") or "")[:80]
+                if "bot" not in r and r:
+                    lines.append(f"<b>{r}:</b> {t}")
+            tg_notify._send("\n".join(lines))
+
+    elif action == "manual":
+        base = os.getenv("MASAED_BASE_URL", "https://masaed.wardyat.net")
+        tg_notify._send(f"⚙️ تفاوض #{neg_id}\n{base}/sessions")
+
+    # ignore → لا شيء
+
+    return jsonify({"ok": True})
+
+
 if __name__ == "__main__":
+    import tg_notify
+    tg_notify.setup_webhook()
     port = int(os.getenv("SCRAPER_PORT", 5555))
     app.run(host="0.0.0.0", port=port, debug=False)
