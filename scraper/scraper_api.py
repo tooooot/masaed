@@ -656,14 +656,18 @@ def negotiate_pending():
 def negotiate_dismiss(neg_id):
     """Admin dismisses the needs_admin flag without closing."""
     from negotiator import _update_neg
-    _update_neg(neg_id, needs_admin=False, admin_reason=None)
+    conn = get_conn()
+    try:
+        _update_neg(neg_id, conn, needs_admin=False, admin_reason=None)
+    finally:
+        conn.close()
     return jsonify({"ok": True})
 
 
 @app.route("/negotiate/<int:neg_id>/agree", methods=["POST"])
 def negotiate_agree(neg_id):
     """Admin manually closes a negotiation as agreed. Body: {agreed_price?}"""
-    from negotiator import _close
+    from negotiator import _close, _update_neg
     from bot import wa_send
     data = request.get_json() or {}
     agreed_price = data.get("agreed_price")
@@ -674,26 +678,27 @@ def negotiate_agree(neg_id):
             agreed_price = None
 
     conn = get_conn()
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT id, lead_phone, listing_phone, listing_title, listing_price, status
-            FROM sanad.masaed_negotiations WHERE id = %s
-        """, (neg_id,))
-        row = cur.fetchone()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, lead_phone, listing_phone, listing_title, listing_price, status
+                FROM sanad.masaed_negotiations WHERE id = %s
+            """, (neg_id,))
+            row = cur.fetchone()
 
-    if not row:
-        return jsonify({"error": "negotiation not found"}), 404
+        if not row:
+            return jsonify({"error": "negotiation not found"}), 404
 
-    _, lead_phone, listing_phone, listing_title, listing_price, status = row
+        _, lead_phone, listing_phone, listing_title, listing_price, status = row
 
-    if status in ('agreed', 'cancelled', 'failed'):
-        return jsonify({"error": f"التفاوض مُغلق بالفعل ({status})"}), 400
+        if status in ('agreed', 'cancelled', 'failed'):
+            return jsonify({"error": f"التفاوض مُغلق بالفعل ({status})"}), 400
 
-    price = agreed_price if agreed_price is not None else listing_price
-    _close(neg_id, "agreed", price)
-    from negotiator import _update_neg
-    _update_neg(neg_id, needs_admin=False, admin_reason=None)
+        price = agreed_price if agreed_price is not None else listing_price
+        _close(neg_id, "agreed", conn, agreed_price=price)
+        _update_neg(neg_id, conn, needs_admin=False, admin_reason=None)
+    finally:
+        conn.close()
 
     import time as _time
     p_str     = f"{price:,} ر/سنة" if price else "متفق عليه"
@@ -762,41 +767,43 @@ def negotiate_propose(neg_id):
         return jsonify({"error": "invalid price"}), 400
 
     conn = get_conn()
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT lead_phone, listing_phone, listing_title, status
-            FROM sanad.masaed_negotiations WHERE id = %s
-        """, (neg_id,))
-        row = cur.fetchone()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT lead_phone, listing_phone, listing_title, status
+                FROM sanad.masaed_negotiations WHERE id = %s
+            """, (neg_id,))
+            row = cur.fetchone()
 
-    if not row:
-        return jsonify({"error": "not found"}), 404
-    lead_phone, listing_phone, listing_title, status = row
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        lead_phone, listing_phone, listing_title, status = row
 
-    if status not in ('active', 'pending'):
-        return jsonify({"error": f"التفاوض مُغلق ({status})"}), 400
+        if status not in ('active', 'pending'):
+            return jsonify({"error": f"التفاوض مُغلق ({status})"}), 400
 
-    _update_neg(neg_id,
-                proposed_price=proposed_price,
-                lead_accepted=False,
-                owner_accepted=False,
-                needs_admin=False,
-                admin_reason=None)
+        _update_neg(neg_id, conn,
+                    proposed_price=proposed_price,
+                    lead_accepted=False,
+                    owner_accepted=False,
+                    needs_admin=False,
+                    admin_reason=None)
 
-    p_str = f"{proposed_price:,}"
-    msg = (
-        f"💡 اقتراح من المسؤول\n"
-        f"━━━━━━━━━━━━\n"
-        f"السعر المقترح: {p_str} ر/سنة\n\n"
-        f"هل توافق على هذا السعر؟\n"
-        f"رد بـ نعم للموافقة أو لا للرفض."
-    )
-    _append_log(neg_id, "bot→مستأجر", msg)
-    wa_send(lead_phone, msg)
-    time.sleep(0.5)
-    _append_log(neg_id, "bot→مالك", msg)
-    wa_send(listing_phone, msg)
+        p_str = f"{proposed_price:,}"
+        msg = (
+            f"💡 اقتراح من المسؤول\n"
+            f"━━━━━━━━━━━━\n"
+            f"السعر المقترح: {p_str} ر/سنة\n\n"
+            f"هل توافق على هذا السعر؟\n"
+            f"رد بـ نعم للموافقة أو لا للرفض."
+        )
+        _append_log(neg_id, "bot→مستأجر", msg, conn)
+        wa_send(lead_phone, msg)
+        time.sleep(0.5)
+        _append_log(neg_id, "bot→مالك", msg, conn)
+        wa_send(listing_phone, msg)
+    finally:
+        conn.close()
 
     print(f"[PROPOSE] #{neg_id} proposed {proposed_price} to both parties", flush=True)
     return jsonify({"ok": True, "proposed_price": proposed_price})
@@ -1403,31 +1410,34 @@ def tg_callback():
         return jsonify({"ok": True})
 
     if action == "agree":
+        from negotiator import _close as neg_close
         price = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() and parts[2] != "0" else None
         conn = get_conn()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT lead_phone, listing_phone, lead_max_price, owner_min_price,
-                       listing_price, status
-                FROM sanad.masaed_negotiations WHERE id = %s
-            """, (neg_id,))
-            row = cur.fetchone()
-        conn.close()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT lead_phone, listing_phone, lead_max_price, owner_min_price,
+                           listing_price, status
+                    FROM sanad.masaed_negotiations WHERE id = %s
+                """, (neg_id,))
+                row = cur.fetchone()
 
-        if not row:
-            return jsonify({"ok": True})
-        lead_phone, listing_phone, lead_max, owner_min, listing_price, status = row
+            if not row:
+                return jsonify({"ok": True})
+            lead_phone, listing_phone, lead_max, owner_min, listing_price, status = row
 
-        if status in ("agreed", "cancelled", "failed"):
-            return jsonify({"ok": True})
+            if status in ("agreed", "cancelled", "failed"):
+                return jsonify({"ok": True})
 
-        if not price:
-            if lead_max and owner_min:
-                price = round((lead_max + owner_min) / 2 / 500) * 500
-            else:
-                price = listing_price
+            if not price:
+                if lead_max and owner_min:
+                    price = round((lead_max + owner_min) / 2 / 500) * 500
+                else:
+                    price = listing_price
 
-        _close(neg_id, "agreed", price)
+            neg_close(neg_id, "agreed", conn, agreed_price=price)
+        finally:
+            conn.close()
         p_str = f"{price:,} ر/سنة" if price else "متفق عليه"
         wa_send(lead_phone,   f"🎉 تم الاتفاق! السعر: {p_str}\nسيتواصل معك الطرف الآخر لإتمام الإجراءات.")
         time.sleep(0.5)
