@@ -1,6 +1,21 @@
 #!/usr/bin/env python3
 """
 مساعد — Haraj Scraper
+
+⚠️ LEGAL WARNING ⚠️
+This scraper collects data from haraj.com.sa WITHOUT PERMISSION.
+This violates Haraj's Terms of Service and may infringe on:
+- Copyright (listing text, photos)
+- Personal data (phone numbers, location data)
+- PDPA (Saudi data protection law)
+
+BEFORE RUNNING:
+1. Obtain written permission from Haraj.com.sa management
+2. OR disable this scraper and use manual registration only:
+   - Users opt-in via /registrar.html form
+   - No automated data collection
+   - See: LEGAL.md for compliance details
+
 Scrapes rental requests (طلبات إيجار) from haraj.com.sa
 using Playwright to execute JavaScript and extract React Router data.
 """
