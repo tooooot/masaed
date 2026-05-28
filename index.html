@@ -42,11 +42,12 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
 .page-body{padding:16px;max-width:600px;margin:0 auto;padding-bottom:80px;}
 
 /* ── Bottom Nav ── */
-.bnav{height:60px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex-shrink:0;position:sticky;bottom:0;z-index:100;}
-.bn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;padding:6px 4px;position:relative;transition:background .15s;border-radius:0;}
+.bnav{height:60px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex-shrink:0;position:sticky;bottom:0;z-index:100;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+.bnav::-webkit-scrollbar{display:none;}
+.bn{min-width:64px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;padding:6px 4px;position:relative;transition:background .15s;border-radius:0;flex-shrink:0;}
 .bn:active{background:var(--card);}
 .bn-icon{font-size:1.2rem;line-height:1;}
-.bn-label{font-size:.58rem;color:var(--muted);font-weight:600;transition:color .15s;}
+.bn-label{font-size:.58rem;color:var(--muted);font-weight:600;transition:color .15s;white-space:nowrap;}
 .bn.active .bn-label{color:var(--green-light);}
 .bn-dot{position:absolute;top:8px;right:calc(50% - 14px);width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid var(--surface);display:none;}
 .bn-dot.show{display:block;}
@@ -271,6 +272,7 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
     <div class="sb-item" onclick="nav('matches',this)"><span class="sb-icon">🎯</span> التوفيقات <span class="sb-badge" id="sb-matches" style="display:none">0</span></div>
     <div class="sb-section">النظام</div>
     <div class="sb-item" onclick="nav('logs',this)"><span class="sb-icon">📋</span> السجلات</div>
+    <a class="sb-item" href="/dashboard/lab.html" style="text-decoration:none"><span class="sb-icon">🔬</span> المختبر</a>
   </nav>
 
   <!-- Header -->
@@ -436,6 +438,9 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
       <div class="bn-icon">🎯</div><div class="bn-label">توفيق</div>
       <div class="bn-dot" id="bnd-matches"></div>
     </div>
+    <a class="bn" href="/dashboard/lab.html" style="text-decoration:none;">
+      <div class="bn-icon">🔬</div><div class="bn-label">المختبر</div>
+    </a>
   </nav>
 
 </div><!-- /app -->

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>مساعد المختبر</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0d1117;--surface:#161b22;--card:#21262d;--border:#30363d;
+  --green:#2ea043;--green-light:#3fb950;--blue:#58a6ff;--yellow:#e3b341;
+  --red:#f85149;--purple:#bc8cff;--orange:#f0883e;
+  --text:#f0f6fc;--muted:#8b949e;--subtle:#484f58;
+  --r:12px;--rx:16px;
+}
+html,body{height:100%;background:var(--bg);}
+body{font-family:'Tajawal',sans-serif;color:var(--text);font-size:15px;}
+a{color:var(--blue);text-decoration:none;}
+button{font-family:'Tajawal',sans-serif;cursor:pointer;}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+.app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+
+/* Header */
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;height:54px;display:flex;align-items:center;gap:10px;flex-shrink:0;position:sticky;top:0;z-index:100;}
+.header-logo{width:34px;height:34px;background:#bc8cff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;}
+.header-title{font-weight:700;font-size:1rem;}
+.header-sub{font-size:.62rem;color:var(--muted);}
+.header-right{margin-right:auto;display:flex;align-items:center;gap:8px;}
+
+/* Body */
+.body{flex:1;overflow:hidden;display:flex;}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border-radius:8px;font-size:.85rem;font-weight:700;border:none;transition:all .15s;white-space:nowrap;cursor:pointer;}
+.btn:active{transform:scale(.97);}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+.btn-primary{background:var(--green);color:#fff;}
+.btn-ghost{background:var(--card);border:1px solid var(--border);color:var(--muted);}
+.btn-ghost:hover{color:var(--text);}
+.btn-blue{background:#58a6ff20;color:var(--blue);border:1px solid #58a6ff40;}
+.btn-purple{background:#bc8cff20;color:var(--purple);border:1px solid #bc8cff40;}
+.btn-sm{padding:6px 12px;font-size:.78rem;}
+.btn-full{width:100%;justify-content:center;}
+.btn-lg{padding:14px 20px;font-size:1rem;}
+
+/* Spinner */
+.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Empty */
+.empty{text-align:center;padding:48px 20px;}
+.empty-icon{font-size:2.5rem;margin-bottom:10px;opacity:.6;}
+.empty-title{font-size:.9rem;font-weight:700;color:var(--muted);}
+.empty-sub{font-size:.75rem;color:var(--subtle);margin-top:6px;}
+
+/* Chips */
+.chip{font-size:.65rem;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap;display:inline-block;}
+.chip-city{background:var(--card);border:1px solid var(--border);color:var(--muted);}
+.chip-green{background:#2ea04320;color:var(--green-light);border:1px solid #2ea04340;}
+.chip-blue{background:#58a6ff20;color:var(--blue);border:1px solid #58a6ff40;}
+.chip-yellow{background:#e3b34120;color:var(--yellow);border:1px solid #e3b34140;}
+.chip-purple{background:#bc8cff20;color:var(--purple);border:1px solid #bc8cff40;}
+
+/* Toast */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 18px;border-radius:10px;font-size:.82rem;opacity:0;transition:all .25s;z-index:9999;pointer-events:none;white-space:nowrap;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ── Mobile: stacked ── */
+.panel-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.panel-detail{display:none;flex-direction:column;background:var(--bg);}
+
+/* When a card is selected on mobile, show detail panel */
+.body.detail-open .panel-list{display:none;}
+.body.detail-open .panel-detail{display:flex;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+
+/* Panel headers */
+.panel-header{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;}
+
+/* Request cards */
+.req-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin:10px;padding:14px;cursor:pointer;transition:border-color .15s;-webkit-tap-highlight-color:transparent;}
+.req-card:active{border-color:var(--green);}
+.req-card.selected{border-color:var(--purple);background:#bc8cff08;}
+.req-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;}
+.req-avatar{width:40px;height:40px;border-radius:10px;background:#bc8cff15;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0;}
+.req-name{font-size:.9rem;font-weight:700;color:var(--text);}
+.req-phone{font-size:.72rem;color:var(--muted);font-family:monospace;direction:ltr;display:inline-block;margin-top:2px;}
+.req-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+
+/* Detail panel */
+.detail-body{padding:16px;display:flex;flex-direction:column;gap:14px;padding-bottom:24px;}
+
+/* Section box */
+.box{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px;}
+.box-title{font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+
+/* Reg info row */
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;}
+.info-item{background:var(--bg);border-radius:8px;padding:10px;}
+.info-label{font-size:.6rem;color:var(--muted);font-weight:700;margin-bottom:3px;}
+.info-val{font-size:.85rem;color:var(--text);font-weight:600;}
+
+/* Phone inputs */
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+.field:last-child{margin-bottom:0;}
+.field label{font-size:.72rem;color:var(--muted);font-weight:600;}
+.field input{background:var(--bg);border:1.5px solid var(--border);color:var(--green-light);padding:12px 14px;border-radius:8px;font-size:1.05rem;font-family:monospace;direction:ltr;text-align:center;outline:none;transition:border-color .2s;width:100%;}
+.field input:focus{border-color:var(--green);}
+.field input.owner-input{color:var(--blue);}
+.field input:focus.owner-input{border-color:var(--blue);}
+
+/* Message preview bubble */
+.msg-preview{background:var(--bg);border-radius:10px;padding:12px 14px;font-size:.82rem;line-height:1.7;color:var(--text);white-space:pre-wrap;word-break:break-word;}
+.msg-from{font-size:.65rem;font-weight:700;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:5px;}
+.msg-phone{font-family:monospace;color:var(--green-light);}
+.msg-phone.owner{color:var(--blue);}
+
+/* Result */
+.result{border-radius:10px;padding:12px 14px;font-size:.85rem;display:flex;align-items:flex-start;gap:10px;line-height:1.5;}
+.result.success{background:#2ea04315;color:var(--green-light);border:1px solid #2ea04340;}
+.result.error{background:#f8514915;color:var(--red);border:1px solid #f8514940;}
+.result-icon{font-size:1.1rem;flex-shrink:0;margin-top:1px;}
+.result a{color:var(--blue);}
+
+/* Loading skeleton */
+.skeleton{background:linear-gradient(90deg,var(--card) 25%,var(--border) 50%,var(--card) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px;height:80px;margin:10px;}
+@keyframes shimmer{to{background-position:-200% 0}}
+
+/* Desktop */
+@media(min-width:640px){
+  .body{overflow:hidden;}
+  .panel-list{width:340px;border-left:1px solid var(--border);flex-shrink:0;display:flex!important;flex-direction:column;}
+  .panel-detail{display:flex!important;flex:1;overflow-y:auto;}
+  .body.detail-open .panel-list{display:flex!important;}
+  .detail-back-btn{display:none!important;}
+  .req-card.selected{border-color:var(--purple);background:#bc8cff08;}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="header-logo">🔬</div>
+    <div>
+      <div class="header-title">مساعد المختبر</div>
+      <div class="header-sub">اختبر التفاوض بدون المساس بأرقام العملاء</div>
+    </div>
+    <div class="header-right">
+      <a href="/" class="btn btn-ghost btn-sm">الداشبورد ←</a>
+    </div>
+  </div>
+
+  <div class="body" id="body">
+
+    <!-- ── List Panel ── -->
+    <div class="panel-list" id="panelList">
+      <div class="panel-header">الطلبات المسجّلة</div>
+      <div id="reqList"><div class="skeleton"></div><div class="skeleton" style="height:64px;opacity:.6"></div></div>
+    </div>
+
+    <!-- ── Detail Panel ── -->
+    <div class="panel-detail" id="panelDetail">
+
+      <!-- placeholder (no selection) -->
+      <div id="placeholder" class="empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;">
+        <div class="empty-icon">👈</div>
+        <div class="empty-title">اختر طلباً</div>
+        <div class="empty-sub">اختر طلباً من القائمة لعرض سيناريو الاختبار</div>
+      </div>
+
+      <!-- detail content (hidden until selection) -->
+      <div id="detailContent" style="display:none;flex:1;display:none;flex-direction:column;">
+        <div class="panel-header" style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-ghost btn-sm detail-back-btn" onclick="goBack()">← رجوع</button>
+          <span id="detailHeaderTitle">—</span>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '/api';
+let selected = null;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(msg, dur=2800){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), dur);
+}
+
+// ── Load requests ─────────────────────────────────────────────────────────────
+async function loadRequests() {
+  try {
+    const r = await fetch(`${API}/lab/requests`);
+    const d = await r.json();
+    renderList(d.requests || []);
+  } catch(e) {
+    document.getElementById('reqList').innerHTML =
+      `<div class="empty"><div class="empty-icon">❌</div><div class="empty-title">خطأ في التحميل</div><div class="empty-sub">${esc(e.message)}</div></div>`;
+  }
+}
+
+function renderList(reqs) {
+  const el = document.getElementById('reqList');
+  if (!reqs.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><div class="empty-title">لا توجد طلبات بعد</div><div class="empty-sub">سجّل طلبات عبر البوت لتظهر هنا</div></div>`;
+    return;
+  }
+  el.innerHTML = reqs.map(r => {
+    const budget = r.budget_annual ? `${(r.budget_annual/1000).toFixed(0)}k ر/سنة` : null;
+    const rooms  = r.rooms ? `${r.rooms} غرف` : null;
+    const status = (r.status === 'complete' || r.status === 'completed') ? 'مكتمل' : 'جاري';
+    const statusCls = status === 'مكتمل' ? 'chip-green' : 'chip-yellow';
+    return `
+    <div class="req-card" id="rc-${r.id}" onclick='selectReq(${JSON.stringify(JSON.stringify(r))})'>
+      <div class="req-top">
+        <div class="req-avatar">👤</div>
+        <div style="flex:1;min-width:0">
+          <div class="req-name">${esc(r.name || 'باحث')}</div>
+          <div class="req-phone">${r.phone || ''}</div>
+        </div>
+        <span class="chip ${statusCls}">${status}</span>
+      </div>
+      <div class="req-tags">
+        ${r.city   ? `<span class="chip chip-city">📍 ${esc(r.city)}</span>` : ''}
+        ${r.district ? `<span class="chip chip-city">📌 ${esc(r.district)}</span>` : ''}
+        ${rooms    ? `<span class="chip chip-blue">🛏 ${rooms}</span>` : ''}
+        ${budget   ? `<span class="chip chip-green">💰 ${budget}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Select request ────────────────────────────────────────────────────────────
+function selectReq(jsonStr) {
+  selected = JSON.parse(jsonStr);
+
+  document.querySelectorAll('.req-card').forEach(c => c.classList.remove('selected'));
+  const rc = document.getElementById(`rc-${selected.id}`);
+  if (rc) rc.classList.add('selected');
+
+  // mobile: open detail panel
+  document.getElementById('body').classList.add('detail-open');
+
+  // build detail
+  document.getElementById('placeholder').style.display = 'none';
+  const dc = document.getElementById('detailContent');
+  dc.style.display = 'flex';
+  document.getElementById('detailHeaderTitle').textContent = selected.name || 'باحث';
+
+  renderDetail(selected);
+}
+
+function goBack() {
+  document.getElementById('body').classList.remove('detail-open');
+}
+
+// ── Render detail ─────────────────────────────────────────────────────────────
+function renderDetail(reg) {
+  const budget = reg.budget_annual ? reg.budget_annual.toLocaleString('ar-SA') + ' ر/سنة' : '—';
+  const rooms  = reg.rooms ? reg.rooms + ' غرف' : '—';
+
+  document.getElementById('detailBody').innerHTML = `
+
+    <!-- 1. Reg info -->
+    <div class="box">
+      <div class="box-title">📋 بيانات الطلب</div>
+      <div class="info-grid">
+        <div class="info-item"><div class="info-label">المدينة</div><div class="info-val">${esc(reg.city || '—')}</div></div>
+        <div class="info-item"><div class="info-label">الحي</div><div class="info-val">${esc(reg.district || '—')}</div></div>
+        <div class="info-item"><div class="info-label">الغرف</div><div class="info-val">${rooms}</div></div>
+        <div class="info-item"><div class="info-label">الميزانية</div><div class="info-val">${budget}</div></div>
+      </div>
+    </div>
+
+    <!-- 2. Phone inputs -->
+    <div class="box">
+      <div class="box-title">📱 أرقام الاختبار</div>
+      <div class="field">
+        <label>رقم الباحث — أنت (مُعبَّأ مسبقاً)</label>
+        <input id="seekerPhone" type="tel" value="0548060060" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label>رقم المالك — الطرف الثاني</label>
+        <input id="ownerPhone" type="tel" placeholder="05XXXXXXXX" inputmode="numeric" class="owner-input"
+          oninput="clearResult()">
+      </div>
+      <div class="field">
+        <label>سعر الإيجار التجريبي ر/سنة — اختياري</label>
+        <input id="listingPrice" type="number" placeholder="${reg.budget_annual || 'من الطلب تلقائياً'}" inputmode="numeric" style="color:var(--text);">
+      </div>
+      <button class="btn btn-blue btn-full" onclick="previewScenario()" style="margin-top:4px">
+        👁 معاينة السيناريو
+      </button>
+    </div>
+
+    <!-- 3. Preview area -->
+    <div id="previewArea"></div>
+
+    <!-- 4. Start button -->
+    <button class="btn btn-primary btn-full btn-lg" id="btnStart" onclick="startNegotiation()" disabled>
+      🚀 ابدأ التفاوض الحقيقي
+    </button>
+
+    <!-- 5. Result -->
+    <div id="resultArea"></div>
+  `;
+}
+
+function clearResult() {
+  document.getElementById('previewArea').innerHTML = '';
+  const btn = document.getElementById('btnStart');
+  if (btn) btn.disabled = true;
+}
+
+// ── Preview scenario ──────────────────────────────────────────────────────────
+async function previewScenario() {
+  if (!selected) return;
+  const seeker = document.getElementById('seekerPhone').value.trim();
+  const owner  = document.getElementById('ownerPhone').value.trim();
+  const price  = document.getElementById('listingPrice').value.trim();
+  const area   = document.getElementById('previewArea');
+
+  if (!owner) {
+    area.innerHTML = errBox('أدخل رقم المالك أولاً');
+    return;
+  }
+
+  area.innerHTML = `<div style="text-align:center;padding:16px"><div class="spinner"></div></div>`;
+
+  try {
+    const r = await fetch(`${API}/lab/scenario`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        reg_id: selected.id,
+        seeker_phone: seeker,
+        owner_phone: owner,
+        listing_price: price ? parseInt(price) : null,
+      })
+    });
+    const d = await r.json();
+    if (!d.ok) { area.innerHTML = errBox(d.error); return; }
+
+    const s = d.scenario;
+    const priceStr = s.listing_price ? s.listing_price.toLocaleString('ar-SA') + ' ر/سنة' : 'قابل للتفاوض';
+
+    area.innerHTML = `
+      <div class="box">
+        <div class="box-title">✅ رسائل ستُرسل فور الضغط</div>
+
+        <div class="msg-from">📱 <span class="msg-phone">${esc(s.seeker_phone)}</span> — رسالة الباحث (أنت)</div>
+        <div class="msg-preview" style="margin-bottom:12px;border-right:3px solid var(--green)">${esc(s.seeker_msg)}</div>
+
+        <div class="msg-from">📱 <span class="msg-phone owner">${esc(s.owner_phone)}</span> — رسالة المالك</div>
+        <div class="msg-preview" style="border-right:3px solid var(--blue)">${esc(s.owner_msg)}</div>
+
+        ${s.listing_price ? `<div style="margin-top:10px;font-size:.75rem;color:var(--muted);text-align:center">السعر المستخدم: <strong style="color:var(--text)">${priceStr}</strong></div>` : ''}
+      </div>
+    `;
+
+    const btn = document.getElementById('btnStart');
+    if (btn) btn.disabled = false;
+
+  } catch(e) {
+    area.innerHTML = errBox(e.message);
+  }
+}
+
+// ── Start negotiation ─────────────────────────────────────────────────────────
+async function startNegotiation() {
+  if (!selected) return;
+  const seeker  = document.getElementById('seekerPhone').value.trim();
+  const owner   = document.getElementById('ownerPhone').value.trim();
+  const price   = document.getElementById('listingPrice').value.trim();
+  const btn     = document.getElementById('btnStart');
+  const result  = document.getElementById('resultArea');
+
+  if (!owner) { result.innerHTML = errBox('أدخل رقم المالك أولاً'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> جارٍ بدء التفاوض...';
+  result.innerHTML = '';
+
+  try {
+    const r = await fetch(`${API}/lab/start`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        reg_id: selected.id,
+        seeker_phone: seeker,
+        owner_phone: owner,
+        listing_price: price ? parseInt(price) : null,
+      })
+    });
+    const d = await r.json();
+
+    if (d.ok) {
+      result.innerHTML = `
+        <div class="result success">
+          <div class="result-icon">🎉</div>
+          <div>
+            <strong style="display:block;margin-bottom:4px">تم بدء التفاوض #${d.neg_id}</strong>
+            أُرسلت رسائل واتساب للرقمين الآن<br>
+            <a href="/">← متابعة الجلسة في الداشبورد</a>
+          </div>
+        </div>`;
+      toast('🎉 تم! راجع الجلسة في الداشبورد', 4000);
+    } else {
+      result.innerHTML = errBox(d.error || 'فشل بدء التفاوض');
+    }
+  } catch(e) {
+    result.innerHTML = errBox(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🚀 ابدأ التفاوض الحقيقي';
+  }
+}
+
+function errBox(msg) {
+  return `<div class="result error"><div class="result-icon">⚠️</div><div>${esc(msg)}</div></div>`;
+}
+
+loadRequests();
+</script>
+</body>
+</html>
