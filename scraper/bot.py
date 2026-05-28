@@ -24,6 +24,13 @@ DEEPSEEK_KEY   = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", "
 BASE_URL       = os.getenv("MASAED_BASE_URL", "https://masaed.wardyat.net")
 ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
 
+# ── Sandbox/Test Phone Whitelist ───────────────────────────────────────────────
+# CRITICAL: Only these phone numbers can receive test messages.
+# Real production phones MUST NOT be in this list.
+# Format: 966XXXXXXXXX (Saudi numbers) or test numbers starting with 0050
+SANDBOX_PHONES = set(os.getenv("MASAED_SANDBOX_PHONES", "966500000000,966500000001,0500000000,0500000001").split(","))
+print(f"[INIT] Sandbox phones for testing: {SANDBOX_PHONES}", flush=True)
+
 DB_HOST = os.getenv("POSTGRES_HOST", "sanad-postgres")
 DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_NAME = os.getenv("POSTGRES_DB", "sanad")
@@ -496,22 +503,47 @@ def save_photo(reg_id: int, url: str):
 _wa_test_local = threading.local()
 
 def wa_send(phone: str, text: str):
+    """
+    Send WhatsApp message.
+
+    CRITICAL SAFEGUARD:
+    - Sandbox mode (via /bot/test): only logs, never sends
+    - Real mode: only sends to SANDBOX_PHONES or if MASAED_ALLOW_REAL_SEND=true
+    - If real send is blocked, logs error and halts
+    """
+    # Normalize phone number
+    phone_clean = str(phone).replace("+", "").replace(" ", "")
+
     # Dry-run mode: capture message without sending
     if getattr(_wa_test_local, 'active', False):
         if not hasattr(_wa_test_local, 'log'):
             _wa_test_local.log = []
-        _wa_test_local.log.append({"to": phone, "text": text})
-        print(f"[WA DRY-RUN] → {phone}: {text[:80]}", flush=True)
+        _wa_test_local.log.append({"to": phone_clean, "text": text})
+        print(f"[WA DRY-RUN] → {phone_clean}: {text[:80]}", flush=True)
         return
 
     if not GREEN_INSTANCE or not GREEN_TOKEN:
-        print(f"[WA MOCK] → {phone}: {text[:80]}")
+        print(f"[WA MOCK] → {phone_clean}: {text[:80]}")
         return
+
+    # ── SAFEGUARD: Check if phone is in sandbox list ───────────────────────────
+    allow_real = os.getenv("MASAED_ALLOW_REAL_SEND", "false").lower() == "true"
+    is_sandbox = phone_clean in SANDBOX_PHONES
+
+    if not is_sandbox and not allow_real:
+        print(f"[WA BLOCKED] ❌ CRITICAL: Attempted to send to {phone_clean} (not in sandbox)", flush=True)
+        print(f"[WA BLOCKED] Set MASAED_ALLOW_REAL_SEND=true to send to real phones", flush=True)
+        raise ValueError(f"Real send to {phone_clean} blocked by safety check. Use sandbox phones only.")
+
+    if not is_sandbox:
+        print(f"[WA REAL] ⚠️ Sending to real phone {phone_clean}", flush=True)
+
     url = f"https://api.green-api.com/waInstance{GREEN_INSTANCE}/sendMessage/{GREEN_TOKEN}"
     try:
-        requests.post(url, json={"chatId": f"{phone}@c.us", "message": text}, timeout=10)
+        resp = requests.post(url, json={"chatId": f"{phone_clean}@c.us", "message": text}, timeout=10)
+        print(f"[WA SENT] → {phone_clean}: OK", flush=True)
     except Exception as e:
-        print(f"[WA ERROR] {e}")
+        print(f"[WA ERROR] {phone_clean}: {e}")
 
 def wa_get_file(url_file: str) -> str | None:
     """Download a WhatsApp media file and return a local URL."""
