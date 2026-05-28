@@ -270,6 +270,8 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
     <div class="sb-section">مفاوض v1</div>
     <div class="sb-item" onclick="nav('sessions',this)"><span class="sb-icon">💬</span> جلسات التفاوض</div>
     <div class="sb-item" onclick="nav('matches',this)"><span class="sb-icon">🎯</span> التوفيقات <span class="sb-badge" id="sb-matches" style="display:none">0</span></div>
+    <div class="sb-section">التسجيل</div>
+    <div class="sb-item" onclick="nav('registrar',this)"><span class="sb-icon">📋</span> مساعد المسجل</div>
     <div class="sb-section">النظام</div>
     <div class="sb-item" onclick="nav('logs',this)"><span class="sb-icon">📋</span> السجلات</div>
     <a class="sb-item" href="/dashboard/lab.html" style="text-decoration:none"><span class="sb-icon">🔬</span> المختبر</a>
@@ -405,6 +407,22 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
       </div>
     </div>
 
+    <!-- ══ REGISTRAR ══ -->
+    <div class="page" id="page-registrar">
+      <div class="page-body">
+        <div style="text-align:center;padding:40px 20px;">
+          <div style="font-size:3rem;margin-bottom:10px;">📋</div>
+          <h2 style="margin-bottom:10px;">مساعد المسجل</h2>
+          <p style="color:var(--muted);margin-bottom:20px;">عرض شامل لحالة التسجيل والبيانات</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:20px;">
+            <input type="text" id="reg-search" placeholder="ID التسجيل أو الرقم" style="padding:10px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);grid-column:1/-1;">
+            <button class="btn btn-primary" onclick="searchRegistration()">🔍 بحث</button>
+          </div>
+          <div id="reg-results" style="margin-top:20px;"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ LOGS ══ -->
     <div class="page" id="page-logs">
       <div class="page-body">
@@ -437,6 +455,9 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
     <div class="bn" id="bn-matches" onclick="nav('matches',this)">
       <div class="bn-icon">🎯</div><div class="bn-label">توفيق</div>
       <div class="bn-dot" id="bnd-matches"></div>
+    </div>
+    <div class="bn" id="bn-registrar" onclick="nav('registrar',this)">
+      <div class="bn-icon">📋</div><div class="bn-label">مسجّل</div>
     </div>
     <a class="bn" href="/dashboard/lab.html" style="text-decoration:none;">
       <div class="bn-icon">🔬</div><div class="bn-label">المختبر</div>
@@ -490,7 +511,28 @@ async function n8n(action, params={}) {
 }
 
 // ── Navigation ──
-const PAGES = ['home','leads','fill','sessions','matches','logs'];
+const PAGES = ['home','leads','fill','sessions','matches','registrar','logs'];
+
+// ── Registrar ──
+async function searchRegistration() {
+  const query = document.getElementById("reg-search").value.trim();
+  if(!query) return toast("أدخل ID أو رقم");
+  const results = document.getElementById("reg-results");
+  results.innerHTML = "<div class="loading-center"><div class="spinner"></div></div>";
+  try {
+    const data = await sfetch("/registrations");
+    let regs = data.registrations || [];
+    regs = regs.filter(r => r.id.toString() === query || r.wa_phone?.includes(query.slice(-9)));
+    if(!regs.length) {
+      results.innerHTML = empty("🔍","لم يتم العثور على تسجيل","جرب ID أو رقم أخر");
+      return;
+    }
+    results.innerHTML = regs.map(r => `<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer" onclick="openRegistrar(${r.id})"><div style="display:flex;justify-content:space-between"><div><div style="font-weight:600">#${r.id} - ${r.name || "بدون اسم"}</div><div style="font-size:0.8rem;color:var(--muted);margin-top:4px">${r.type === "listing" ? "📋 عرض" : "🔍 طلب"} • ${r.city}</div></div><div style="font-size:0.75rem;padding:4px 8px;border-radius:4px">${r.status === "complete" ? "✅" : "⏳"}</div></div></div>`).join("");
+  } catch(e) {
+    results.innerHTML = empty("⚠️","خطأ",e.message);
+  }
+}
+function openRegistrar(regId) { window.open("/registrar.html?id=" + regId, "_blank"); }
 function nav(id, el) {
   PAGES.forEach(p => {
     document.getElementById('page-'+p).classList.remove('active');
