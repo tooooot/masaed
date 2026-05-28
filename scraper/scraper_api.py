@@ -80,6 +80,20 @@ def add_cors(resp):
     return resp
 
 
+# ── Static Files ──────────────────────────────────────────────────────────────
+@app.route('/dashboard/<path:filename>')
+def serve_dashboard(filename):
+    """Serve static files from dashboard directory"""
+    from flask import send_file
+    import os.path
+
+    dashboard_path = os.path.join(os.path.dirname(__file__), '..', 'dashboard', filename)
+    if os.path.exists(dashboard_path) and os.path.isfile(dashboard_path):
+        return send_file(dashboard_path)
+
+    return jsonify({"error": "File not found"}), 404
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 @app.route("/health")
 def health():
