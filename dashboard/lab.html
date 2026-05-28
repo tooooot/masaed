@@ -262,6 +262,7 @@ function selectReq(jsonStr) {
   document.getElementById('detailHeaderTitle').textContent = selected.name || 'باحث';
 
   renderDetail(selected);
+  enableSimulationBtn();
 }
 
 function goBack() {
@@ -310,13 +311,60 @@ function renderDetail(reg) {
     <!-- 3. Preview area -->
     <div id="previewArea"></div>
 
-    <!-- 4. Start button -->
-    <button class="btn btn-primary btn-full btn-lg" id="btnStart" onclick="startNegotiation()" disabled>
-      🚀 ابدأ التفاوض الحقيقي
-    </button>
+    <!-- 4. Action buttons -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <button class="btn btn-primary btn-lg" id="btnStart" onclick="startNegotiation()" disabled>
+        🚀 ابدأ التفاوض الحقيقي
+      </button>
+      <button class="btn btn-purple btn-lg" id="btnSimulate" onclick="startSimulation()" disabled>
+        🤖 محاكاة الأطراف
+      </button>
+    </div>
 
     <!-- 5. Result -->
     <div id="resultArea"></div>
+
+    <!-- 6. Simulation panel (hidden) -->
+    <div id="simulationPanel" style="display:none;margin-top:20px;padding:16px;background:var(--card);border-radius:12px;border:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <span style="font-size:1.2rem">🤖</span>
+        <div>
+          <div style="font-weight:700;font-size:.9rem">محاكاة الأطراف</div>
+          <div style="font-size:.75rem;color:var(--muted)">محاكاة تفاوض ذكية مع تقييم</div>
+        </div>
+      </div>
+
+      <div id="simulationProgress" style="text-align:center;padding:20px">
+        <div class="spinner" style="margin:0 auto;margin-bottom:10px"></div>
+        <div style="font-size:.85rem;color:var(--muted)">جاري محاكاة التفاوض...</div>
+      </div>
+
+      <div id="simulationContent" style="display:none">
+        <!-- المحادثة -->
+        <div class="box" style="margin-bottom:16px">
+          <div class="box-title">💬 المحادثة المحاكاة</div>
+          <div id="conversationLog" style="max-height:400px;overflow-y:auto;background:var(--bg);padding:12px;border-radius:8px">
+            <!-- الرسائل ستُملأ هنا -->
+          </div>
+        </div>
+
+        <!-- التقييم -->
+        <div class="box" style="margin-bottom:16px">
+          <div class="box-title">📊 التقييم الذكي</div>
+          <div id="evaluationResult"></div>
+        </div>
+
+        <!-- التوصيات -->
+        <div class="box">
+          <div class="box-title">💡 توصيات التحسين</div>
+          <div id="recommendationsBox"></div>
+        </div>
+
+        <button class="btn btn-ghost btn-full" style="margin-top:16px" onclick="closeSimulation()">
+          ✕ إغلاق
+        </button>
+      </div>
+    </div>
   `;
 }
 
@@ -432,6 +480,170 @@ async function startNegotiation() {
 
 function errBox(msg) {
   return `<div class="result error"><div class="result-icon">⚠️</div><div>${esc(msg)}</div></div>`;
+}
+
+// ── Simulation (محاكاة الأطراف) ───────────────────────────────────────────────
+
+async function startSimulation() {
+  if (!selected) return;
+
+  const panel = document.getElementById('simulationPanel');
+  const progress = document.getElementById('simulationProgress');
+  const content = document.getElementById('simulationContent');
+
+  // إظهار الـ panel
+  panel.style.display = 'block';
+  content.style.display = 'none';
+  progress.style.display = 'block';
+
+  try {
+    // بيانات الباحث
+    const seekerData = {
+      name: selected.name || 'باحث',
+      city: selected.city,
+      district: selected.district,
+      rooms: selected.rooms,
+      budget: selected.budget_annual,
+      furnished: selected.furnished,
+      notes: selected.special_needs || ''
+    };
+
+    // بيانات المالك
+    const ownerData = {
+      title: selected.listing_title || 'عقار',
+      city: selected.city,
+      price: document.getElementById('listingPrice').value || selected.budget_annual,
+      furnished: selected.furnished,
+      specs: 'مواصفات عادية',
+      terms: 'عام واحد'
+    };
+
+    // اطلب المحاكاة
+    const r = await fetch(`${API}/lab/simulate`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        reg_id: selected.id,
+        seeker_data: seekerData,
+        owner_data: ownerData
+      })
+    });
+
+    const result = await r.json();
+
+    if (!result.ok) {
+      progress.innerHTML = errBox(result.error || 'فشلت المحاكاة');
+      return;
+    }
+
+    // عرض النتائج
+    renderSimulationResults(result);
+
+  } catch(e) {
+    progress.innerHTML = errBox(e.message);
+  }
+}
+
+function renderSimulationResults(result) {
+  const progress = document.getElementById('simulationProgress');
+  const content = document.getElementById('simulationContent');
+  const convLog = document.getElementById('conversationLog');
+  const evalBox = document.getElementById('evaluationResult');
+  const recBox = document.getElementById('recommendationsBox');
+
+  // المحادثة
+  let convHtml = '';
+  if (result.simulation && result.simulation.messages) {
+    for (const msg of result.simulation.messages) {
+      const fromColor = msg.from === 'باحث' ? 'var(--green-light)' : 'var(--blue)';
+      const fromIcon = msg.from === 'باحث' ? '👤' : '🏠';
+      convHtml += `
+        <div style="margin-bottom:10px;padding:10px;background:var(--card);border-right:3px solid ${fromColor};border-radius:6px">
+          <div style="font-size:.7rem;color:var(--muted);margin-bottom:4px">${fromIcon} ${msg.from}</div>
+          <div style="font-size:.85rem;line-height:1.5">${esc(msg.text)}</div>
+        </div>
+      `;
+    }
+  }
+  convLog.innerHTML = convHtml || '<div style="color:var(--muted);text-align:center;padding:20px">لا توجد رسائل</div>';
+
+  // التقييم
+  let evalHtml = '';
+  if (result.evaluation) {
+    const eval = result.evaluation;
+    evalHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="info-item">
+          <div class="info-label">جودة المحادثة</div>
+          <div class="info-val">${eval.conversation_quality?.score || '—'}/10</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">أداء الوسيط</div>
+          <div class="info-val">${eval.mediator_performance?.score || '—'}/10</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">تقييم الكود</div>
+          <div class="info-val">${eval.overall_score || '—'}/10</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">عدد الجولات</div>
+          <div class="info-val">${result.simulation?.rounds || '—'}</div>
+        </div>
+      </div>
+    `;
+
+    // الأخطاء الحرجة
+    if (eval.code_errors?.critical?.length) {
+      evalHtml += `
+        <div style="background:#f8514915;border:1px solid #f8514940;border-radius:8px;padding:10px;margin-bottom:10px">
+          <div style="font-size:.75rem;color:var(--red);font-weight:600;margin-bottom:6px">🔴 أخطاء حرجة:</div>
+          <ul style="margin:0;padding-left:20px;font-size:.8rem;color:var(--red)">
+            ${eval.code_errors.critical.map(e => `<li>${esc(e)}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+
+    // نقاط التحسين
+    if (eval.prompt_issues?.gaps?.length) {
+      evalHtml += `
+        <div style="background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;padding:10px">
+          <div style="font-size:.75rem;color:var(--yellow);font-weight:600;margin-bottom:6px">📝 نقاط التحسين:</div>
+          <ul style="margin:0;padding-left:20px;font-size:.8rem;color:var(--yellow)">
+            ${eval.prompt_issues.gaps.map(g => `<li>${esc(g)}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+  }
+  evalBox.innerHTML = evalHtml || '<div style="color:var(--muted)">لا توجد بيانات تقييم</div>';
+
+  // التوصيات
+  let recHtml = '';
+  if (result.recommendations && result.recommendations.length) {
+    recHtml = result.recommendations.map(rec => `
+      <div style="background:var(--bg);border-left:3px solid var(--green-light);padding:10px;margin-bottom:8px;border-radius:6px;font-size:.85rem">
+        ${esc(rec)}
+      </div>
+    `).join('');
+  }
+  recBox.innerHTML = recHtml || '<div style="color:var(--muted);text-align:center;padding:20px">لا توجد توصيات إضافية</div>';
+
+  // إظهار النتائج، إخفاء التحميل
+  progress.style.display = 'none';
+  content.style.display = 'block';
+}
+
+function closeSimulation() {
+  document.getElementById('simulationPanel').style.display = 'none';
+}
+
+// تفعيل الأزرار عند اختيار طلب
+function enableSimulationBtn() {
+  const btn = document.getElementById('btnSimulate');
+  if (btn && selected) {
+    btn.disabled = false;
+  }
 }
 
 loadRequests();

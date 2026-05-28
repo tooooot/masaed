@@ -1297,6 +1297,58 @@ def bot_test():
         _wa_test_local.log    = []
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SIMULATOR & CRITIC ENDPOINTS (مساعد المختبر المتقدم)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/lab/simulate", methods=["POST"])
+def lab_simulate():
+    """
+    محاكاة تفاوض كاملة مع تقييم ذكي
+
+    Body: {
+      "reg_id": 1,
+      "seeker_data": {...},
+      "owner_data": {...}
+    }
+
+    Returns: محادثة كاملة + تقييم + توصيات
+    """
+    from simulator import simulate_negotiation
+
+    data = request.get_json() or {}
+    reg_id = data.get("reg_id")
+    seeker_data = data.get("seeker_data", {})
+    owner_data = data.get("owner_data", {})
+
+    if not reg_id:
+        return jsonify({"ok": False, "error": "reg_id مطلوب"}), 400
+
+    try:
+        print(f"[API] بدء محاكاة للطلب #{reg_id}", flush=True)
+
+        result = simulate_negotiation(reg_id, seeker_data, owner_data)
+
+        return jsonify(result)
+    except Exception as e:
+        print(f"[API] خطأ في المحاكاة: {e}", flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/lab/simulate-status", methods=["GET"])
+def lab_simulate_status():
+    """
+    حالة المحاكاة (للمتابعة)
+
+    Returns: معلومات عن آخر محاكاة شُغّلت
+    """
+    # يمكن إضافة تتبع المحاكيات الجارية هنا
+    return jsonify({
+        "ok": True,
+        "message": "استخدم /api/lab/simulate لبدء محاكاة جديدة"
+    })
+
+
 @app.route("/bot/reset", methods=["POST"])
 def bot_reset():
     """Reset a phone's active conversation for testing."""
