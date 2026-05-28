@@ -8,6 +8,7 @@ import asyncio, json, re, os, sys
 from datetime import datetime
 import psycopg2
 from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
@@ -45,6 +46,120 @@ OFFER_KW = [
 ]
 
 PHONE_PATTERN = re.compile(r'(?:966|0)?5\d{8}')
+
+# ── Read single URL ─────────────────────────────────────────────────────────────
+async def scrape_single_url(url: str) -> dict:
+    """
+    قراءة إعلان حراج واحد — تستخرج التفاصيل الكاملة والوسائط.
+    يُستدعى من مساعد الطلبات.
+    """
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+        )
+        page = await browser.new_page()
+        page.set_default_timeout(30000)
+
+        try:
+            await page.goto(url, wait_until="networkidle")
+            await page.wait_for_timeout(2000)
+
+            # احصل على الـHTML الكامل
+            html = await page.content()
+            soup = BeautifulSoup(html, 'html.parser')
+
+            # استخرج الـtitle
+            title_elem = soup.select_one('h1, [class*="title"]')
+            title = title_elem.get_text(strip=True) if title_elem else ""
+
+            # استخرج الـbody/description
+            desc_elem = soup.select_one('[class*="description"], [class*="body"], article')
+            body = desc_elem.get_text(strip=True) if desc_elem else ""
+
+            # استخرج الـprice من الـscript tags (React data)
+            price = None
+            scripts = soup.find_all('script')
+            for script in scripts:
+                if script.string and 'price' in script.string.lower():
+                    try:
+                        # حاول استخراج الرقم من الـscript
+                        price_match = re.search(r'["\']?price["\']?\s*:\s*(\d{4,6})', script.string, re.IGNORECASE)
+                        if price_match:
+                            price = int(price_match.group(1))
+                            break
+                    except:
+                        pass
+
+            # إذا لم نجد سعراً من الـscript، ابحث في الـtext
+            if not price and body:
+                price = extract_price(body)
+
+            # الصور من الـimg tags
+            images = []
+            for img in soup.select('img[src], img[data-src]'):
+                img_url = img.get('src') or img.get('data-src')
+                if img_url and 'haraj' in img_url:
+                    images.append({"url": img_url, "alt": img.get('alt', '')})
+
+            # الـvideo
+            video = None
+            video_elem = soup.select_one('video, [class*="video"]')
+            if video_elem:
+                video_src = video_elem.get('src')
+                if video_src:
+                    video = {"url": video_src, "thumbnail": None}
+
+            # الـphone من الـtext
+            full_text = title + ' ' + body
+            phone = None
+            phone_match = PHONE_PATTERN.search(full_text)
+            if phone_match:
+                phone = phone_match.group(0)
+
+            # الـcity من الـtext أو meta
+            city = ""
+            city_elem = soup.select_one('[class*="city"], [class*="location"]')
+            if city_elem:
+                city = city_elem.get_text(strip=True)
+
+            if not city and body:
+                # حاول استخراج من قائمة المدن المعروفة
+                for c in ["جدة", "الرياض", "مكة", "المدينة", "الدمام", "الخبر"]:
+                    if c in body:
+                        city = c
+                        break
+
+            return {
+                'id': url.split('/')[-1][:20],  # استخدم آخر جزء من الـURL كـID
+                'title': title[:300],
+                'body': body[:2000],
+                'city': city,
+                'region': "",
+                'category': "",
+                'price': price,
+                'rooms': extract_rooms(full_text),
+                'property_type': extract_type(full_text),
+                'images': images[:10],  # أول 10 صور
+                'video': video,
+                'user_name': "",
+                'user_verified': False,
+                'post_date': None,
+                'url': url,
+                'phone': phone,
+            }
+
+        except Exception as e:
+            import traceback
+            print(f"[SCRAPE_SINGLE] {url}: {e}\n{traceback.format_exc()}", file=sys.stderr)
+            return None
+        finally:
+            await browser.close()
+
+
+def scrape_single_url_sync(url: str) -> dict:
+    """Sync wrapper لـ scrape_single_url."""
+    return asyncio.run(scrape_single_url(url))
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 def get_conn():

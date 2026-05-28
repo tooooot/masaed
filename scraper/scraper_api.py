@@ -197,6 +197,62 @@ def extract_url():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/scrape-details", methods=["POST"])
+def scrape_details():
+    """
+    اقرأ تفاصيل إعلان حراج واحد — يُستخدم من مساعد الطلبات.
+    البوديات: {url: "https://haraj.com.sa/..."}
+    العائد: التفاصيل الكاملة + الصور + الفيديو
+    """
+    from haraj_scraper import scrape_single_url_sync
+
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+
+    if not url:
+        return jsonify({"error": "url required"}), 400
+
+    if not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+
+    try:
+        result = scrape_single_url_sync(url)
+        if not result:
+            print(f"[/scrape-details] None result for {url}", flush=True)
+            return jsonify({"error": f"فشل في قراءة الإعلان من {url}"}), 400
+
+        return jsonify({
+            "success": True,
+            "announcement": {
+                "id": result.get("id"),
+                "title": result.get("title"),
+                "body": result.get("body"),
+                "city": result.get("city"),
+                "region": result.get("region"),
+                "category": result.get("category"),
+                "price": result.get("price"),
+                "rooms": result.get("rooms"),
+                "property_type": result.get("property_type"),
+                "user_name": result.get("user_name"),
+                "user_verified": result.get("user_verified"),
+                "post_date": result.get("post_date"),
+                "url": url,
+            },
+            "media": {
+                "images": result.get("images", []),
+                "video": result.get("video"),
+            },
+            "contact": {
+                "phone": result.get("phone"),
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"[/scrape-details] {url}: {e}\n{traceback.format_exc()}", flush=True)
+        return jsonify({"error": f"خطأ: {str(e)[:100]}"}), 500
+
+
 async def _extract_phone_playwright(url: str):
     """Playwright-based phone extraction. Handles Haraj + generic pages."""
     from playwright.async_api import async_playwright
@@ -1451,6 +1507,200 @@ def cron_auto_match():
         print(f"[CRON] expire cleanup: {e}", flush=True)
 
     return jsonify({"ok": True, "matches": match_result, "expired_closed": expired})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAB — مساعد المختبر
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/lab/requests")
+def lab_requests():
+    """قائمة طلبات الباحثين المسجّلين — لاختيار سيناريو اختبار."""
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, name, phone, type, city, district,
+                   property_type, rooms, budget_annual,
+                   preferred_districts, special_notes, status, created_at
+            FROM sanad.masaed_registrations
+            WHERE type = 'wanted'
+              AND status IN ('collecting', 'complete', 'completed')
+            ORDER BY created_at DESC
+            LIMIT 50
+        """)
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    conn.close()
+    for r in rows:
+        if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"requests": rows, "count": len(rows)})
+
+
+@app.route("/lab/scenario", methods=["POST"])
+def lab_scenario():
+    """
+    معاينة ما سيحدث لو بدأنا التفاوض بهذا الطلب مع أرقام الاختبار.
+    Body: {reg_id, seeker_phone, owner_phone, listing_price?}
+    """
+    data = request.get_json() or {}
+    reg_id = data.get("reg_id")
+    seeker_phone = normalize_phone(str(data.get("seeker_phone", "0548060060")))
+    owner_phone  = normalize_phone(str(data.get("owner_phone", "")))
+    listing_price = data.get("listing_price")
+
+    if not reg_id or not owner_phone:
+        return jsonify({"error": "reg_id و owner_phone مطلوبان"}), 400
+
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT name, city, district, property_type, rooms,
+                   budget_annual, preferred_districts, special_notes
+            FROM sanad.masaed_registrations WHERE id = %s
+        """, (reg_id,))
+        row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "الطلب غير موجود"}), 404
+
+    name, city, district, prop_type, rooms, budget_annual, pref_dist, notes = row
+    price = listing_price or budget_annual or 0
+    price_str  = f"{price:,} ر/سنة" if price else "قابل للتفاوض"
+    title_str  = f"{prop_type or 'شقة'} للإيجار"
+    city_str   = city or ""
+    name_str   = name or ""
+
+    seeker_msg = (
+        f"مرحباً{' ' + name_str if name_str else ''} 👋، أنا مساعد العقاري — وسيط إلكتروني.\n"
+        f"وجدت طلبك المُسجَّل وربطتك بعرض يناسبه:\n"
+        f"📍 {title_str}" + (f" — {city_str}" if city_str else "") + "\n"
+        f"💰 {price_str}\n\n"
+        f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المالك."
+    )
+
+    owner_msg = (
+        f"مرحباً 👋، أنا مساعد العقاري — وسيط إلكتروني.\n"
+        f"ربطناك بمستأجر مهتم بعقارك"
+        + (f" في {city_str}" if city_str else "") + ".\n"
+        f"💰 {price_str}\n\n"
+        f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المستأجر."
+    )
+
+    return jsonify({
+        "ok": True,
+        "scenario": {
+            "reg": {"name": name_str, "city": city_str, "district": district,
+                    "rooms": rooms, "budget_annual": budget_annual},
+            "seeker_phone": seeker_phone,
+            "owner_phone": owner_phone,
+            "listing_title": title_str,
+            "listing_price": price,
+            "seeker_msg": seeker_msg,
+            "owner_msg": owner_msg,
+        }
+    })
+
+
+@app.route("/lab/start", methods=["POST"])
+def lab_start():
+    """
+    ابدأ تفاوضاً حقيقياً بأرقام الاختبار بدلاً من الأرقام الحقيقية.
+    يسجّل كلا الطرفين تلقائياً ثم يستدعي start_negotiation.
+    Body: {reg_id, seeker_phone, owner_phone, listing_price?}
+    """
+    from negotiator import start_negotiation, ensure_table as _ensure_neg
+    _ensure_neg()
+
+    data = request.get_json() or {}
+    reg_id       = data.get("reg_id")
+    seeker_phone = normalize_phone(str(data.get("seeker_phone", "0548060060")))
+    owner_phone  = normalize_phone(str(data.get("owner_phone", "")))
+    listing_price_override = data.get("listing_price")
+
+    if not reg_id or not owner_phone:
+        return jsonify({"error": "reg_id و owner_phone مطلوبان"}), 400
+    if seeker_phone == owner_phone:
+        return jsonify({"error": "رقم الباحث ورقم المالك يجب أن يكونا مختلفين"}), 400
+
+    # 1. حمّل بيانات الطلب الأصلي
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT name, city, district, property_type, rooms,
+                   budget_annual, special_notes
+            FROM sanad.masaed_registrations WHERE id = %s
+        """, (reg_id,))
+        row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "الطلب غير موجود"}), 404
+
+    name, city, district, prop_type, rooms, budget_annual, notes = row
+    listing_price = listing_price_override or budget_annual or 0
+    listing_title = f"{prop_type or 'شقة'} للإيجار" + (f" في {city}" if city else "")
+
+    # 2. سجّل رقم الباحث التجريبي (UPSERT — لا يمس أرقام حقيقية)
+    conn = get_conn()
+    seeker_slug = f"lab-seeker-{seeker_phone}"
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO sanad.masaed_registrations
+                (phone, name, type, slug, city, district, property_type, rooms,
+                 budget_annual, special_notes, status)
+            VALUES (%s, %s, 'wanted', %s, %s, %s, %s, %s, %s, %s, 'complete')
+            ON CONFLICT (slug) DO UPDATE SET
+                city=EXCLUDED.city, district=EXCLUDED.district,
+                rooms=EXCLUDED.rooms, budget_annual=EXCLUDED.budget_annual,
+                status='complete', updated_at=NOW()
+            RETURNING id
+        """, (seeker_phone, name or "باحث اختبار", seeker_slug,
+              city, district, prop_type, rooms, budget_annual, notes))
+        seeker_reg_id = cur.fetchone()[0]
+        conn.commit()
+
+    # 3. سجّل رقم المالك التجريبي (UPSERT)
+    owner_slug = f"lab-owner-{owner_phone}"
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO sanad.masaed_registrations
+                (phone, name, type, slug, city, district, property_type, rooms,
+                 price_annual, status)
+            VALUES (%s, %s, 'listing', %s, %s, %s, %s, %s, %s, 'complete')
+            ON CONFLICT (slug) DO UPDATE SET
+                city=EXCLUDED.city, property_type=EXCLUDED.property_type,
+                rooms=EXCLUDED.rooms, price_annual=EXCLUDED.price_annual,
+                status='complete', updated_at=NOW()
+            RETURNING id
+        """, (owner_phone, "مالك اختبار", owner_slug,
+              city, district, prop_type, rooms, listing_price))
+        owner_reg_id = cur.fetchone()[0]
+        conn.commit()
+    conn.close()
+
+    # 4. ابدأ التفاوض — lead_id=seeker_reg_id, listing_id=owner_reg_id
+    result = start_negotiation(
+        lead_id       = seeker_reg_id,
+        listing_id    = owner_reg_id,
+        lead_phone    = seeker_phone,
+        listing_phone = owner_phone,
+        lead_name     = name or "باحث اختبار",
+        listing_title = listing_title,
+        listing_city  = city,
+        listing_price = listing_price,
+    )
+
+    if result.get("ok"):
+        return jsonify({
+            "ok": True,
+            "neg_id": result["neg_id"],
+            "seeker_phone": seeker_phone,
+            "owner_phone": owner_phone,
+            "message": f"بدأ التفاوض #{result['neg_id']} — ستصل رسائل واتساب للرقمين الآن",
+        })
+    else:
+        return jsonify({"ok": False, "error": result.get("error", "فشل بدء التفاوض")}), 500
 
 
 if __name__ == "__main__":
