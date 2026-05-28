@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>مساعد المسجل</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --card: #21262d;
+      --border: #30363d;
+      --green: #2ea043;
+      --green-light: #3fb950;
+      --red: #f85149;
+      --yellow: #e3b341;
+      --blue: #58a6ff;
+      --text: #f0f6fc;
+      --muted: #8b949e;
+    }
+
+    body {
+      font-family: 'Tajawal', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 1.8rem;
+      margin-bottom: 5px;
+    }
+
+    .header-sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-top: 15px;
+    }
+
+    .stat-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 1.5rem;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .stat-box.filled .stat-number {
+      color: var(--green-light);
+    }
+
+    .stat-box.missing .stat-number {
+      color: var(--red);
+    }
+
+    .stat-box.unconfirmed .stat-number {
+      color: var(--yellow);
+    }
+
+    .section {
+      margin-bottom: 20px;
+    }
+
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .data-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .field.filled {
+      border-left: 4px solid var(--green);
+      background: rgba(46, 160, 67, 0.1);
+    }
+
+    .field.missing {
+      border-left: 4px solid var(--red);
+      background: rgba(248, 81, 73, 0.1);
+    }
+
+    .field.unconfirmed {
+      border-left: 4px solid var(--yellow);
+      background: rgba(227, 179, 65, 0.1);
+    }
+
+    .field-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .field-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .field-value {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .field-value.filled {
+      color: var(--green-light);
+      font-weight: 500;
+    }
+
+    .field-status {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .badge {
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge.filled {
+      background: rgba(46, 160, 67, 0.2);
+      color: var(--green-light);
+    }
+
+    .badge.missing {
+      background: rgba(248, 81, 73, 0.2);
+      color: var(--red);
+    }
+
+    .badge.unconfirmed {
+      background: rgba(227, 179, 65, 0.2);
+      color: var(--yellow);
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .btn-small {
+      padding: 4px 8px;
+      font-size: 0.7rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      background: var(--border);
+      color: var(--text);
+      transition: all 0.2s;
+    }
+
+    .btn-small:hover {
+      background: var(--blue);
+    }
+
+    .btn-send {
+      background: var(--green);
+      color: #000;
+      font-weight: 600;
+    }
+
+    .btn-send:hover {
+      background: var(--green-light);
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+      padding: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+    }
+
+    .legend-color.filled {
+      background: var(--green);
+    }
+
+    .legend-color.missing {
+      background: var(--red);
+    }
+
+    .legend-color.unconfirmed {
+      background: var(--yellow);
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--green);
+      transition: width 0.3s;
+    }
+
+    .progress-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+    }
+
+    .empty-icon {
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+
+    @media (max-width: 600px) {
+      .field {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .field-status {
+        width: 100%;
+        margin-top: 8px;
+        justify-content: space-between;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>🔍 مساعد المسجل</h1>
+      <p class="header-sub">عرض شامل لحالة التسجيل والبيانات المفقودة</p>
+
+      <div class="stats">
+        <div class="stat-box filled">
+          <div class="stat-number" id="filled-count">0</div>
+          <div class="stat-label">موجود</div>
+        </div>
+        <div class="stat-box missing">
+          <div class="stat-number" id="missing-count">0</div>
+          <div class="stat-label">ناقص</div>
+        </div>
+        <div class="stat-box unconfirmed">
+          <div class="stat-number" id="unconfirmed-count">0</div>
+          <div class="stat-label">غير مؤكد</div>
+        </div>
+      </div>
+
+      <!-- Progress Bar -->
+      <div style="margin-top: 15px;">
+        <div class="progress-label">
+          <span>نسبة الإكمال</span>
+          <span id="completion-percent">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Registration Info -->
+    <div id="reg-info"></div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-color filled"></div>
+        <span>✅ بيانات موجودة ومؤكدة</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color missing"></div>
+        <span>❌ بيانات مفقودة (إلزامية)</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color unconfirmed"></div>
+        <span>⚠️ بيانات موجودة لكن غير مؤكدة</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin + '/api' || 'http://localhost:5555';
+
+    // استخرج reg_id من URL
+    const params = new URLSearchParams(window.location.search);
+    const regId = params.get('id');
+    const phone = params.get('phone');
+
+    if (!regId && !phone) {
+      document.getElementById('reg-info').innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">📋</div>
+          <p>لم يتم تحديد تسجيل. استخدم: ?id=25 أو ?phone=966...</p>
+        </div>
+      `;
+    } else {
+      loadRegistration();
+    }
+
+    async function loadRegistration() {
+      try {
+        let url;
+        if (regId) {
+          url = `${API_BASE}/profile/${regId}`;
+        } else if (phone) {
+          // جلب آخر تسجيل للرقم
+          const regsRes = await fetch(`${API_BASE}/registrations`);
+          const regsData = await regsRes.json();
+          const reg = regsData.registrations?.find(r => r.wa_phone === phone || r.wa_phone.endsWith(phone.slice(-9)));
+          if (!reg) throw new Error('لم يتم العثور على تسجيل');
+          url = `${API_BASE}/profile/${reg.id}`;
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('فشل جلب البيانات');
+
+        const data = await response.json();
+        displayRegistration(data);
+      } catch (error) {
+        document.getElementById('reg-info').innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">⚠️</div>
+            <p style="color: var(--red);">${error.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    function displayRegistration(data) {
+      const type = data.type; // 'listing' or 'wanted'
+      const isListing = type === 'listing';
+
+      // تحديد الحقول المطلوبة
+      const requiredFields = isListing
+        ? ['name', 'city', 'property_type', 'price_annual']
+        : ['name', 'city', 'budget_annual'];
+
+      // تحديد جميع الحقول
+      const allFields = isListing
+        ? {
+            'personal': [
+              { key: 'name', label: '👤 الاسم' },
+            ],
+            'location': [
+              { key: 'city', label: '📍 المدينة' },
+              { key: 'district', label: '🏘️ الحي' },
+            ],
+            'property': [
+              { key: 'property_type', label: '🏠 نوع العقار' },
+              { key: 'rooms', label: '🛏️ الغرف' },
+              { key: 'bathrooms', label: '🚿 الحمامات' },
+              { key: 'floor_num', label: '⬆️ الطابق' },
+              { key: 'furnished', label: '🛋️ الحالة' },
+            ],
+            'pricing': [
+              { key: 'price_annual', label: '💰 السعر السنوي' },
+              { key: 'price_monthly', label: '📅 السعر الشهري' },
+            ],
+            'additional': [
+              { key: 'location_desc', label: '📝 تفاصيل الموقع' },
+              { key: 'features', label: '⭐ المميزات' },
+            ],
+          }
+        : {
+            'personal': [
+              { key: 'name', label: '👤 الاسم' },
+            ],
+            'search': [
+              { key: 'city', label: '📍 المدينة' },
+              { key: 'preferred_districts', label: '🏘️ الأحياء المفضلة' },
+              { key: 'property_type', label: '🏠 نوع العقار' },
+            ],
+            'budget': [
+              { key: 'budget_annual', label: '💰 الميزانية السنوية' },
+            ],
+            'preferences': [
+              { key: 'rooms', label: '🛏️ الغرف' },
+              { key: 'furnished', label: '🛋️ الفرش' },
+              { key: 'for_family', label: '👥 الفئة' },
+            ],
+            'timing': [
+              { key: 'move_date', label: '📅 موعد الانتقال' },
+            ],
+            'additional': [
+              { key: 'special_notes', label: '📝 ملاحظات' },
+            ],
+          };
+
+      // عد الحقول
+      let filled = 0, missing = 0, unconfirmed = 0;
+
+      for (const sections of Object.values(allFields)) {
+        for (const field of sections) {
+          const val = data[field.key];
+          if (val === null || val === undefined || val === '' || (Array.isArray(val) && val.length === 0)) {
+            if (requiredFields.includes(field.key)) missing++;
+            else unconfirmed++;
+          } else {
+            filled++;
+          }
+        }
+      }
+
+      const total = filled + missing + unconfirmed;
+      const completion = total > 0 ? Math.round((filled / total) * 100) : 0;
+
+      // تحديث الإحصائيات
+      document.getElementById('filled-count').textContent = filled;
+      document.getElementById('missing-count').textContent = missing;
+      document.getElementById('unconfirmed-count').textContent = unconfirmed;
+      document.getElementById('completion-percent').textContent = completion + '%';
+      document.getElementById('progress-fill').style.width = completion + '%';
+
+      // بناء المحتوى
+      let html = `<div class="section">
+        <div class="section-title">📋 ${isListing ? 'عرض العقار' : 'طلب البحث'}</div>
+        <div style="background: var(--card); border: 1px solid var(--border); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+          <p><strong>معرّف:</strong> #${data.id}</p>
+          <p><strong>الحالة:</strong> ${data.status === 'complete' ? '✅ مكتمل' : data.status === 'collecting' ? '⏳ قيد الجمع' : '❌ متوقف'}</p>
+          <p><strong>النوع:</strong> ${isListing ? 'عرض عقار' : 'طلب بحث'}</p>
+        </div>
+      </div>`;
+
+      // عرض الحقول حسب الأقسام
+      for (const [section, fields] of Object.entries(allFields)) {
+        html += `<div class="section">
+          <div class="section-title">${getSectionTitle(section, isListing)}</div>
+          <div class="data-grid">`;
+
+        for (const field of fields) {
+          const val = data[field.key];
+          const isEmpty = val === null || val === undefined || val === '' || (Array.isArray(val) && val.length === 0);
+          const isRequired = requiredFields.includes(field.key);
+
+          let status, statusBadge, displayVal;
+
+          if (isEmpty) {
+            if (isRequired) {
+              status = 'missing';
+              statusBadge = '❌ ناقص';
+              displayVal = 'لم يتم تحديده';
+            } else {
+              status = 'unconfirmed';
+              statusBadge = '⚠️ اختياري';
+              displayVal = 'لم يتم تحديده';
+            }
+          } else {
+            status = 'filled';
+            statusBadge = '✅ موجود';
+            displayVal = formatValue(val, field.key);
+          }
+
+          html += `<div class="field ${status}">
+            <div class="field-label">
+              <div class="field-name">${field.label}</div>
+              <div class="field-value ${status === 'filled' ? 'filled' : ''}">${displayVal}</div>
+            </div>
+            <div class="field-status">
+              <div class="badge ${status}">${statusBadge}</div>
+            </div>
+          </div>`;
+        }
+
+        html += `</div></div>`;
+      }
+
+      // زر الإرسال
+      html += `<div style="margin-top: 20px; display: flex; gap: 10px;">
+        <button class="btn-send" onclick="sendWhatsApp('${data.wa_phone}', '${data.id}')">
+          💬 تحديث عبر واتس
+        </button>
+        <a href="/masaed/?reg=${data.id}" class="btn-send" style="flex: 1; text-align: center; text-decoration: none; padding: 10px;">
+          📱 لوحة التحكم
+        </a>
+      </div>`;
+
+      document.getElementById('reg-info').innerHTML = html;
+    }
+
+    function getSectionTitle(section, isListing) {
+      const titles = {
+        'personal': '👤 بيانات شخصية',
+        'location': '📍 الموقع',
+        'property': '🏠 تفاصيل العقار',
+        'pricing': '💰 التسعير',
+        'search': '🔍 معايير البحث',
+        'budget': '💰 الميزانية',
+        'preferences': '⭐ التفضيلات',
+        'timing': '📅 التوقيت',
+        'additional': '📝 معلومات إضافية',
+      };
+      return titles[section] || section;
+    }
+
+    function formatValue(val, key) {
+      if (typeof val === 'boolean') {
+        return val ? '✅ نعم' : '❌ لا';
+      }
+      if (Array.isArray(val)) {
+        return val.join(', ') || 'لا توجد قيمة';
+      }
+      if (typeof val === 'number') {
+        if (key.includes('price') || key.includes('budget')) {
+          return val.toLocaleString('ar-SA') + ' ريال';
+        }
+      }
+      return val || 'لا توجد قيمة';
+    }
+
+    function sendWhatsApp(phone, regId) {
+      const message = encodeURIComponent(`مرحباً، أنا أتابع معك تحديث بيانات التسجيل #${regId}`);
+      window.open(`https://wa.me/${phone}?text=${message}`);
+    }
+  </script>
+</body>
+</html>
