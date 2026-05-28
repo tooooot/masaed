@@ -1145,6 +1145,7 @@ def stats():
 def _route_message(phone: str, text: str, media_url: str = None):
     from bot import get_contact, handle_message, wa_send as bot_wa
     from negotiator import handle_negotiation_message
+    from editor import handle_edit_message, is_edit_request, get_editing_reg
 
     # ── الحافظ: دائماً ────────────────────────────────────────────────────────
     get_contact(phone)                         # upsert + last_seen
@@ -1152,6 +1153,17 @@ def _route_message(phone: str, text: str, media_url: str = None):
     # ── المفاوض: إذا تفاوض نشط ───────────────────────────────────────────────
     if text and handle_negotiation_message(phone, text):
         return                                 # المفاوض تولّى
+
+    # ── المعدّل: إذا جلسة تعديل جارية أو طلب تعديل صريح ────────────────────
+    from bot import get_active_reg
+    in_edit_session = get_editing_reg(phone) is not None
+    in_reg_session  = get_active_reg(phone) is not None
+
+    if text and (in_edit_session or (not in_reg_session and is_edit_request(text))):
+        reply = handle_edit_message(phone, text)
+        if reply:
+            bot_wa(phone, reply)
+            return                             # المعدّل تولّى
 
     # ── المسجّل: كل ما تبقى ───────────────────────────────────────────────────
     reply = handle_message(phone, text, media_url)

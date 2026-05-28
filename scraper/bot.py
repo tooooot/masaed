@@ -225,7 +225,7 @@ def get_active_reg(phone: str) -> dict | None:
         cur.execute("""
             SELECT id, type, status, data_collected, name
             FROM sanad.masaed_registrations
-            WHERE phone = %s AND status = 'collecting' AND type IS NOT NULL
+            WHERE phone = %s AND status IN ('collecting') AND type IS NOT NULL
             ORDER BY jsonb_array_length(COALESCE(
                 (SELECT jsonb_agg(k) FROM jsonb_object_keys(data_collected) k), '[]'::jsonb
             )) DESC, created_at DESC
