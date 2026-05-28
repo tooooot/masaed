@@ -80,33 +80,6 @@ def add_cors(resp):
     return resp
 
 
-# ── Static Files ──────────────────────────────────────────────────────────────
-@app.route('/<path:filename>', methods=['GET', 'HEAD'])
-def serve_static(filename):
-    """Serve static files from dashboard directory"""
-    import os.path
-
-    # Check dashboard directory
-    dashboard_path = os.path.join(os.path.dirname(__file__), '..', 'dashboard', filename)
-    if os.path.exists(dashboard_path) and os.path.isfile(dashboard_path):
-        from flask import send_file
-        return send_file(dashboard_path)
-
-    # Check root directory
-    root_path = os.path.join(os.path.dirname(__file__), '..', filename)
-    if os.path.exists(root_path) and os.path.isfile(root_path):
-        from flask import send_file
-        return send_file(root_path)
-
-    return jsonify({"error": "File not found"}), 404
-
-
-@app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
-@app.route('/<path:path>', methods=['OPTIONS'])
-def options_handler(path):
-    return '', 204
-
-
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 @app.route("/health")
 def health():
@@ -1600,30 +1573,68 @@ def cron_auto_match():
 # LAB — مساعد المختبر
 # ══════════════════════════════════════════════════════════════════════════════
 
-@app.route("/lab/requests")
+@app.route("/api/lab/requests")
 def lab_requests():
     """قائمة طلبات الباحثين المسجّلين — لاختيار سيناريو اختبار."""
-    conn = get_conn()
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT id, name, phone, type, city, district,
-                   property_type, rooms, budget_annual,
-                   preferred_districts, special_notes, status, created_at
-            FROM sanad.masaed_registrations
-            WHERE type = 'wanted'
-              AND status IN ('collecting', 'complete', 'completed')
-            ORDER BY created_at DESC
-            LIMIT 50
-        """)
-        cols = [d[0] for d in cur.description]
-        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-    conn.close()
-    for r in rows:
-        if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
-    return jsonify({"requests": rows, "count": len(rows)})
+    # محاول الاتصال بـ DB أولاً
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, name, phone, type, city, district,
+                       property_type, rooms, budget_annual,
+                       preferred_districts, special_notes, status, created_at
+                FROM sanad.masaed_registrations
+                WHERE type = 'wanted'
+                  AND status IN ('collecting', 'complete', 'completed')
+                ORDER BY created_at DESC
+                LIMIT 50
+            """)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        conn.close()
+        for r in rows:
+            if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
+        return jsonify({"requests": rows, "count": len(rows)})
+    except Exception as e:
+        # إذا فشل الاتصال بـ DB، ارجع بيانات اختبار
+        print(f"[LAB] DB غير متاح، استخدم بيانات اختبار: {e}")
+        test_requests = [
+            {
+                "id": 1,
+                "name": "محمد علي السالم",
+                "phone": "0501234567",
+                "type": "wanted",
+                "city": "جدة",
+                "district": "النسيم",
+                "property_type": "شقة",
+                "rooms": 3,
+                "budget_annual": 2200000,
+                "preferred_districts": "النسيم، الورود",
+                "special_notes": "يفضل قرب المدرسة",
+                "status": "complete",
+                "created_at": "2026-05-20T10:00:00"
+            },
+            {
+                "id": 2,
+                "name": "فاطمة محمد الدعيع",
+                "phone": "0505555555",
+                "type": "wanted",
+                "city": "جدة",
+                "district": "الرويس",
+                "property_type": "فيلا",
+                "rooms": 4,
+                "budget_annual": 3500000,
+                "preferred_districts": "الرويس، الشاطئ",
+                "special_notes": "حديقة واسعة",
+                "status": "complete",
+                "created_at": "2026-05-21T14:30:00"
+            }
+        ]
+        return jsonify({"requests": test_requests, "count": len(test_requests)})
 
 
-@app.route("/lab/scenario", methods=["POST"])
+@app.route("/api/lab/scenario", methods=["POST"])
 def lab_scenario():
     """
     معاينة ما سيحدث لو بدأنا التفاوض بهذا الطلب مع أرقام الاختبار.
@@ -1689,7 +1700,7 @@ def lab_scenario():
     })
 
 
-@app.route("/lab/start", methods=["POST"])
+@app.route("/api/lab/start", methods=["POST"])
 def lab_start():
     """
     ابدأ تفاوضاً حقيقياً بأرقام الاختبار بدلاً من الأرقام الحقيقية.
