@@ -390,10 +390,14 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
     <!-- ══ MATCHES ══ -->
     <div class="page" id="page-matches">
       <div class="page-body">
-        <div class="filters">
-          <div class="filter active" onclick="filterMatch('pending',this)">بانتظار الموافقة</div>
-          <div class="filter" onclick="filterMatch('approved',this)">موافق عليها</div>
-          <div class="filter" onclick="filterMatch('session_created',this)">فُتحت جلسة</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div class="filters" style="flex:1;margin-bottom:0">
+            <div class="filter active" onclick="filterMatch('pending',this)">بانتظار الموافقة</div>
+            <div class="filter" onclick="filterMatch('awaiting_registration',this)">⏳ انتظار تسجيل</div>
+            <div class="filter" onclick="filterMatch('session_created',this)">فُتحت جلسة</div>
+            <div class="filter" onclick="filterMatch('rejected',this)">مرفوضة</div>
+          </div>
+          <button class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--muted);white-space:nowrap" onclick="triggerAutoMatch(this)">🔄 مطابقة تلقائية</button>
         </div>
         <div id="matches-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
@@ -754,13 +758,15 @@ async function dismissNeg(negId,btn){
 let matchCache={},matchF='pending';
 async function loadMatches(){
   document.getElementById('matches-list').innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
-  const [p,a,sc]=await Promise.all([
-    n8n('matches',{status:'pending',limit:100}),
-    n8n('matches',{status:'approved',limit:50}),
-    n8n('matches',{status:'session_created',limit:50}),
+  const [p,aw,sc,rj]=await Promise.all([
+    sfetch('/matches?status=pending&limit=100'),
+    sfetch('/matches?status=awaiting_registration&limit=50'),
+    sfetch('/matches?status=session_created&limit=50'),
+    sfetch('/matches?status=rejected&limit=50'),
   ]);
-  matchCache={pending:p.data||[],approved:a.data||[],session_created:sc.data||[]};
-  if(p.data?.length>0){showDot('bnd-matches');showBadge('sb-matches',p.data.length,'');}
+  matchCache={pending:p.data||[],awaiting_registration:aw.data||[],session_created:sc.data||[],rejected:rj.data||[]};
+  const total=(p.data?.length||0)+(aw.data?.length||0);
+  if(total>0){showDot('bnd-matches');showBadge('sb-matches',total,'');}
   renderMatches(matchCache[matchF]);
 }
 function filterMatch(s,el){
@@ -773,7 +779,9 @@ function renderMatches(data){
   el.innerHTML=data.map(m=>{
     const sc=m.score||0,cls=sc>=70?'high':sc>=50?'mid':'low';
     const isPending=m.status==='pending';
-    const labels={pending:'بانتظار الموافقة',approved:'موافق',rejected:'مرفوضة',session_created:'فُتحت جلسة'};
+    const isAwaiting=m.status==='awaiting_registration';
+    const isSession=m.status==='session_created';
+    const labels={pending:'بانتظار الموافقة',awaiting_registration:'⏳ انتظار تسجيل',approved:'موافق',rejected:'مرفوضة',session_created:'فُتحت جلسة'};
     return `<div class="match-card">
   <div class="match-head">
     <div class="score-circle ${cls}">${sc}%</div>
@@ -795,21 +803,52 @@ function renderMatches(data){
   </div>
   ${isPending?`<div class="match-actions">
     <button class="btn btn-red btn-sm" onclick="matchAct('${m.id}','reject',this)">✕ رفض</button>
-    <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="matchAct('${m.id}','approve',this)">✓ موافق — أبلّغ الطرفين</button>
+    <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;font-weight:700" onclick="matchAct('${m.id}','approve',this)">🤝 ابدأ التفاوض</button>
+  </div>`:''}
+  ${isAwaiting?`<div class="match-actions">
+    <div style="font-size:.72rem;color:var(--yellow);padding:6px 8px;background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;flex:1">
+      ⏳ رسالة التسجيل أُرسلت — ستُحوَّل تلقائياً عند اكتمال التسجيل
+    </div>
+    <button class="btn btn-red btn-sm" onclick="matchAct('${m.id}','reject',this)">✕ إلغاء</button>
+  </div>`:''}
+  ${isSession?`<div class="match-actions">
+    <button class="btn btn-primary btn-sm" style="flex:1;font-weight:700"
+      onclick="openNegFromMatch(${m.neg_id||0})">💬 فتح جلسة التفاوض #${m.neg_id||'—'}</button>
   </div>`:''}
 </div>`;
   }).join('');
 }
 async function matchAct(id,action,btn){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const d=await n8n('match-'+action,{id});
-  toast(d.success?(action==='approve'?'✅ موافق — سيُبلَّغ الطرفان':'تم الرفض'):'❌ '+d.error);
-  if(d.success){loadMatches();loadHome();}else{btn.disabled=false;btn.innerHTML=action==='approve'?'✓ موافق':'✕ رفض';}
+  const d=await sfetch(`/matches/${id}/${action}`,{method:'POST'});
+  const msg = d.ok
+    ? (action==='approve'
+        ? (d.status==='awaiting_registration'
+            ? '⏳ '+(d.message||'رسائل تسجيل أُرسلت — انتظر اكتمال التسجيل')
+            : '🤝 بدأ التفاوض — أُرسلت الرسائل للطرفين')
+        : '✅ تم الرفض')
+    : '❌ '+(d.error||'خطأ');
+  toast(msg, 4500);
+  if(d.ok){loadMatches();loadHome();}else{btn.disabled=false;btn.innerHTML=action==='approve'?'✓ موافق':'✕ رفض';}
+}
+
+function openNegFromMatch(negId) {
+  if(!negId) return;
+  nav('sessions', document.getElementById('bn-sessions'));
+  setTimeout(() => openChat(negId), 600);
+}
+
+async function triggerAutoMatch(btn){
+  btn.disabled=true;btn.textContent='⏳ جارٍ التوفيق...';
+  const d=await sfetch('/matches/auto',{method:'POST'});
+  btn.disabled=false;btn.textContent='🔄 مطابقة تلقائية';
+  if(d.ok){toast(`✅ ${d.new_matches} توفيق جديد من ${d.leads_processed} طلب`,4000);loadMatches();}
+  else toast('❌ '+(d.error||'خطأ'));
 }
 
 // ── LOGS ──
 async function loadLogs(){
-  const d=await n8n('logs',{limit:80});
+  const d=await sfetch('/logs?limit=80');
   const box=document.getElementById('log-box');
   if(!d.success||!d.data?.length){box.innerHTML='<span style="color:var(--muted)">لا توجد سجلات</span>';return;}
   const cls={error:'color:var(--red)',warn:'color:var(--yellow)',success:'color:var(--green-light)'};

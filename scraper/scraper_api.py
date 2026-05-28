@@ -413,8 +413,8 @@ def score_match(lead: dict, listing: dict) -> tuple:
     reasons = []
     missing = []
 
-    full_lead    = (lead.get('title','') + ' ' + (lead.get('body') or ''))[:600]
-    full_listing = (listing.get('title','') + ' ' + (listing.get('body') or ''))[:600]
+    full_lead    = ((lead.get('title') or '') + ' ' + (lead.get('body') or ''))[:600]
+    full_listing = ((listing.get('title') or '') + ' ' + (listing.get('body') or ''))[:600]
 
     # ── City (40 pts) ─────────────────────────────────────────────────────────
     lc = (lead.get('city') or '').strip()
@@ -746,6 +746,363 @@ def negotiate_propose(neg_id):
     return jsonify({"ok": True, "proposed_price": proposed_price})
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MATCHES — masaed_matches table + auto-matching + approve/reject
+# ══════════════════════════════════════════════════════════════════════════════
+
+def ensure_matches_table():
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sanad.masaed_matches (
+                id          SERIAL PRIMARY KEY,
+                lead_id     INT NOT NULL,
+                listing_id  INT NOT NULL,
+                score       INT,
+                reason      TEXT,
+                missing     TEXT,
+                status      TEXT DEFAULT 'pending',
+                neg_id      INT,
+                req_city    TEXT,
+                req_budget  INT,
+                req_phone   TEXT,
+                lst_city    TEXT,
+                lst_price   INT,
+                lst_phone   TEXT,
+                matched_at  TIMESTAMPTZ DEFAULT NOW(),
+                updated_at  TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(lead_id, listing_id)
+            )
+        """)
+        conn.commit()
+    conn.close()
+
+
+@app.route("/matches")
+def list_matches():
+    ensure_matches_table()
+    status = request.args.get('status', 'pending')
+    limit  = min(int(request.args.get('limit', 100)), 200)
+    conn   = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, lead_id, listing_id, score, reason, missing,
+                   status, neg_id, req_city, req_budget, req_phone,
+                   lst_city, lst_price, lst_phone, matched_at
+            FROM sanad.masaed_matches
+            WHERE status = %s
+            ORDER BY score DESC, matched_at DESC
+            LIMIT %s
+        """, (status, limit))
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    conn.close()
+    for r in rows:
+        if r.get('matched_at'):
+            r['matched_at'] = r['matched_at'].isoformat()
+    return jsonify({"ok": True, "success": True, "data": rows})
+
+
+@app.route("/matches/auto", methods=["POST"])
+def auto_match():
+    """
+    تشغيل المطابقة التلقائية.
+    الأولوية: المسجّلون في v1 (masaed_registrations) ثم مصادر حراج (masaed_leads/listings).
+    يعطي علامة is_registered للتوفيقات من v1.
+    """
+    ensure_matches_table()
+    conn = get_conn()
+    with conn.cursor() as cur:
+        # ── طلبات المستأجرين: v1 أولاً، ثم حراج ──────────────────────────────
+        cur.execute("""
+            SELECT
+                r.id            AS id,
+                r.phone         AS phone,
+                FALSE           AS phone_hidden,
+                COALESCE(r.city, c.city) AS city,
+                COALESCE(r.special_notes, '') || ' ' ||
+                    COALESCE(r.preferred_districts::text,'') AS body,
+                COALESCE(r.property_type,'') AS title,
+                r.budget_annual AS budget,
+                TRUE            AS is_registered
+            FROM sanad.masaed_registrations r
+            LEFT JOIN sanad.masaed_contacts c ON c.phone = r.phone
+            WHERE r.type = 'wanted'
+              AND r.status IN ('collecting','complete')
+            ORDER BY r.created_at DESC LIMIT 30
+        """)
+        reg_lead_cols = [d[0] for d in cur.description]
+        reg_leads = [dict(zip(reg_lead_cols, r)) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT id, title, body, city, phone, phone_hidden,
+                   FALSE AS is_registered
+            FROM sanad.masaed_leads
+            WHERE listing_type = 'wanted' AND status IN ('new', 'active')
+            ORDER BY id DESC LIMIT 30
+        """)
+        lead_cols = [d[0] for d in cur.description]
+        scraped_leads = [dict(zip(lead_cols, r)) for r in cur.fetchall()]
+
+        # ── إعلانات الملاك: v1 أولاً، ثم حراج ───────────────────────────────
+        cur.execute("""
+            SELECT
+                r.id            AS id,
+                r.phone         AS phone,
+                FALSE           AS phone_hidden,
+                COALESCE(r.city, c.city) AS city,
+                r.property_type AS property_type,
+                r.rooms         AS rooms,
+                r.price_annual  AS price,
+                COALESCE(r.location_desc,'') AS body,
+                r.property_type AS title,
+                TRUE            AS is_registered
+            FROM sanad.masaed_registrations r
+            LEFT JOIN sanad.masaed_contacts c ON c.phone = r.phone
+            WHERE r.type = 'listing'
+              AND r.status IN ('collecting','complete')
+            ORDER BY r.created_at DESC LIMIT 200
+        """)
+        reg_lst_cols = [d[0] for d in cur.description]
+        reg_listings = [dict(zip(reg_lst_cols, r)) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT id, title, body, city, property_type, rooms, price,
+                   phone, phone_hidden, FALSE AS is_registered
+            FROM sanad.masaed_listings
+            WHERE status = 'active'
+            ORDER BY scraped_at DESC LIMIT 300
+        """)
+        lst_cols = [d[0] for d in cur.description]
+        scraped_listings = [dict(zip(lst_cols, r)) for r in cur.fetchall()]
+
+    conn.close()
+
+    # v1 مسجّلون أولاً، ثم حراج
+    leads    = reg_leads    + scraped_leads
+    listings = reg_listings + scraped_listings
+
+    new_matches = 0
+    for lead in leads:
+        scored = []
+        for lst in listings:
+            sc, reason, missing = score_match(lead, lst)
+            if sc >= 40:
+                scored.append((sc, reason, missing, lst))
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        for sc, reason, missing, lst in scored[:3]:
+            # رفع النسبة 5 نقاط إذا كلا الطرفين مسجّلان في v1
+            both_registered = lead.get('is_registered') and lst.get('is_registered')
+            final_sc = min(sc + (5 if both_registered else 0), 100)
+            try:
+                conn2 = get_conn()
+                with conn2.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO sanad.masaed_matches
+                            (lead_id, listing_id, score, reason, missing,
+                             req_city, req_phone, lst_city, lst_price, lst_phone)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (lead_id, listing_id) DO NOTHING
+                        RETURNING id
+                    """, (
+                        lead['id'], lst['id'], final_sc, reason, missing,
+                        lead.get('city'), lead.get('phone'),
+                        lst.get('city'), lst.get('price'), lst.get('phone'),
+                    ))
+                    if cur.fetchone():
+                        new_matches += 1
+                conn2.commit()
+                conn2.close()
+            except Exception as e:
+                print(f"[MATCH AUTO] {e}", flush=True)
+                try: conn2.close()
+                except: pass
+
+    src_note = f"v1:{len(reg_leads)}+haraj:{len(scraped_leads)} leads"
+    return jsonify({"ok": True, "new_matches": new_matches,
+                    "leads_processed": len(leads), "sources": src_note})
+
+
+@app.route("/matches/<int:match_id>/approve", methods=["POST"])
+def approve_match(match_id):
+    """
+    الإدارة توافق على توفيق.
+    - إذا كلا الطرفين مسجّلان → ابدأ التفاوض مباشرة.
+    - إذا أحدهم غير مسجّل → أرسل رسالة تعريف وطلب تسجيل، ضع الحالة awaiting_registration.
+    """
+    ensure_matches_table()
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, lead_id, listing_id, req_phone, lst_phone,
+                   lst_city, lst_price, req_city
+            FROM sanad.masaed_matches WHERE id = %s
+        """, (match_id,))
+        cols = [d[0] for d in cur.description]
+        row  = cur.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "match not found"}), 404
+    m = dict(zip(cols, row))
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT title FROM sanad.masaed_listings WHERE id=%s", (m['listing_id'],))
+        r = cur.fetchone()
+        listing_title = r[0] if r else None
+
+        # فحص التسجيل
+        cur.execute("""
+            SELECT phone FROM sanad.masaed_registrations
+            WHERE phone IN (%s, %s) AND status != 'abandoned'
+        """, (m['req_phone'], m['lst_phone']))
+        registered = {r2[0] for r2 in cur.fetchall()}
+    conn.close()
+
+    unregistered = []
+    if m['req_phone'] and m['req_phone'] not in registered:
+        unregistered.append(('tenant', m['req_phone']))
+    if m['lst_phone'] and m['lst_phone'] not in registered:
+        unregistered.append(('owner', m['lst_phone']))
+
+    if unregistered:
+        # أرسل رسالة تعريف لكل غير مسجّل
+        from negotiator import wa_send as neg_wa
+        city_str = m.get('lst_city') or m.get('req_city') or ''
+
+        for role, phone in unregistered:
+            if role == 'owner':
+                msg = (
+                    f"مرحباً 👋، وجدنا إعلانك في حراج"
+                    + (f" عن {listing_title}" if listing_title else "") + ".\n"
+                    f"نحن مساعد العقاري — خدمة مجانية تربطك بالمستأجر المناسب.\n"
+                    f"لدينا طالب مهتم بعقارك الآن 🏠\n"
+                    f"تحدّث معي وسنساعدك في إتمام الإيجار."
+                )
+            else:
+                msg = (
+                    f"مرحباً 👋، وجدنا طلبك في حراج"
+                    + (f" عن إيجار في {city_str}" if city_str else "") + ".\n"
+                    f"نحن مساعد العقاري — خدمة مجانية تساعدك في إيجاد العقار المناسب.\n"
+                    f"لدينا عقار يناسب طلبك الآن 🔍\n"
+                    f"تحدّث معي وسنساعدك في إيجاد ما تبحث عنه."
+                )
+            neg_wa(phone, msg)
+
+        conn2 = get_conn()
+        with conn2.cursor() as cur:
+            cur.execute("""
+                UPDATE sanad.masaed_matches
+                SET status='awaiting_registration', updated_at=NOW()
+                WHERE id=%s
+            """, (match_id,))
+            conn2.commit()
+        conn2.close()
+
+        roles = " و".join("المالك" if r == 'owner' else "المستأجر" for r, _ in unregistered)
+        return jsonify({
+            "ok": True,
+            "success": True,
+            "status": "awaiting_registration",
+            "message": f"رسالة تعريف أُرسلت لـ{roles} — سيُبلَّغ عند اكتمال التسجيل",
+            "unregistered": [p for _, p in unregistered],
+        })
+
+    # كلاهما مسجّل → ابدأ التفاوض
+    from negotiator import start_negotiation, ensure_table as _ensure_neg
+    _ensure_neg()
+    result = start_negotiation(
+        lead_id       = m['lead_id'],
+        listing_id    = m['listing_id'],
+        lead_phone    = m['req_phone'],
+        listing_phone = m['lst_phone'],
+        listing_title = listing_title,
+        listing_city  = m.get('lst_city'),
+        listing_price = m.get('lst_price'),
+    )
+
+    neg_id = result.get('neg_id')
+    if not result.get('ok') and not neg_id:
+        return jsonify({"ok": False, "error": result.get('error', 'فشل بدء التفاوض')})
+
+    conn2 = get_conn()
+    with conn2.cursor() as cur:
+        cur.execute("""
+            UPDATE sanad.masaed_matches
+            SET status='session_created', neg_id=%s, updated_at=NOW()
+            WHERE id=%s
+        """, (neg_id, match_id))
+        conn2.commit()
+    conn2.close()
+    return jsonify({"ok": True, "success": True, "neg_id": neg_id, "match_id": match_id})
+
+
+@app.route("/matches/<int:match_id>/reject", methods=["POST"])
+def reject_match(match_id):
+    ensure_matches_table()
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE sanad.masaed_matches
+            SET status='rejected', updated_at=NOW()
+            WHERE id=%s
+        """, (match_id,))
+        conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "success": True})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ACTIVITY LOG
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/logs")
+def get_logs():
+    limit = min(int(request.args.get('limit', 50)), 200)
+    conn  = get_conn()
+    logs  = []
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT updated_at,
+                   CASE status
+                     WHEN 'agreed'    THEN 'success'
+                     WHEN 'cancelled' THEN 'warn'
+                     WHEN 'failed'    THEN 'error'
+                     ELSE 'info'
+                   END,
+                   '🤝 ' || COALESCE(listing_title,'عقار') || ' — ' || status
+            FROM sanad.masaed_negotiations
+            ORDER BY updated_at DESC LIMIT 30
+        """)
+        for ts, level, msg in cur.fetchall():
+            logs.append({'time': ts.isoformat() if ts else None, 'level': level, 'message': msg})
+
+        cur.execute("""
+            SELECT created_at,
+                   CASE WHEN status='completed' THEN 'success' ELSE 'info' END,
+                   '📝 ' || COALESCE(type,'') || ': ' || COALESCE(name, phone,'?') || ' (' || status || ')'
+            FROM sanad.masaed_registrations
+            ORDER BY created_at DESC LIMIT 30
+        """)
+        for ts, level, msg in cur.fetchall():
+            logs.append({'time': ts.isoformat() if ts else None, 'level': level, 'message': msg})
+
+        cur.execute("""
+            SELECT matched_at,
+                   CASE WHEN score >= 70 THEN 'success' WHEN score >= 50 THEN 'warn' ELSE 'info' END,
+                   '🎯 توفيق ' || COALESCE(req_city,'') || ' — نسبة ' || score || '٪ (' || status || ')'
+            FROM sanad.masaed_matches
+            ORDER BY matched_at DESC LIMIT 20
+        """)
+        for ts, level, msg in cur.fetchall():
+            logs.append({'time': ts.isoformat() if ts else None, 'level': level, 'message': msg})
+    conn.close()
+
+    logs.sort(key=lambda x: x.get('time') or '', reverse=True)
+    return jsonify({"success": True, "data": logs[:limit]})
+
+
 @app.route("/stats")
 def stats():
     conn = get_conn()
@@ -767,7 +1124,43 @@ def stats():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BOT ENDPOINTS — مساعد المسجّل
+# ROUTER — جهاز التوجيه المركزي
+# ══════════════════════════════════════════════════════════════════════════════
+#
+#  كل رسالة واتساب واردة تمر من هنا بالترتيب:
+#
+#  1. مساعد الحافظ ← دائماً (يُحدّث last_seen ويُحضّر الذاكرة)
+#
+#  2. مساعد المفاوض ← إذا يوجد تفاوض نشط لهذا الرقم في masaed_negotiations
+#     → يعالج الرسالة ويرد ← يتوقف هنا
+#
+#  3. مساعد المسجّل ← في كل الحالات الأخرى:
+#     - شخص جديد لم يسبق تواصله
+#     - شخص في منتصف تسجيل (collecting)
+#     - شخص مسجّل يريد إضافة عقار جديد
+#     - شخص انتهى تفاوضه ويريد التحدث مجدداً
+#
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _route_message(phone: str, text: str, media_url: str = None):
+    from bot import get_contact, handle_message, wa_send as bot_wa
+    from negotiator import handle_negotiation_message
+
+    # ── الحافظ: دائماً ────────────────────────────────────────────────────────
+    get_contact(phone)                         # upsert + last_seen
+
+    # ── المفاوض: إذا تفاوض نشط ───────────────────────────────────────────────
+    if text and handle_negotiation_message(phone, text):
+        return                                 # المفاوض تولّى
+
+    # ── المسجّل: كل ما تبقى ───────────────────────────────────────────────────
+    reply = handle_message(phone, text, media_url)
+    if reply:
+        bot_wa(phone, reply)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BOT ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
 
 ALLOWED_INSTANCE = os.getenv("MASAED_GREEN_INSTANCE", "")
@@ -792,14 +1185,7 @@ def bot_webhook():
     if not phone:
         return jsonify({"ok": True})
     try:
-        # Route: negotiation takes priority over registration bot
-        from negotiator import handle_negotiation_message
-        if text and handle_negotiation_message(phone, text):
-            pass  # handled by negotiator
-        else:
-            reply = handle_message(phone, text, media_url)
-            if reply:
-                wa_send(phone, reply)
+        _route_message(phone, text, media_url)
     except Exception as e:
         print(f"[BOT ERROR] {e}", flush=True)
     return jsonify({"ok": True})
@@ -812,8 +1198,7 @@ def bot_test():
     Body: {phone, text, media_url?}
     Returns: {reply, wa_sent: [{to, text}, ...]}
     """
-    from bot import handle_message, _wa_test_local
-    from negotiator import handle_negotiation_message
+    from bot import _wa_test_local
     data      = request.get_json() or {}
     phone     = data.get("phone", "966500000000")
     text      = data.get("text", "") or ""
@@ -821,19 +1206,16 @@ def bot_test():
     if not text and not media_url:
         text = "مرحبا"
 
-    # Enable dry-run: all wa_send calls are captured, nothing reaches real phones
+    # Dry-run: captures all wa_send calls, nothing reaches real phones
     _wa_test_local.active = True
     _wa_test_local.log    = []
     try:
-        reply = None
-        if text and handle_negotiation_message(phone, text):
-            reply = "[negotiator]"
-        else:
-            reply = handle_message(phone, text or None, media_url)
+        _route_message(phone, text or None, media_url)
+        sent = list(_wa_test_local.log)
         return jsonify({
-            "reply":    reply,
-            "wa_sent":  list(_wa_test_local.log),
-            "dry_run":  True,
+            "reply":   sent[0]["text"] if sent else None,
+            "wa_sent": sent,
+            "dry_run": True,
         })
     finally:
         _wa_test_local.active = False
@@ -1008,6 +1390,55 @@ def tg_callback():
     # ignore → لا شيء
 
     return jsonify({"ok": True})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CRON — مهام دورية يستدعيها cron أو n8n
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/cron/auto-match", methods=["POST"])
+def cron_auto_match():
+    """تشغيل المطابقة التلقائية + تنظيف التفاوضات المنتهية."""
+    # 1. auto-match
+    match_result = {"new_matches": 0, "leads_processed": 0}
+    try:
+        with app.test_request_context('/matches/auto', method='POST'):
+            r = auto_match()
+            d = r.get_json() if hasattr(r, 'get_json') else {}
+            match_result = d
+    except Exception as e:
+        match_result["error"] = str(e)
+
+    # 2. تنظيف التفاوضات المنتهية (expires_at < NOW)
+    expired = 0
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE sanad.masaed_negotiations
+                SET status = 'failed'
+                WHERE status = 'active'
+                  AND expires_at IS NOT NULL
+                  AND expires_at < NOW()
+                RETURNING id, lead_phone, listing_phone
+            """)
+            rows = cur.fetchall()
+            expired = len(rows)
+            conn.commit()
+            # أبلغ الطرفين
+            for neg_id, lead_ph, lst_ph in rows:
+                try:
+                    from negotiator import wa_send as neg_wa
+                    msg = "⏰ انتهت مهلة التفاوض. يمكنك التواصل مجدداً لاحقاً."
+                    neg_wa(lead_ph, msg)
+                    neg_wa(lst_ph, msg)
+                except Exception:
+                    pass
+        conn.close()
+    except Exception as e:
+        print(f"[CRON] expire cleanup: {e}", flush=True)
+
+    return jsonify({"ok": True, "matches": match_result, "expired_closed": expired})
 
 
 if __name__ == "__main__":

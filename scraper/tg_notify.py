@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Stub — الإشعارات تظهر في لوحة التحكم فقط عبر needs_admin flag في DB.
+إشعارات الإدارة — الإرسال يتم عبر negotiator._notify_admin مباشرة.
+هذا الملف محفوظ للتوافق مع الاستيرادات القديمة فقط.
 """
-# هذا الملف موجود لتوافق الاستيراد فقط — لا إرسال خارجي
 
 
 def notify_near_agreement(*a, **kw):
@@ -22,4 +22,8 @@ def notify_many_rounds(*a, **kw):
 
 
 def setup_webhook(*a, **kw):
+    pass
+
+
+def _send(*a, **kw):
     pass
