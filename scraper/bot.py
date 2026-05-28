@@ -754,6 +754,69 @@ def _parse_ai_response(text: str) -> dict:
     return {"reply": text[:500] if text else "أهلاً!", "extracted": {}, "complete": False}
 
 # ── Profile URL ───────────────────────────────────────────────────────────────
+def _format_collected_data(reg_type: str, data: dict) -> str:
+    """اعرض البيانات المجمعة بصيغة مقروءة للتأكيد."""
+    lines = []
+
+    if reg_type == "listing":
+        lines.append("📋 **عرض العقار**")
+        if data.get("name"):
+            lines.append(f"👤 الاسم: {data['name']}")
+        if data.get("property_type"):
+            lines.append(f"🏠 نوع العقار: {data['property_type']}")
+        if data.get("city"):
+            lines.append(f"📍 المدينة: {data['city']}")
+        if data.get("district"):
+            lines.append(f"🏘️ الحي: {data['district']}")
+        if data.get("rooms"):
+            lines.append(f"🛏️ الغرف: {data['rooms']}")
+        if data.get("bathrooms"):
+            lines.append(f"🚿 الحمامات: {data['bathrooms']}")
+        if data.get("floor"):
+            lines.append(f"⬆️ الطابق: {data['floor']}")
+        if data.get("furnished") is not None:
+            furnished_text = "مفروش ✨" if data["furnished"] else "غير مفروش"
+            lines.append(f"🛋️ الحالة: {furnished_text}")
+        if data.get("price_annual"):
+            lines.append(f"💰 السعر السنوي: {data['price_annual']:,} ريال")
+        if data.get("price_monthly"):
+            lines.append(f"📅 السعر الشهري: {data['price_monthly']:,} ريال")
+        if data.get("for_family") is not None:
+            family_text = "للعوائل 👨‍👩‍👧‍👦" if data["for_family"] else "للعزاب 👨"
+            lines.append(f"👥 الفئة: {family_text}")
+        if data.get("location_desc"):
+            lines.append(f"📝 الموقع/التفاصيل: {data['location_desc'][:100]}")
+        if data.get("features"):
+            lines.append(f"⭐ المميزات: {data['features'][:100]}")
+
+    elif reg_type == "wanted":
+        lines.append("🔍 **طلب الإيجار**")
+        if data.get("name"):
+            lines.append(f"👤 الاسم: {data['name']}")
+        if data.get("property_type"):
+            lines.append(f"🏠 نوع العقار: {data['property_type']}")
+        if data.get("city"):
+            lines.append(f"📍 المدينة: {data['city']}")
+        if data.get("preferred_districts"):
+            lines.append(f"🏘️ الأحياء المفضلة: {data['preferred_districts']}")
+        if data.get("rooms"):
+            lines.append(f"🛏️ عدد الغرف المطلوبة: {data['rooms']}")
+        if data.get("budget_annual"):
+            lines.append(f"💰 الميزانية السنوية: {data['budget_annual']:,} ريال")
+        if data.get("for_family") is not None:
+            family_text = "للعوائل 👨‍👩‍👧‍👦" if data["for_family"] else "للعزاب 👨"
+            lines.append(f"👥 الفئة: {family_text}")
+        if data.get("furnished") is not None:
+            furnished_text = "مفروش ✨" if data["furnished"] else "غير مفروش"
+            lines.append(f"🛋️ المطلوب: {furnished_text}")
+        if data.get("move_date"):
+            lines.append(f"📅 موعد الانتقال: {data['move_date']}")
+        if data.get("special_notes"):
+            lines.append(f"📝 ملاحظات: {data['special_notes'][:100]}")
+
+    return "\n".join(lines)
+
+
 def get_profile_url(reg_id: int) -> str:
     return f"{BASE_URL}/p/{reg_id}"
 
@@ -905,14 +968,25 @@ def _handle_message_inner(phone: str, text: str, media_url: str = None) -> str |
                 "complete": complete,
             })
 
-            if complete:
+            # ── عرض البيانات المجمعة للتأكيد ──────────────────────────────────
+            if merged.get("name"):
+                data_summary = _format_collected_data(reg_type, merged)
+                reply += f"\n\n{data_summary}"
+                reply += "\n\n✅ هل هذه البيانات صحيحة؟ (رد: نعم/لا)"
+
+                # إذا كانت البيانات كاملة، عرّض الخيار مباشرة
+                if complete:
+                    reply = reply.replace("هل هذه البيانات صحيحة؟", "تم جمع البيانات الكاملة! تأكيد؟")
+
+            # إذا كانت البيانات كاملة جداً، اكمل التسجيل
+            if complete and merged.get("name"):
                 sync_contact_after_reg(phone, reg_id, reg_type,
                                        merged.get("name"), merged.get("city"))
                 _generate_and_save_notes(phone, reg_id)
                 profile_url = get_profile_url(reg_id)
                 name_str = merged.get("name") or ""
-                reply += (f"\n\n🎉 تم التسجيل{' يا ' + name_str if name_str else ''}!"
-                          f"\nصفحتك جاهزة:\n{profile_url}\n\nشاركها مع من تريد 🏠")
+                reply = (f"🎉 تم التسجيل{' يا ' + name_str if name_str else ''}!\n"
+                         f"صفحتك جاهزة:\n{profile_url}\n\nشاركها مع من تريد 🏠")
 
         return reply
 
@@ -942,6 +1016,38 @@ def _handle_message_inner(phone: str, text: str, media_url: str = None) -> str |
         text = f"[أرسل المستخدم {label} للعقار]"
 
     save_chat(phone, reg_id, "user", text or "")
+
+    # ── تأكيد المستخدم للبيانات ────────────────────────────────────────────
+    if text and text.lower() in ("نعم", "ايوه", "اي", "موافق", "تمام", "صح"):
+        # المستخدم وافق على البيانات
+        print(f"[REG #{reg_id}] User confirmed data", flush=True)
+
+        # وضع complete = true وتسجيل
+        update_reg(reg_id, {
+            "complete": True,
+        })
+
+        sync_contact_after_reg(phone, reg_id, reg["type"],
+                               current_data.get("name"), current_data.get("city"))
+        _generate_and_save_notes(phone, reg_id)
+        profile_url = get_profile_url(reg_id)
+        name_str = current_data.get("name") or ""
+
+        save_chat(phone, reg_id, "assistant", json.dumps({
+            "reply": f"✅ تم التسجيل بنجاح!",
+            "complete": True
+        }, ensure_ascii=False))
+
+        return (f"🎉 تم التسجيل{' يا ' + name_str if name_str else ''}!\n"
+                f"صفحتك جاهزة:\n{profile_url}\n\nشاركها مع من تريد 🏠")
+
+    # ── رفض المستخدم أو تصحيح البيانات ──────────────────────────────────────
+    if text and text.lower() in ("لا", "لا يا", "خطأ", "اعدل"):
+        save_chat(phone, reg_id, "assistant", json.dumps({
+            "reply": "حسناً، ما الذي تريد تعديله؟",
+            "complete": False
+        }, ensure_ascii=False))
+        return "حسناً، ما الذي تريد تعديله؟"
 
     history   = get_chat_history(phone, reg_id)
     ai_result = ai_respond(history, current_data, memory_ctx)
@@ -994,14 +1100,20 @@ def _handle_message_inner(phone: str, text: str, media_url: str = None) -> str |
     )
     save_chat(phone, reg_id, "assistant", assistant_record)
 
+    # ── عرض البيانات المجمعة للتأكيد ──────────────────────────────────────
+    if merged.get("name") and not complete:
+        data_summary = _format_collected_data(final_type, merged)
+        reply += f"\n\n{data_summary}"
+        reply += "\n\n✅ هل هذه البيانات صحيحة؟ (رد: نعم/لا)"
+
     if complete:
         sync_contact_after_reg(phone, reg_id, final_type,
                                merged.get("name"), merged.get("city"))
         _generate_and_save_notes(phone, reg_id)
         profile_url = get_profile_url(reg_id)
         name_str = merged.get("name") or ""
-        reply += (f"\n\n🎉 تم التسجيل{' يا ' + name_str if name_str else ''}!"
-                  f"\nصفحتك جاهزة:\n{profile_url}\n\nشاركها مع من تريد 🏠")
+        reply = (f"🎉 تم التسجيل{' يا ' + name_str if name_str else ''}!\n"
+                 f"صفحتك جاهزة:\n{profile_url}\n\nشاركها مع من تريد 🏠")
 
     return reply
 
