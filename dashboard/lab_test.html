@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>اختبار محاكاة الأطراف</title>
+<style>
+body {
+  background: #0d1117;
+  color: #f0f6fc;
+  font-family: Tajawal, sans-serif;
+  padding: 20px;
+  margin: 0;
+}
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: #161b22;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #30363d;
+}
+.button {
+  background: #bc8cff20;
+  color: #bc8cff;
+  border: 1px solid #bc8cff40;
+  padding: 12px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-family: Tajawal, sans-serif;
+}
+.button:hover { background: #bc8cff40; }
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #30363d;
+  border-top-color: #3fb950;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.message {
+  margin: 10px 0;
+  padding: 10px;
+  background: #21262d;
+  border-radius: 6px;
+  border-right: 3px solid #3fb950;
+}
+.message.owner { border-right-color: #58a6ff; }
+.loading { text-align: center; margin: 20px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🤖 اختبار محاكاة الأطراف</h1>
+
+<div style="margin: 20px 0;">
+  <button class="button" onclick="testSimulator()">🚀 بدء المحاكاة</button>
+  <span id="status" style="margin-right: 20px;"></span>
+</div>
+
+<div id="loading" class="loading" style="display: none;">
+  <div class="spinner"></div>
+  <p>جاري المحاكاة...</p>
+</div>
+
+<div id="results" style="display: none;">
+  <h2>💬 المحادثة</h2>
+  <div id="messages"></div>
+  
+  <h2>📊 الإحصائيات</h2>
+  <div id="stats"></div>
+</div>
+</div>
+
+<script>
+async function testSimulator() {
+  const loading = document.getElementById('loading');
+  const results = document.getElementById('results');
+  const status = document.getElementById('status');
+  
+  loading.style.display = 'block';
+  results.style.display = 'none';
+  status.textContent = '⏳ جاري المحاكاة...';
+  
+  try {
+    const response = await fetch('http://localhost:5555/api/lab/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reg_id: 1,
+        seeker_data: {
+          name: 'محمد علي السالم',
+          city: 'جدة',
+          district: 'النسيم',
+          rooms: 3,
+          budget: 2200000,
+          furnished: true,
+          notes: 'يفضل قرب المدرسة'
+        },
+        owner_data: {
+          title: 'شقة 3 غرف مفروشة',
+          city: 'جدة',
+          price: 2800000,
+          furnished: true,
+          specs: 'الجود، موقع ممتاز',
+          terms: 'عام واحد'
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (!data.ok) {
+      throw new Error(data.error || 'فشلت المحاكاة');
+    }
+    
+    // عرض النتائج
+    const messagesDiv = document.getElementById('messages');
+    const statsDiv = document.getElementById('stats');
+    
+    messagesDiv.innerHTML = '';
+    data.simulation.messages.forEach(msg => {
+      const div = document.createElement('div');
+      div.className = 'message' + (msg.from === 'مالك' ? ' owner' : '');
+      const icon = msg.from === 'باحث' ? '👤' : '🏠';
+      div.innerHTML = `<strong>${icon} ${msg.from}:</strong> ${msg.text}`;
+      messagesDiv.appendChild(div);
+    });
+    
+    statsDiv.innerHTML = `
+      <p>📨 عدد الرسائل: <strong>${data.simulation.messages.length}</strong></p>
+      <p>🔄 عدد الجولات: <strong>${data.simulation.rounds}</strong></p>
+      <p>✅ حالة المحاكاة: <strong>نجحت</strong></p>
+    `;
+    
+    loading.style.display = 'none';
+    results.style.display = 'block';
+    status.textContent = '✅ اكتملت المحاكاة بنجاح!';
+    
+  } catch (error) {
+    loading.style.display = 'none';
+    status.textContent = `❌ خطأ: ${error.message}`;
+    alert('خطأ: ' + error.message);
+  }
+}
+</script>
+</body>
+</html>
