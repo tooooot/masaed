@@ -518,7 +518,7 @@ async function searchRegistration() {
   const query = document.getElementById("reg-search").value.trim();
   if(!query) return toast("أدخل ID أو رقم");
   const results = document.getElementById("reg-results");
-  results.innerHTML = "<div class="loading-center"><div class="spinner"></div></div>";
+  results.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
   try {
     const data = await sfetch("/registrations");
     let regs = data.registrations || [];
