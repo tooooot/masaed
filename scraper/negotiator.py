@@ -332,7 +332,7 @@ def _llm(system: str, user_msg: str, max_tokens: int = 150) -> str | None:
             client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
             resp = client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=max_tokens, system=system,
+                max_tokens=max_tokens, temperature=0.3, system=system,
                 messages=[{"role": "user", "content": user_msg}]
             )
             return resp.content[0].text.strip() or None
@@ -344,7 +344,7 @@ def _llm(system: str, user_msg: str, max_tokens: int = 150) -> str | None:
             import openai
             client = openai.OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com/v1")
             resp = client.chat.completions.create(
-                model="deepseek-chat",
+                model="deepseek-chat", temperature=0.3,
                 messages=[{"role": "system", "content": system},
                           {"role": "user",   "content": user_msg}],
                 max_tokens=max_tokens

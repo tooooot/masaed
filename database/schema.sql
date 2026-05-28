@@ -1,94 +1,97 @@
--- مساعد العقاري — Database Schema v1
--- Runs inside the "sanad" PostgreSQL schema (shared with Sanad platform)
+-- مساعد العقاري — Database Schema v3 (Unified)
+-- Single schema that matches negotiator.py v3 exactly
+-- Runs inside the "sanad" PostgreSQL schema
 -- Connection: sanad-postgres:5432 / db: sanad / user: sanad
 
--- ── Sessions ────────────────────────────────────────────────────────────────
--- Each row is one anonymous negotiation session between a requester and owner.
--- Neither party knows the other's phone number; مساعد is the sole intermediary.
+-- ── Main negotiations table (replaces masaed_sessions) ───────────────────────
+CREATE TABLE IF NOT EXISTS sanad.masaed_negotiations (
+    id              SERIAL PRIMARY KEY,
+    lead_id         INT,                            -- من masaed_leads
+    listing_id      INT,                            -- من listing db
+    lead_phone      TEXT NOT NULL,                  -- رقم المستأجر
+    listing_phone   TEXT NOT NULL,                  -- رقم المالك
+    status          TEXT DEFAULT 'active',          -- active | cancelled | closed
 
-CREATE TABLE IF NOT EXISTS sanad.masaed_sessions (
-    id               SERIAL PRIMARY KEY,
-    requester_phone  TEXT NOT NULL,           -- e.g. 966550858330
-    owner_phone      TEXT NOT NULL,           -- e.g. 966548060060
-    status           TEXT DEFAULT 'active',   -- active | closed | expired
-    context          TEXT,                    -- JSON blob: property, requirements, negotiation state
-    message_count    INTEGER DEFAULT 0,
-    created_at       TIMESTAMPTZ DEFAULT NOW(),
-    updated_at       TIMESTAMPTZ DEFAULT NOW()
+    -- ── بيانات العقار ──
+    lead_name       TEXT,
+    listing_title   TEXT,
+    listing_city    TEXT,
+    listing_price   INT,                            -- السعر الأول من الإعلان
+
+    -- ── التفاوض ──
+    lead_max_price  INT,                            -- أعلى عرض من المستأجر
+    owner_min_price INT,                            -- أقل سعر من المالك
+    proposed_price  INT,                            -- السعر الوسط المقترح
+    lead_accepted   BOOLEAN DEFAULT false,
+    owner_accepted  BOOLEAN DEFAULT false,
+    agreed_price    INT,                            -- السعر النهائي عند الاتفاق
+
+    -- ── إدارة ──
+    needs_admin     BOOLEAN DEFAULT false,
+    admin_reason    TEXT,
+    admin_notified  BOOLEAN DEFAULT false,
+
+    -- ── بيانات مساعدة ──
+    listing_facts   TEXT,                           -- معلومات العقار المحملة مسبقاً
+    chat_log        JSONB DEFAULT '[]',             -- سجل الرسائل: [{role, text, ts}]
+
+    -- ── زمن ──
+    expires_at      TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_masaed_sessions_phones ON sanad.masaed_sessions (requester_phone, owner_phone);
-CREATE INDEX IF NOT EXISTS idx_masaed_sessions_status ON sanad.masaed_sessions (status);
+CREATE INDEX IF NOT EXISTS idx_masaed_neg_phones
+    ON sanad.masaed_negotiations (lead_phone, listing_phone);
+CREATE INDEX IF NOT EXISTS idx_masaed_neg_status
+    ON sanad.masaed_negotiations (status);
+CREATE INDEX IF NOT EXISTS idx_masaed_neg_created
+    ON sanad.masaed_negotiations (created_at DESC);
 
--- ── Messages ─────────────────────────────────────────────────────────────────
--- Audit log of every message processed by مساعد (inbound only; AI replies are
--- not stored here — extend if needed).
 
-CREATE TABLE IF NOT EXISTS sanad.masaed_messages (
+-- ── Registrations (التحقق من هوية المستخدمين) ────────────────────────────
+CREATE TABLE IF NOT EXISTS sanad.masaed_registrations (
     id          SERIAL PRIMARY KEY,
-    session_id  INTEGER REFERENCES sanad.masaed_sessions(id),
-    from_phone  TEXT NOT NULL,
-    to_phone    TEXT NOT NULL,
-    text        TEXT NOT NULL,
-    direction   TEXT,                         -- '🔍 المهتم' | '🏠 صاحب العقار'
-    sent_at     TIMESTAMPTZ DEFAULT NOW()
+    phone       TEXT UNIQUE NOT NULL,
+    role        TEXT NOT NULL,                      -- 'tenant' | 'owner'
+    status      TEXT DEFAULT 'active',              -- active | verified | abandoned
+    otp_code    TEXT,
+    otp_sent_at TIMESTAMPTZ,
+    verified_at TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_masaed_messages_session ON sanad.masaed_messages (session_id);
+CREATE INDEX IF NOT EXISTS idx_masaed_reg_phone
+    ON sanad.masaed_registrations (phone);
 
--- ── Context JSON structure (reference) ───────────────────────────────────────
--- Stored as TEXT in masaed_sessions.context; cast to JSONB when querying.
+
+-- ── Contact memory (tracking and notes) ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sanad.masaed_contacts (
+    id          SERIAL PRIMARY KEY,
+    phone       TEXT UNIQUE NOT NULL,
+    name        TEXT,
+    notes       TEXT,
+    last_seen   TIMESTAMPTZ DEFAULT NOW(),
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_masaed_contact_phone
+    ON sanad.masaed_contacts (phone);
+
+
+-- ── Example setup ────────────────────────────────────────────────────────────
+-- Register two test users
+-- INSERT INTO sanad.masaed_registrations (phone, role, status, verified_at)
+-- VALUES
+--   ('966550858330', 'tenant', 'verified', NOW()),
+--   ('966548060060', 'owner', 'verified', NOW());
 --
--- {
---   "negotiation_stage": "info_gathering | negotiating | near_deal | closed",
---   "property": {
---     "type": "apartment",
---     "city": "Jeddah",
---     "district": "Al-Rawdah",
---     "bedrooms": 3,
---     "bathrooms": 2,
---     "floor": 3,
---     "furnished": false,
---     "rent": 2800,
---     "currency": "SAR",
---     "available_from": "2025-07-01"
---   },
---   "requirements": {
---     "city": "Jeddah",
---     "budget": 2200,
---     "bedrooms": 3
---   },
---   "last_offer": {
---     "from": "owner",
---     "price": 2500,
---     "terms": "3 months advance"
---   }
--- }
-
--- ── Leads (scraped rental requests) ──────────────────────────────────────────
--- Populated by the Haraj scraper and dashboard bookmarklet.
-
-CREATE TABLE IF NOT EXISTS sanad.masaed_leads (
-    id           SERIAL PRIMARY KEY,
-    source       TEXT NOT NULL DEFAULT 'haraj',    -- haraj | bookmarklet | ...
-    external_id  TEXT,
-    url          TEXT,
-    title        TEXT,
-    body         TEXT,
-    city         TEXT,
-    phone        TEXT,
-    phone_hidden BOOLEAN DEFAULT TRUE,
-    listing_type TEXT DEFAULT 'wanted',
-    status       TEXT DEFAULT 'new',               -- new | phone_extracted | contacted
-    session_id   INTEGER REFERENCES sanad.masaed_sessions(id),
-    scraped_at   TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(source, external_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_masaed_leads_status    ON sanad.masaed_leads (status);
-CREATE INDEX IF NOT EXISTS idx_masaed_leads_city      ON sanad.masaed_leads (city);
-CREATE INDEX IF NOT EXISTS idx_masaed_leads_scrapedat ON sanad.masaed_leads (scraped_at DESC);
-
--- ── Example: create a test session ───────────────────────────────────────────
--- INSERT INTO sanad.masaed_sessions (requester_phone, owner_phone)
--- VALUES ('966550858330', '966548060060');
+-- Start a negotiation
+-- INSERT INTO sanad.masaed_negotiations
+--   (lead_id, listing_id, lead_phone, listing_phone,
+--    listing_title, listing_city, listing_price, status)
+-- VALUES
+--   (1, 100, '966550858330', '966548060060',
+--    'شقة 3 غرف', 'جدة', 2800, 'active');

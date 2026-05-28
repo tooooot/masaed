@@ -1,6 +1,8 @@
-# مساعد — AI Real Estate Negotiator
+# مساعد — AI Real Estate Negotiator (v3)
 
 > WhatsApp bot that acts as an anonymous intermediary and **active AI negotiator** between property owners and tenants in the Saudi real estate market.
+
+⚠️ **Legal Disclaimer**: This system requires REGA (Saudi real estate regulator) licensing for legitimate brokerage. Scraping from Haraj.com without permission violates their ToS. Use only in authorized/educational contexts.
 
 ---
 
@@ -8,7 +10,7 @@
 
 Most chatbots relay messages. مساعد **negotiates**.
 
-| Feature | Simple Relay Bot | مساعد v1 |
+| Feature | Simple Relay Bot | مساعد v3 |
 |---------|-----------------|-----------|
 | Forwards messages | ✅ | ✅ |
 | Understands context | ❌ | ✅ |
@@ -18,6 +20,9 @@ Most chatbots relay messages. مساعد **negotiates**.
 | Builds trust with both sides | ❌ | ✅ |
 | Invents win-win terms | ❌ | ✅ |
 | Pushes toward deal closure | ❌ | ✅ |
+| User identity verification (OTP) | ❌ | ✅ |
+| Admin escalation routing | ❌ | ✅ |
+| Session expiry (7 days) | ❌ | ✅ |
 
 ### Real Example
 
@@ -65,9 +70,9 @@ Requester (WhatsApp)┘         ▲                              │
 
 ---
 
-## Negotiation Tactics (v1)
+## Negotiation Tactics (v3)
 
-مساعد uses 6 built-in tactics, executed automatically by the AI:
+مساعد uses 6 built-in tactics, executed automatically with low temperature (0.3 to prevent hallucination):
 
 1. **الوسطية الذكية** — Proposes a middle-ground offer instead of relaying numbers directly
 2. **الإلحاح المحسوب** — Hints at competing interest to nudge hesitant parties
@@ -75,6 +80,12 @@ Requester (WhatsApp)┘         ▲                              │
 4. **إعادة التأطير** — Presents every offer in the most favorable light
 5. **الخطوة التالية** — Ends every message with a question or proposal to keep momentum
 6. **التسلسل المنطقي** — Confirms location/specs interest before opening price negotiation
+
+**Key v3 Changes**:
+- Temperature reduced from 0.7 → **0.3** (prevents AI hallucinating prices/terms)
+- Identity verification (OTP) required before negotiation starts
+- Admin notification for: near-agreement (<10% gap), stalled negotiations (8+ rounds), firm rejections
+- Session auto-expires after 7 days
 
 **Full prompt documentation**: [prompts/negotiator_v1.md](prompts/negotiator_v1.md)
 
@@ -87,15 +98,23 @@ masaed/
 ├── README.md
 ├── .env.example
 ├── dashboard/
-│   └── index.html              # Monitoring dashboard (masaed.wardyat.net)
+│   ├── index.html              # Monitoring dashboard (⚠️ needs password)
+│   ├── profile.html            # User profile editor
+│   └── registrar.html          # OTP registration form
 ├── database/
-│   └── schema.sql              # PostgreSQL tables: masaed_sessions, masaed_messages
+│   └── schema.sql              # PostgreSQL v3: masaed_negotiations, masaed_registrations, masaed_contacts
 ├── docs/
 │   └── architecture.md         # Full system architecture
 ├── prompts/
 │   └── negotiator_v1.md        # AI system prompt + tactics documentation
+├── scraper/
+│   ├── bot.py                  # WhatsApp registration bot (OTP collection)
+│   ├── negotiator.py           # Main negotiation logic v3
+│   ├── intent_parser.py        # NLU for intent detection
+│   ├── haraj_scraper.py        # ⚠️ Haraj.com scraper (legal risk)
+│   └── [other utilities]
 └── workflows/
-    └── masaed_ai_coordinator_v1.json   # n8n workflow (import-ready)
+    └── masaed_ai_coordinator_v1.json   # n8n workflow (needs v3 update)
 ```
 
 ---
@@ -207,9 +226,44 @@ This context is loaded on every message, so مساعد remembers the full histor
 
 ---
 
+## Security & Legal Warnings (v3)
+
+### ✅ Fixed in v3
+- **Temperature reduced to 0.3**: Prevents AI hallucinating prices/contract terms in negotiations
+- **OTP verification**: Both parties must verify phone before session starts (prevents spam/impersonation)
+- **Session expiry**: Auto-closes after 7 days to prevent stale negotiations
+- **Admin escalation**: Alerts admin on: near-agreement, too many rounds, firm rejections
+- **Audit log**: All messages stored in `chat_log` JSONB for dispute resolution
+
+### ⚠️ Known Risks (Must Address Before Production)
+1. **Haraj.com scraper violates ToS**: Scraping data without permission = legal liability. Either:
+   - Get explicit scraping permission from Haraj
+   - Use opt-in only (users register manually)
+   - Disable scraper entirely
+   
+2. **Green API is unofficial**: WhatsApp regularly bans accounts using unofficial APIs. No guarantee of 24/7 uptime.
+
+3. **REGA licensing required**: Saudi real estate brokerage requires REGA certification. Negotiate on behalf of unlicensed users = legal risk.
+
+4. **Dashboard has no password**: Anyone with the URL sees all negotiations + phone numbers. Add HTTP Basic Auth or JWT before production.
+
+5. **AI may still invent terms**: Even at 0.3 temperature, LLM may suggest payment terms, move-in dates, or contract clauses not requested by either party. Always require admin approval before finalizing.
+
+### ✅ Setup Checklist for Safe Deployment
+- [ ] Database schema v3 running on PostgreSQL
+- [ ] Green API webhook configured + tested
+- [ ] DeepSeek API key secured in .env (not committed)
+- [ ] Dashboard protected with password/JWT
+- [ ] OTP SMS provider configured (Twillio / AWS SNS / local testing)
+- [ ] Admin notification channel active (WhatsApp or email)
+- [ ] Legal review: Confirm REGA status & Haraj ToS compliance
+- [ ] Load test: Verify n8n can handle 10+ concurrent negotiations
+
+---
+
 ## License
 
-MIT — built for the Saudi real estate market.
+MIT — built for the Saudi real estate market. Use responsibly and legally.
 
 ---
 
