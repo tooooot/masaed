@@ -4,10 +4,14 @@
 Flask API so n8n and the dashboard can trigger scraping and receive leads.
 Port 5555
 """
+import sys
 import os, re, json, asyncio, time, requests
 from urllib.parse import urlparse
 from flask import Flask, jsonify, request
 import psycopg2
+
+# Ensure current directory is in path for local imports
+sys.path.insert(0, os.path.dirname(__file__))
 
 app = Flask(__name__)
 
