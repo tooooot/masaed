@@ -808,51 +808,11 @@ def _is_video_url(url: str) -> bool:
     return (any(url.lower().endswith(e) for e in ('.mp4', '.mov', '.avi', '.3gp'))
             or 'video' in url.lower())
 
-def _detect_haraj_url(text: str) -> str | None:
-    """كشف رابط حراج في الرسالة."""
-    if not text:
-        return None
-    match = re.search(r'https?://(?:www\.)?haraj\.com\.sa/\S+', text, re.IGNORECASE)
-    if match:
-        return match.group(0)
-    # جرّب بدون https
-    match = re.search(r'haraj\.com\.sa/([A-Za-z0-9]+)', text, re.IGNORECASE)
-    if match:
-        return f"https://haraj.com.sa/{match.group(1)}"
-    return None
-
-
-def _fetch_haraj_details(url: str) -> dict | None:
-    """احصل على تفاصيل إعلان حراج من API."""
-    try:
-        import requests
-        resp = requests.post(
-            "http://localhost:5555/scrape-details",
-            json={"url": url},
-            timeout=30
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success"):
-                return data.get("announcement")
-    except Exception as e:
-        print(f"[HARAJ] fetch failed for {url}: {e}", flush=True)
-    return None
-
-
 def _handle_message_inner(phone: str, text: str, media_url: str = None) -> str | None:
     contact    = get_contact(phone)
     regs       = get_contact_registrations(phone)
     memory_ctx = build_memory_context(contact, regs)
     reg        = get_active_reg(phone)
-
-    # ── Check for Haraj URL and auto-extract details ───────────────────────────
-    haraj_url = _detect_haraj_url(text)
-    haraj_data = None
-    if haraj_url:
-        haraj_data = _fetch_haraj_details(haraj_url)
-        if haraj_data:
-            print(f"[HARAJ] Extracted from {haraj_url}: title={haraj_data.get('title')[:50]}", flush=True)
 
     # ── PRE-REGISTRATION: type not yet confirmed ──────────────────────────────
     if reg is None:
@@ -882,22 +842,6 @@ def _handle_message_inner(phone: str, text: str, media_url: str = None) -> str |
             current_data["name"] = contact["name"]
         if contact.get("city"):
             current_data["city"] = contact["city"]
-
-        # If we extracted Haraj details, add them to current_data
-        if haraj_data:
-            if haraj_data.get("title"):
-                current_data["property_title"] = haraj_data["title"]  # for context
-            if haraj_data.get("price"):
-                current_data["price_annual"] = haraj_data["price"]
-            if haraj_data.get("rooms"):
-                current_data["rooms"] = haraj_data["rooms"]
-            if haraj_data.get("city"):
-                current_data["city"] = haraj_data["city"]
-            if haraj_data.get("body"):
-                current_data["location_desc"] = haraj_data["body"][:500]
-            # Pre-detect property type from body
-            if haraj_data.get("property_type"):
-                current_data["property_type"] = haraj_data["property_type"]
 
         ai_result = ai_respond(history, current_data, memory_ctx)
         reply     = ai_result.get("reply", "")
@@ -980,21 +924,6 @@ def _handle_message_inner(phone: str, text: str, media_url: str = None) -> str |
         current_data["name"] = contact["name"]
     if not current_data.get("city") and contact.get("city"):
         current_data["city"] = contact["city"]
-
-    # If we extracted Haraj details, add them to current_data
-    if haraj_data:
-        if haraj_data.get("title"):
-            current_data["property_title"] = haraj_data["title"]
-        if haraj_data.get("price"):
-            current_data["price_annual"] = haraj_data["price"]
-        if haraj_data.get("rooms"):
-            current_data["rooms"] = haraj_data["rooms"]
-        if haraj_data.get("city") and not current_data.get("city"):
-            current_data["city"] = haraj_data["city"]
-        if haraj_data.get("body"):
-            current_data["location_desc"] = haraj_data["body"][:500]
-        if haraj_data.get("property_type"):
-            current_data["property_type"] = haraj_data["property_type"]
 
     # Handle media
     media_local_url = None
