@@ -80,6 +80,27 @@ def add_cors(resp):
     return resp
 
 
+# ── Static Files ──────────────────────────────────────────────────────────────
+@app.route('/<path:filename>', methods=['GET', 'HEAD'])
+def serve_static(filename):
+    """Serve static files from dashboard directory"""
+    import os.path
+
+    # Check dashboard directory
+    dashboard_path = os.path.join(os.path.dirname(__file__), '..', 'dashboard', filename)
+    if os.path.exists(dashboard_path) and os.path.isfile(dashboard_path):
+        from flask import send_file
+        return send_file(dashboard_path)
+
+    # Check root directory
+    root_path = os.path.join(os.path.dirname(__file__), '..', filename)
+    if os.path.exists(root_path) and os.path.isfile(root_path):
+        from flask import send_file
+        return send_file(root_path)
+
+    return jsonify({"error": "File not found"}), 404
+
+
 @app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
 @app.route('/<path:path>', methods=['OPTIONS'])
 def options_handler(path):
