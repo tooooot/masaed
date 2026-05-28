@@ -13,9 +13,25 @@
 import os
 import json
 import time
+import re
 from datetime import datetime, timezone
 
 # ── Config ────────────────────────────────────────────────────────────────────
+
+def _load_env():
+    """Load .env file and set environment variables"""
+    env_file = "/root/.env"
+    if os.path.exists(env_file):
+        with open(env_file) as f:
+            for line in f:
+                if line.strip() and not line.startswith('#'):
+                    match = re.match(r'(\w+)=(.+)', line.strip())
+                    if match:
+                        key = match.group(1)
+                        val = match.group(2).strip('"\'')
+                        os.environ[key] = val
+
+_load_env()
 
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -30,7 +46,7 @@ _SYS_SEEKER = """\
 - الحي المفضل: {district}
 - عدد الغرف: {rooms}
 - الميزانية: {budget} ريال/سنة
-- الأثاث: {'مفروشة' if furnished else 'بدون أثاث'}
+- الأثاث: {furnished}
 - الاحتياجات الخاصة: {special_needs}
 
 السلوك:
@@ -51,7 +67,7 @@ _SYS_OWNER = """\
 - العقار: {title}
 - المدينة: {city}
 - السعر المطلوب: {price} ريال/سنة
-- الأثاث: {'مفروشة بالكامل' if furnished else 'بدون أثاث'}
+- الأثاث: {furnished}
 - المواصفات: {specs}
 - شروط التأجير: {terms}
 
@@ -183,12 +199,13 @@ class NegotiationSimulator:
 
     def get_seeker_message(self) -> str:
         """اطلب رسالة من الباحث"""
+        furnished_text = "مفروشة" if self.reg.get("furnished", False) else "بدون أثاث"
         system = _SYS_SEEKER.format(
             city=self.reg.get("city", "جدة"),
             district=self.reg.get("district", "—"),
             rooms=self.reg.get("rooms", 3),
             budget=self.reg.get("budget", 2200),
-            furnished=self.reg.get("furnished", False),
+            furnished=furnished_text,
             special_needs=self.reg.get("notes", "—")
         )
 
@@ -205,11 +222,12 @@ class NegotiationSimulator:
 
     def get_owner_message(self) -> str:
         """اطلب رسالة من صاحب العرض"""
+        furnished_text = "مفروشة بالكامل" if self.listing.get("furnished", False) else "بدون أثاث"
         system = _SYS_OWNER.format(
             title=self.listing.get("title", "عقار"),
             city=self.listing.get("city", "جدة"),
             price=self.listing.get("price", 2800),
-            furnished=self.listing.get("furnished", False),
+            furnished=furnished_text,
             specs=self.listing.get("specs", "مواصفات عادية"),
             terms=self.listing.get("terms", "عام واحد")
         )
