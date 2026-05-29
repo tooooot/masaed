@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from bot import (get_conn, wa_send as _wa_send_raw, _phone_lock, ANTHROPIC_KEY,
-                  get_contact, get_contact_registrations, build_memory_context)
+                  USE_ANTHROPIC, get_contact, get_contact_registrations, build_memory_context)
 from intent_parser import parse_intent
 
 DEEPSEEK_KEY    = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
@@ -356,7 +356,7 @@ def _notify_admin(neg: dict, reason: str, conn):
 # ── LLM response generator ─────────────────────────────────────────────────────
 
 def _llm(system: str, user_msg: str, max_tokens: int = 150) -> str | None:
-    if ANTHROPIC_KEY:
+    if ANTHROPIC_KEY and USE_ANTHROPIC:
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=ANTHROPIC_KEY, timeout=20.0)

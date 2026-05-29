@@ -23,6 +23,8 @@ GREEN_TOKEN    = os.getenv("MASAED_GREEN_TOKEN", "")
 DEEPSEEK_KEY   = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
 BASE_URL       = os.getenv("MASAED_BASE_URL", "https://masaed.wardyat.net")
 ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
+# توفير التكلفة: DeepSeek فقط افتراضياً (Claude غالٍ). فعّل Claude بـ MASAED_USE_ANTHROPIC=true
+USE_ANTHROPIC  = os.getenv("MASAED_USE_ANTHROPIC", "false").lower() == "true"
 
 # ── Sandbox/Test Phone Whitelist ───────────────────────────────────────────────
 # CRITICAL: Only these phone numbers can receive test messages.
@@ -700,8 +702,8 @@ def ai_respond(history: list, current_data: dict, memory_ctx: str = "") -> dict:
     """Call AI and get reply + extracted data."""
     data_summary = json.dumps(current_data, ensure_ascii=False)
 
-    # Try Anthropic first, then DeepSeek as fallback
-    if ANTHROPIC_KEY:
+    # DeepSeek أولاً (توفير التكلفة)؛ Claude فقط إن فُعِّل صراحةً
+    if ANTHROPIC_KEY and USE_ANTHROPIC:
         try:
             return _ai_anthropic(history, data_summary, memory_ctx)
         except Exception as e:

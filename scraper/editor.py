@@ -16,7 +16,7 @@
 import os, json, re
 from bot import (get_conn, wa_send, get_contact, get_contact_registrations,
                  ai_respond, update_reg, save_chat, get_chat_history,
-                 get_profile_url, ANTHROPIC_KEY, BASE_URL)
+                 get_profile_url, ANTHROPIC_KEY, USE_ANTHROPIC, BASE_URL)
 
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
 
@@ -271,7 +271,7 @@ def _ai_edit(history: list, system: str) -> dict:
     if not msgs or msgs[-1]["role"] == "assistant":
         msgs.append({"role": "user", "content": "(انتظر)"})
 
-    if ANTHROPIC_KEY:
+    if ANTHROPIC_KEY and USE_ANTHROPIC:
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)

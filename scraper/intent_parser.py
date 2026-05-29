@@ -6,6 +6,7 @@ Fast-path: regex محلي (لا شبكة) → LLM فقط للغامض.
 import os, re, json
 
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+USE_ANTHROPIC = os.getenv("MASAED_USE_ANTHROPIC", "false").lower() == "true"
 DEEPSEEK_KEY  = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
 
 _SYSTEM = """\
@@ -136,8 +137,8 @@ def parse_intent(text: str) -> dict:
 
     prompt = f"الرسالة: {text}"
 
-    # ── Anthropic ──────────────────────────────────────────────────────────────
-    if ANTHROPIC_KEY:
+    # ── Anthropic (معطّل افتراضياً لتوفير التكلفة) ─────────────────────────────
+    if ANTHROPIC_KEY and USE_ANTHROPIC:
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
