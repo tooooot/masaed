@@ -329,7 +329,7 @@ def _llm(system: str, user_msg: str, max_tokens: int = 150) -> str | None:
     if ANTHROPIC_KEY:
         try:
             import anthropic
-            client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
+            client = anthropic.Anthropic(api_key=ANTHROPIC_KEY, timeout=20.0)
             resp = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=max_tokens, temperature=0.3, system=system,
@@ -342,7 +342,7 @@ def _llm(system: str, user_msg: str, max_tokens: int = 150) -> str | None:
     if DEEPSEEK_KEY:
         try:
             import openai
-            client = openai.OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com/v1")
+            client = openai.OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com/v1", timeout=20.0)
             resp = client.chat.completions.create(
                 model="deepseek-chat", temperature=0.3,
                 messages=[{"role": "system", "content": system},

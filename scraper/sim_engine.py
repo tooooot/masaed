@@ -146,7 +146,7 @@ def _owner_reply(owner_data, mediator_to_owner, is_first):
 
 # ── الحلقة الرئيسية مع الوسيط الحقيقي ────────────────────────────────────────────
 
-MAX_ROUNDS = 5
+MAX_ROUNDS = 3
 
 
 def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):

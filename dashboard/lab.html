@@ -556,7 +556,7 @@ async function startSimulation() {
 }
 
 // استطلاع حالة الـjob حتى done/error أو انتهاء المهلة
-async function pollSimulation(jobId, stageEl, maxMs = 180000) {
+async function pollSimulation(jobId, stageEl, maxMs = 240000) {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
     await new Promise(res => setTimeout(res, 2000));
