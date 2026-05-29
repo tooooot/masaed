@@ -15,7 +15,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from bot import (get_conn, wa_send as _wa_send_raw, _phone_lock, ANTHROPIC_KEY,
-                  USE_ANTHROPIC, get_contact, get_contact_registrations, build_memory_context)
+                  USE_ANTHROPIC, get_contact, get_contact_registrations, build_memory_context,
+                  build_party_profile, wa_send_media, BASE_URL as _BASE_URL)
 from intent_parser import parse_intent
 
 DEEPSEEK_KEY    = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
@@ -397,12 +398,16 @@ def _build_context(neg: dict) -> str:
     facts = neg.get("listing_facts") or ""
     if facts:
         lines.append(facts)
-    # ── مساعد الحافظ: أضف ذاكرة العميل إن وُجدت ─────────────────────────────
-    contact = neg.get("_contact") or {}
-    if contact.get("name"):
-        lines.append(f"\nاسم المتحدث: {contact['name']}")
-    if contact.get("notes"):
-        lines.append(f"ملاحظات: {contact['notes']}")
+    # ── مساعد الحافظ الذكي: ملف العميل المضغوط (حقائق فقط) ───────────────────
+    profile = neg.get("_profile")
+    if profile:
+        lines.append("\n" + profile)
+    else:
+        contact = neg.get("_contact") or {}
+        if contact.get("name"):
+            lines.append(f"\nاسم المتحدث: {contact['name']}")
+        if contact.get("notes"):
+            lines.append(f"ملاحظات: {contact['notes']}")
 
     # ── حالة التفاوض الحالية: ليعرف الـLLM أين وصلت العروض وما هدفه التالي ──────
     lmax = neg.get("lead_max_price")
@@ -550,6 +555,38 @@ def _propose_middle(neg: dict, lead_max: int, owner_min: int, conn):
     wa_send(neg["listing_phone"], msg_owner)
 
 
+# ── جلب الناقص + الصور (Feature: relay & media) ─────────────────────────────────
+
+def _listing_photos(neg: dict, conn) -> list:
+    """صور/فيديو العقار من تسجيل المالك (listing)."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT photos FROM sanad.masaed_registrations
+            WHERE phone=%s AND type='listing' AND photos IS NOT NULL
+              AND jsonb_array_length(photos) > 0
+            ORDER BY created_at DESC LIMIT 1
+        """, (neg["listing_phone"],))
+        row = cur.fetchone()
+    if not row or not row[0]:
+        return []
+    return [p.get("url") for p in row[0] if p.get("url")]
+
+
+def _relay_info_request(neg: dict, my_role: str, text: str, conn):
+    """أعد صياغة طلب الطرف وأرسله للطرف الآخر عبر واتساب (جلب المعلومة الناقصة)."""
+    is_lead     = (my_role == "مستأجر")
+    other_phone = neg["listing_phone"] if is_lead else neg["lead_phone"]
+    asker       = "المستأجر" if is_lead else "المالك"
+    reworded = _llm(
+        "أنت وسيط عقاري. أعد صياغة طلب الطرف التالي كرسالة قصيرة مهذّبة موجّهة "
+        "للطرف الآخر لجلب المعلومة. أرجع نص الرسالة فقط بلا مقدمات.",
+        f"[{asker} يطلب]: {text}", max_tokens=120
+    ) or text
+    msg = f"🔔 {asker} يطلب:\n{reworded}\n\nياليت تزوّدني بها وأنقلها له فوراً."
+    _append_log(neg["id"], f"relay→{'مالك' if is_lead else 'مستأجر'}", msg, conn)
+    wa_send(other_phone, msg)
+
+
 # ── Main handler ───────────────────────────────────────────────────────────────
 
 def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
@@ -675,11 +712,25 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
         wa_send(phone, reply)
         return True
 
-    # ── طلب صور/معاينة → تنسيق فعلي (لا وعود وهمية ولا هلوسة) ──────────────────
+    # ── طلب صور/معاينة → أرسل المخزّن فعلياً، وإلا اطلبه من الطرف الآخر ─────────
     if _wants_viewing(text):
-        what = "الصور وموعد المعاينة" if "صور" in text else "موعد المعاينة"
-        reply = (f"تمام 👌 أنسّق مع {other_role} بخصوص {what} وأرجع لك. "
-                 f"وعشان نمشّي الأمور بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
+        photos = _listing_photos(neg, conn)
+        sent = 0
+        for url in photos[:6]:
+            if wa_send_media(phone, url):
+                sent += 1
+        asking_more = any(k in text for k in ("اضاف", "إضاف", "المزيد", "اكثر", "أكثر",
+                                              "ثاني", "غيرها", "زياده", "زيادة", "واجهه", "واجهة"))
+        if sent and not asking_more:
+            reply = (f"هذي صور العقار المتوفرة عندي 📸 "
+                     f"وعشان نتقدّم — وش السعر اللي يناسبك للإيجار السنوي؟")
+        else:
+            # لا صور مخزّنة أو طلب إضافي → أعد صياغة الطلب وأرسله للطرف الآخر
+            _relay_info_request(neg, my_role, text, conn)
+            head = "هذا كل المتوفّر عندي حالياً. " if sent else ""
+            need = "صوراً إضافية" if sent else "الصور/المعاينة"
+            reply = (f"{head}طلبت من {other_role} {need} وأوافيك فور وصولها 👌 "
+                     f"وعشان نمشّي بالتوازي — وش السعر اللي يناسبك؟")
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
         return True
@@ -730,6 +781,7 @@ def handle_negotiation_message(phone: str, text: str) -> bool:
             try:
                 contact = get_contact(phone)   # upsert last_seen
                 neg["_contact"] = contact      # للاستخدام في _generate_reply
+                neg["_profile"] = build_party_profile(phone, conn)  # ملف الحافظ المضغوط
             except Exception:
                 pass
             return _handle_active(neg, phone, text, conn)

@@ -226,6 +226,64 @@ def build_memory_context(contact: dict, regs: list = None) -> str:
         lines.append(f"\nرحّب بـ{contact['name']} بحرارة واذكر آخر تعامل.")
     return "\n".join(lines)
 
+
+def build_party_profile(phone: str, conn=None) -> str:
+    """
+    🧠 جدول الحافظ الذكي — ملف مضغوط للعميل (حقائق فقط، بلا استدعاء LLM).
+    يُحقن بدل السياق العام ليعرف البوت الشخص كاملاً ويوفّر الرصيد.
+    يجمع: الاسم/الدور/الصفقات/التفضيلات/الحالة/الملاحظات من قاعدة البيانات.
+    """
+    own = conn is None
+    if own:
+        conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            # الاسم + الملاحظات اليدوية (الحافظ)
+            cur.execute("SELECT name, notes FROM sanad.masaed_contacts WHERE phone=%s", (phone,))
+            c = cur.fetchone() or (None, None)
+            name, notes = c[0], c[1]
+            # ملخّص التسجيلات: الأدوار + أحدث تفضيلات
+            cur.execute("""
+                SELECT type, city, rooms, COALESCE(price_annual, budget_annual), for_family, created_at
+                FROM sanad.masaed_registrations
+                WHERE phone=%s AND type IS NOT NULL AND status<>'abandoned'
+                ORDER BY created_at DESC
+            """, (phone,))
+            regs = cur.fetchall()
+            # عدّاد التفاوضات + الناجحة
+            cur.execute("""
+                SELECT count(*), count(*) FILTER (WHERE status='agreed')
+                FROM sanad.masaed_negotiations
+                WHERE lead_phone=%s OR listing_phone=%s
+            """, (phone, phone))
+            neg = cur.fetchone() or (0, 0)
+    finally:
+        if own:
+            conn.close()
+
+    roles = set()
+    for r in regs:
+        roles.add("مالك" if r[0] == "listing" else "باحث")
+    role_str = " + ".join(roles) if roles else "غير محدّد"
+
+    lines = [f"🧠 ملف العميل{(' — ' + name) if name else ''}:"]
+    lines.append(f"• الدور: {role_str} | تسجيلاته: {len(regs)} | تفاوضاته: {neg[0]} (ناجحة: {neg[1]})")
+    if regs:
+        r = regs[0]  # أحدث تفضيلات
+        pref = []
+        if r[1]: pref.append(r[1])
+        if r[2]: pref.append(f"{r[2]} غرف")
+        if r[3]: pref.append(f"~{r[3]:,} ر/سنة")
+        if r[4]: pref.append("عائلي" if r[4] == "family" else "عزّاب")
+        if pref:
+            lines.append(f"• تفضيلاته الأحدث: {' · '.join(pref)}")
+    if notes:
+        lines.append(f"• ملاحظات: {notes}")
+    if len(regs) == 0 and neg[0] == 0:
+        lines.append("• عميل جديد — لا تاريخ سابق")
+    return "\n".join(lines)
+
+
 def get_active_reg(phone: str) -> dict | None:
     """Return active registration. Prefers most complete one if multiple exist."""
     conn = get_conn()
@@ -546,6 +604,37 @@ def wa_send(phone: str, text: str):
         print(f"[WA SENT] → {phone_clean}: OK", flush=True)
     except Exception as e:
         print(f"[WA ERROR] {phone_clean}: {e}")
+
+
+def wa_send_media(phone: str, file_url: str, caption: str = "") -> bool:
+    """إرسال ملف/صورة عبر Green API (sendFileByUrl) — بنفس حارس الأمان."""
+    phone_clean = str(phone).replace("+", "").replace(" ", "")
+    # Dry-run: التقاط بدل الإرسال
+    if getattr(_wa_test_local, 'active', False):
+        if not hasattr(_wa_test_local, 'log'):
+            _wa_test_local.log = []
+        _wa_test_local.log.append({"to": phone_clean, "media": file_url, "caption": caption})
+        print(f"[WA DRY-RUN MEDIA] → {phone_clean}: {file_url}", flush=True)
+        return True
+    if not GREEN_INSTANCE or not GREEN_TOKEN:
+        print(f"[WA MOCK MEDIA] → {phone_clean}: {file_url}")
+        return False
+    # حارس: فقط أرقام sandbox أو إذا فُعِّل الإرسال الحقيقي
+    allow_real = os.getenv("MASAED_ALLOW_REAL_SEND", "false").lower() == "true"
+    if phone_clean not in SANDBOX_PHONES and not allow_real:
+        print(f"[WA BLOCKED MEDIA] ❌ {phone_clean} ليس في sandbox", flush=True)
+        return False
+    fname = file_url.rstrip("/").split("/")[-1] or "file"
+    api = f"https://api.green-api.com/waInstance{GREEN_INSTANCE}/sendFileByUrl/{GREEN_TOKEN}"
+    try:
+        requests.post(api, json={"chatId": f"{phone_clean}@c.us", "urlFile": file_url,
+                                 "fileName": fname, "caption": caption}, timeout=20)
+        print(f"[WA SENT MEDIA] → {phone_clean}: {fname}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[WA ERROR MEDIA] {phone_clean}: {e}")
+        return False
+
 
 def wa_get_file(url_file: str) -> str | None:
     """Download a WhatsApp media file and return a local URL."""

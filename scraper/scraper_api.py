@@ -1285,8 +1285,10 @@ def bot_test():
     try:
         _route_message(phone, text or None, media_url)
         sent = list(_wa_test_local.log)
+        # أول رسالة نصية (نتجاهل عناصر الوسائط التي لا تحوي text)
+        first_text = next((m["text"] for m in sent if m.get("text")), None)
         return jsonify({
-            "reply":   sent[0]["text"] if sent else None,
+            "reply":   first_text,
             "wa_sent": sent,
             "dry_run": True,
         })
