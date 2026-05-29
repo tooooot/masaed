@@ -80,20 +80,6 @@ def add_cors(resp):
     return resp
 
 
-# ── Static Files ──────────────────────────────────────────────────────────────
-@app.route('/dashboard/<path:filename>')
-def serve_dashboard(filename):
-    """Serve static files from dashboard directory"""
-    from flask import send_file
-    import os.path
-
-    dashboard_path = os.path.join(os.path.dirname(__file__), '..', 'dashboard', filename)
-    if os.path.exists(dashboard_path) and os.path.isfile(dashboard_path):
-        return send_file(dashboard_path)
-
-    return jsonify({"error": "File not found"}), 404
-
-
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 @app.route("/health")
 def health():
@@ -1313,7 +1299,7 @@ def bot_test():
 # SIMULATOR & CRITIC ENDPOINTS (مساعد المختبر المتقدم)
 # ══════════════════════════════════════════════════════════════════════════════
 
-@app.route("/api/lab/simulate", methods=["POST"])
+@app.route("/lab/simulate", methods=["POST"])
 def lab_simulate():
     """
     محاكاة تفاوض كاملة مع تقييم ذكي
@@ -1324,9 +1310,10 @@ def lab_simulate():
       "owner_data": {...}
     }
 
-    Returns: محادثة كاملة + تقييم + توصيات
+    Returns: {ok, job_id} — المحاكاة تعمل في الخلفية (async)
+    استطلع /lab/simulate-status?job_id=... حتى status=done
     """
-    from simulator import simulate_negotiation
+    from sim_engine import start_job, RateLimited
 
     data = request.get_json() or {}
     reg_id = data.get("reg_id")
@@ -1337,28 +1324,36 @@ def lab_simulate():
         return jsonify({"ok": False, "error": "reg_id مطلوب"}), 400
 
     try:
-        print(f"[API] بدء محاكاة للطلب #{reg_id}", flush=True)
-
-        result = simulate_negotiation(reg_id, seeker_data, owner_data)
-
-        return jsonify(result)
+        job_id = start_job(reg_id, seeker_data, owner_data)
+        print(f"[API] بدأت محاكاة async للطلب #{reg_id} (job={job_id})", flush=True)
+        return jsonify({"ok": True, "job_id": job_id, "status": "running"}), 202
+    except RateLimited as e:
+        return jsonify({"ok": False, "error": str(e)}), 429
     except Exception as e:
-        print(f"[API] خطأ في المحاكاة: {e}", flush=True)
+        print(f"[API] خطأ في بدء المحاكاة: {e}", flush=True)
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/api/lab/simulate-status", methods=["GET"])
+@app.route("/lab/simulate-status", methods=["GET"])
 def lab_simulate_status():
-    """
-    حالة المحاكاة (للمتابعة)
+    """حالة محاكاة async عبر job_id."""
+    from sim_engine import get_status
 
-    Returns: معلومات عن آخر محاكاة شُغّلت
-    """
-    # يمكن إضافة تتبع المحاكيات الجارية هنا
-    return jsonify({
-        "ok": True,
-        "message": "استخدم /api/lab/simulate لبدء محاكاة جديدة"
-    })
+    job_id = request.args.get("job_id", "")
+    if not job_id:
+        return jsonify({"ok": False, "error": "job_id مطلوب"}), 400
+
+    job = get_status(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "job غير موجود (ربما انتهت صلاحيته)"}), 404
+
+    resp = {"ok": True, "status": job.get("status"), "stage": job.get("stage")}
+    if job.get("status") == "done":
+        resp["result"] = job.get("result")
+    elif job.get("status") == "error":
+        resp["error"] = job.get("error")
+        resp["result"] = job.get("result")
+    return jsonify(resp)
 
 
 @app.route("/bot/reset", methods=["POST"])
@@ -1587,68 +1582,31 @@ def cron_auto_match():
 # LAB — مساعد المختبر
 # ══════════════════════════════════════════════════════════════════════════════
 
-@app.route("/api/lab/requests")
+@app.route("/lab/requests")
 def lab_requests():
     """قائمة طلبات الباحثين المسجّلين — لاختيار سيناريو اختبار."""
-    # محاول الاتصال بـ DB أولاً
-    try:
-        conn = get_conn()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, name, phone, type, city, district,
-                       property_type, rooms, budget_annual,
-                       preferred_districts, special_notes, status, created_at
-                FROM sanad.masaed_registrations
-                WHERE type = 'wanted'
-                  AND status IN ('collecting', 'complete', 'completed')
-                ORDER BY created_at DESC
-                LIMIT 50
-            """)
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-        conn.close()
-        for r in rows:
-            if r.get("created_at"): r["created_at"] = r["created_at"].isoformat()
-        return jsonify({"requests": rows, "count": len(rows)})
-    except Exception as e:
-        # إذا فشل الاتصال بـ DB، ارجع بيانات اختبار
-        print(f"[LAB] DB غير متاح، استخدم بيانات اختبار: {e}")
-        test_requests = [
-            {
-                "id": 1,
-                "name": "محمد علي السالم",
-                "phone": "0501234567",
-                "type": "wanted",
-                "city": "جدة",
-                "district": "النسيم",
-                "property_type": "شقة",
-                "rooms": 3,
-                "budget_annual": 2200000,
-                "preferred_districts": "النسيم، الورود",
-                "special_notes": "يفضل قرب المدرسة",
-                "status": "complete",
-                "created_at": "2026-05-20T10:00:00"
-            },
-            {
-                "id": 2,
-                "name": "فاطمة محمد الدعيع",
-                "phone": "0505555555",
-                "type": "wanted",
-                "city": "جدة",
-                "district": "الرويس",
-                "property_type": "فيلا",
-                "rooms": 4,
-                "budget_annual": 3500000,
-                "preferred_districts": "الرويس، الشاطئ",
-                "special_notes": "حديقة واسعة",
-                "status": "complete",
-                "created_at": "2026-05-21T14:30:00"
-            }
-        ]
-        return jsonify({"requests": test_requests, "count": len(test_requests)})
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, name, phone, type, city, district,
+                   property_type, rooms, budget_annual,
+                   preferred_districts, special_notes, status, created_at
+            FROM sanad.masaed_registrations
+            WHERE type = 'wanted'
+              AND status IN ('collecting', 'complete', 'completed')
+            ORDER BY created_at DESC
+            LIMIT 50
+        """)
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    conn.close()
+    for r in rows:
+        if r.get("created_at"):
+            r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"requests": rows, "count": len(rows)})
 
 
-@app.route("/api/lab/scenario", methods=["POST"])
+@app.route("/lab/scenario", methods=["POST"])
 def lab_scenario():
     """
     معاينة ما سيحدث لو بدأنا التفاوض بهذا الطلب مع أرقام الاختبار.
@@ -1714,7 +1672,7 @@ def lab_scenario():
     })
 
 
-@app.route("/api/lab/start", methods=["POST"])
+@app.route("/lab/start", methods=["POST"])
 def lab_start():
     """
     ابدأ تفاوضاً حقيقياً بأرقام الاختبار بدلاً من الأرقام الحقيقية.
@@ -1819,4 +1777,4 @@ if __name__ == "__main__":
     import tg_notify
     tg_notify.setup_webhook()
     port = int(os.getenv("SCRAPER_PORT", 5555))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

@@ -336,7 +336,7 @@ function renderDetail(reg) {
 
       <div id="simulationProgress" style="text-align:center;padding:20px">
         <div class="spinner" style="margin:0 auto;margin-bottom:10px"></div>
-        <div style="font-size:.85rem;color:var(--muted)">جاري محاكاة التفاوض...</div>
+        <div id="simStage" style="font-size:.85rem;color:var(--muted)">جاري محاكاة التفاوض...</div>
       </div>
 
       <div id="simulationContent" style="display:none">
@@ -518,8 +518,8 @@ async function startSimulation() {
       terms: 'عام واحد'
     };
 
-    // اطلب المحاكاة
-    const r = await fetch(`${API}/lab/simulate`, {
+    // ابدأ المحاكاة (async) — تُرجع job_id فوراً
+    const startRes = await fetch(`${API}/lab/simulate`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -528,9 +528,20 @@ async function startSimulation() {
         owner_data: ownerData
       })
     });
+    const start = await startRes.json();
+    if (!start.ok || !start.job_id) {
+      progress.innerHTML = errBox(start.error || 'تعذّر بدء المحاكاة');
+      return;
+    }
 
-    const result = await r.json();
+    // استطلع الحالة حتى الاكتمال (حد أقصى ~3 دقائق)
+    const stageEl = document.getElementById('simStage');
+    const result = await pollSimulation(start.job_id, stageEl);
 
+    if (!result) {
+      progress.innerHTML = errBox('انتهت مهلة المحاكاة دون نتيجة');
+      return;
+    }
     if (!result.ok) {
       progress.innerHTML = errBox(result.error || 'فشلت المحاكاة');
       return;
@@ -544,6 +555,24 @@ async function startSimulation() {
   }
 }
 
+// استطلاع حالة الـjob حتى done/error أو انتهاء المهلة
+async function pollSimulation(jobId, stageEl, maxMs = 180000) {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await new Promise(res => setTimeout(res, 2000));
+    let s;
+    try {
+      const r = await fetch(`${API}/lab/simulate-status?job_id=${encodeURIComponent(jobId)}`);
+      s = await r.json();
+    } catch(e) { continue; }  // خطأ شبكة عابر → أعد المحاولة
+    if (!s.ok) return { ok:false, error: s.error };
+    if (stageEl && s.stage) stageEl.textContent = `جارٍ: ${s.stage}…`;
+    if (s.status === 'done')  return s.result;
+    if (s.status === 'error') return s.result || { ok:false, error: s.error };
+  }
+  return null;  // مهلة
+}
+
 function renderSimulationResults(result) {
   const progress = document.getElementById('simulationProgress');
   const content = document.getElementById('simulationContent');
@@ -554,63 +583,79 @@ function renderSimulationResults(result) {
   // المحادثة
   let convHtml = '';
   if (result.simulation && result.simulation.messages) {
+    const ROLE = {
+      'المستأجر': {c:'var(--green-light)', i:'👤'},
+      'باحث':     {c:'var(--green-light)', i:'👤'},
+      'المالك':   {c:'var(--blue)',        i:'🏠'},
+      'مالك':     {c:'var(--blue)',        i:'🏠'},
+      'الوسيط':   {c:'var(--yellow)',      i:'🤝'},
+    };
     for (const msg of result.simulation.messages) {
-      const fromColor = msg.from === 'باحث' ? 'var(--green-light)' : 'var(--blue)';
-      const fromIcon = msg.from === 'باحث' ? '👤' : '🏠';
+      const meta = ROLE[msg.from] || {c:'var(--muted)', i:'💬'};
+      const label = msg.from === 'الوسيط' && msg.to ? `الوسيط → ${msg.to}` : msg.from;
       convHtml += `
-        <div style="margin-bottom:10px;padding:10px;background:var(--card);border-right:3px solid ${fromColor};border-radius:6px">
-          <div style="font-size:.7rem;color:var(--muted);margin-bottom:4px">${fromIcon} ${msg.from}</div>
+        <div style="margin-bottom:10px;padding:10px;background:var(--card);border-right:3px solid ${meta.c};border-radius:6px">
+          <div style="font-size:.7rem;color:var(--muted);margin-bottom:4px">${meta.i} ${label}</div>
           <div style="font-size:.85rem;line-height:1.5">${esc(msg.text)}</div>
         </div>
       `;
     }
   }
-  convLog.innerHTML = convHtml || '<div style="color:var(--muted);text-align:center;padding:20px">لا توجد رسائل</div>';
+  // ملخّص نتيجة التفاوض (من الوسيط الحقيقي) — يُعرض أعلى المحادثة
+  const sim = result.simulation || {};
+  const STATUS_AR = {agreed:'✅ تم الاتفاق', cancelled:'❌ أُلغي', active:'⏳ لم يُحسم', expired:'انتهت الصلاحية'};
+  let summary = `الحالة: ${STATUS_AR[sim.final_status] || sim.final_status || '—'}`;
+  if (sim.agreed_price) summary += ` · السعر المتفق: ${Number(sim.agreed_price).toLocaleString()} ر`;
+  const ms = sim.mediator_state || {};
+  if (ms.needs_admin) summary += ` · 🔔 يحتاج قرار الإدارة (${ms.admin_reason||''})`;
+  const summaryHtml = `<div style="margin-bottom:10px;padding:8px;background:var(--bg);border-radius:6px;font-size:.8rem;color:var(--muted)">${esc(summary)}</div>`;
+
+  convLog.innerHTML = (convHtml ? summaryHtml + convHtml : '<div style="color:var(--muted);text-align:center;padding:20px">لا توجد رسائل</div>');
 
   // التقييم
   let evalHtml = '';
   if (result.evaluation) {
-    const eval = result.evaluation;
+    const ev = result.evaluation;
     evalHtml = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
         <div class="info-item">
           <div class="info-label">جودة المحادثة</div>
-          <div class="info-val">${eval.conversation_quality?.score || '—'}/10</div>
+          <div class="info-val">${ev.conversation_quality?.score ?? '—'}/10</div>
         </div>
         <div class="info-item">
           <div class="info-label">أداء الوسيط</div>
-          <div class="info-val">${eval.mediator_performance?.score || '—'}/10</div>
+          <div class="info-val">${ev.mediator_performance?.score ?? '—'}/10</div>
         </div>
         <div class="info-item">
-          <div class="info-label">تقييم الكود</div>
-          <div class="info-val">${eval.overall_score || '—'}/10</div>
+          <div class="info-label">التقييم العام</div>
+          <div class="info-val">${ev.overall_score ?? '—'}/10</div>
         </div>
         <div class="info-item">
           <div class="info-label">عدد الجولات</div>
-          <div class="info-val">${result.simulation?.rounds || '—'}</div>
+          <div class="info-val">${result.simulation?.rounds ?? '—'}</div>
         </div>
       </div>
     `;
 
     // الأخطاء الحرجة
-    if (eval.code_errors?.critical?.length) {
+    if (ev.code_errors?.critical?.length) {
       evalHtml += `
         <div style="background:#f8514915;border:1px solid #f8514940;border-radius:8px;padding:10px;margin-bottom:10px">
           <div style="font-size:.75rem;color:var(--red);font-weight:600;margin-bottom:6px">🔴 أخطاء حرجة:</div>
           <ul style="margin:0;padding-left:20px;font-size:.8rem;color:var(--red)">
-            ${eval.code_errors.critical.map(e => `<li>${esc(e)}</li>`).join('')}
+            ${ev.code_errors.critical.map(e => `<li>${esc(e)}</li>`).join('')}
           </ul>
         </div>
       `;
     }
 
     // نقاط التحسين
-    if (eval.prompt_issues?.gaps?.length) {
+    if (ev.prompt_issues?.gaps?.length) {
       evalHtml += `
         <div style="background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;padding:10px">
           <div style="font-size:.75rem;color:var(--yellow);font-weight:600;margin-bottom:6px">📝 نقاط التحسين:</div>
           <ul style="margin:0;padding-left:20px;font-size:.8rem;color:var(--yellow)">
-            ${eval.prompt_issues.gaps.map(g => `<li>${esc(g)}</li>`).join('')}
+            ${ev.prompt_issues.gaps.map(g => `<li>${esc(g)}</li>`).join('')}
           </ul>
         </div>
       `;
