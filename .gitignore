@@ -5,3 +5,4 @@ node_modules/
 __pycache__/
 *.pyc
 .htpasswd
+scraper/_demo_start.py

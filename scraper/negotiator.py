@@ -72,6 +72,29 @@ def _has_cancel(text: str) -> bool:
     return t in _CANCEL_EN_EXACT
 
 
+# ── كشف الطلبات الخاصة + شكوى الإحباط (قواعد حتمية قبل الـLLM) ───────────────────
+
+_PHONE_REQ = ("اعطني رقم", "عطني رقم", "ابغى رقم", "ابي رقم", "وش رقم", "ايش رقم",
+              "رقمه", "رقمها", "رقم المالك", "رقم المستأجر", "رقم الطرف", "كلمه على", "اتصل فيه")
+_VIEW_REQ  = ("صور", "الصوره", "صورة", "معاينة", "اعاين", "أعاين", "ابغى اشوف",
+              "ابي اشوف", "نشوف الشقه", "زياره", "زيارة", "أزور", "موعد معاينة")
+# إحباط/سب موجّه للبوت — ليس رفضاً للصفقة
+_META_COMPLAINT = ("لا تكرر", "تكرر الرسائل", "تكرر الرسايل", "غبي", "انقلع", "اقفل",
+                   "ما تفهم", "مايفهم", "فاشل", "سخيف", "زهقت", "تعبتني", "مايصير")
+
+
+def _is_meta_complaint(text: str) -> bool:
+    return any(k in text for k in _META_COMPLAINT)
+
+
+def _wants_phone(text: str) -> bool:
+    return any(k in text for k in _PHONE_REQ)
+
+
+def _wants_viewing(text: str) -> bool:
+    return any(k in text for k in _VIEW_REQ)
+
+
 # ── System Prompts ─────────────────────────────────────────────────────────────
 
 def _role_ctx(my_role: str) -> str:
@@ -98,20 +121,13 @@ _SYS_INTRO = """\
 أجب بوضوح في ٢-٣ جمل:
 ١. عرّف نفسك: "أنا مساعد العقاري، وسيط إلكتروني"
 ٢. اشرح المصدر: {source}
-٣. اذكر العرض المتاح باختصار
-{context}
-"""
-
-_SYS_QUESTION = """\
-أنت "مساعد" — وسيط عقاري. أجب على السؤال بدقة من البيانات التالية فقط.
-إذا لم تجد الإجابة: قل "لا تتوفر لديّ هذه المعلومات، سأستفسر عنها".
-{role_ctx}
-جملة واحدة أو جملتان. لا تخترع.
+٣. اذكر العرض المتاح باختصار ثم ادفع نحو السعر مباشرة (مثال: "السعر المطروح ٤٥ ألف — وش رأيك؟").
+ملاحظة: أنت الوسيط — لا تشارك أرقام هواتف، وتنسّق المعاينة بنفسك.
 {context}
 """
 
 _SYS_REJECT = """\
-أنت "مساعد" — وسيط عقاري. المتحدث يُبدي تحفظاً أو رفضاً.
+أنت "مساعد" — وسيط عقاري. المتحدث يُبدي تحفظاً أو رفضاً للصفقة نفسها.
 {role_ctx}
 - تعاطف بهدوء
 - لا تُلحّ
@@ -120,11 +136,25 @@ _SYS_REJECT = """\
 {context}
 """
 
-_SYS_OTHER = """\
-أنت "مساعد" — وسيط عقاري تتحدث بالعربية السعودية.
+# ── prompt المفاوض الموحّد: موجّه بالهدف والحالة (يُستخدم للأسئلة والعموم) ──────
+_SYS_NEGOTIATOR = """\
+أنت "مساعد" — وسيط عقاري سعودي محترف ونشِط، مهمتك إتمام صفقة إيجار هذا العقار تحديداً.
 {role_ctx}
-أجب بشكل مهني ومختصر — جملة أو جملتان.
-لا تُغلق الصفقة ولا تتعهد بشيء.
+
+🎯 هدفك الوحيد: الوصول لاتفاق على سعر إيجار سنوي يرضي الطرفين، ثم إغلاق الصفقة.
+
+كيف تتصرف:
+- بادِر وكن متحمّساً وواثقاً — قُد المحادثة نحو رقم، لا تنتظر ولا تعرض قوائم خدمات.
+- إن لم يُطرح سعر بعد: اذكر السعر المطروح واسأل الطرف صراحةً عن رقمه أو قبوله.
+- إن وُجد عرض على الطاولة (انظر "حالة التفاوض"): علّق عليه وادفع نحو تقارب برقم محدّد.
+- أجب على سؤاله من البيانات المتاحة فقط، باختصار، ثم أعِد توجيهه نحو السعر.
+- جُمل قصيرة (٢-٤)، عامية سعودية طبيعية، شخصية ودودة ثابتة.
+
+🚧 حدود صارمة:
+- أنت الوسيط: لا تُعطِ رقم هاتف الطرف الآخر إطلاقاً. إن طُلب قل: "أنا الوسيط بينكما، أنقل كل شيء وأنسّق المعاينة — ما يحتاج تبادل أرقام".
+- طلب الصور/المعاينة: قل إنك ستنسّق مع {other_party} وترتّب ذلك — لا تعِد بصور فوراً ولا تخترع آلية.
+- لا تعرض خدمات غير موجودة (نشر إعلانات، تسويق، "شبكتنا"). مهمتك هذه الصفقة فقط.
+- لا تخترع معلومات، ولا تكرّر ردك السابق حرفياً.
 {context}
 """
 
@@ -373,12 +403,28 @@ def _build_context(neg: dict) -> str:
         lines.append(f"\nاسم المتحدث: {contact['name']}")
     if contact.get("notes"):
         lines.append(f"ملاحظات: {contact['notes']}")
+
+    # ── حالة التفاوض الحالية: ليعرف الـLLM أين وصلت العروض وما هدفه التالي ──────
+    lmax = neg.get("lead_max_price")
+    omin = neg.get("owner_min_price")
+    prop = neg.get("proposed_price")
+    state = []
+    if lmax: state.append(f"- أعلى سعر عرضه المستأجر: {lmax:,} ر")
+    if omin: state.append(f"- أقل سعر يقبله المالك: {omin:,} ر")
+    if prop: state.append(f"- السعر المقترح حالياً: {prop:,} ر")
+    if lmax and omin: state.append(f"- الفجوة بينهما: {omin - lmax:,} ر")
+    if state:
+        lines.append("\nحالة التفاوض (استخدمها لتدفع نحو الإغلاق):")
+        lines.extend(state)
+    else:
+        lines.append("\nحالة التفاوض: لا توجد عروض سعرية بعد — مهمتك أن تستخرج رقماً من الطرف الآن.")
     return "\n".join(lines)
 
 
 def _generate_reply(neg: dict, my_role: str, text: str, intent: dict) -> str:
     context     = _build_context(neg)
     role_ctx    = _role_ctx(my_role)
+    other_party = "المستأجر" if my_role == "مالك" else "المالك"
     intent_type = intent.get("intent", "other")
     is_identity = intent.get("_identity", False)
 
@@ -386,14 +432,13 @@ def _generate_reply(neg: dict, my_role: str, text: str, intent: dict) -> str:
         source = "وجدت رقمك من إعلانك في حراج" if my_role == "مالك" \
                  else "وجدت رقمك من طلبك المُسجَّل للبحث عن سكن"
         system = _SYS_INTRO.format(role_ctx=role_ctx, source=source, context=context)
-    elif intent_type == "question":
-        system = _SYS_QUESTION.format(role_ctx=role_ctx, context=context)
     elif intent_type == "reject":
         system = _SYS_REJECT.format(role_ctx=role_ctx, context=context)
     else:
-        system = _SYS_OTHER.format(role_ctx=role_ctx, context=context)
+        # الأسئلة والعموم: prompt المفاوض الموحّد الموجّه بالهدف
+        system = _SYS_NEGOTIATOR.format(role_ctx=role_ctx, other_party=other_party, context=context)
 
-    return _llm(system, f"[{my_role}]: {text}") or "وصلت رسالتك، سأتابع معك قريباً."
+    return _llm(system, f"[{my_role}]: {text}", max_tokens=400) or "وصلت رسالتك، نكمّل — وش السعر اللي يناسبك؟"
 
 
 # ── Relay price between parties ────────────────────────────────────────────────
@@ -495,12 +540,13 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
             p_str    = f"{neg['proposed_price']:,}"
 
             if lead_ok and owner_ok:
-                msg = f"ممتاز! كلاكما وافق على {p_str} ر/سنة ✅\nسيُبلَّغ المسؤول لإتمام الصفقة."
+                # إتمام تلقائي للصفقة عند اتفاق الطرفين (بدون انتظار الداشبورد)
+                _close(neg_id, "agreed", conn, agreed_price=neg["proposed_price"])
+                msg = (f"🎉 تم إتمام الصفقة على {p_str} ر/سنة بنجاح ✅\n"
+                       f"مبروك! سيتم التواصل لإكمال إجراءات العقد.")
                 wa_send(phone, msg)
                 wa_send(other, msg)
-                _update_neg(neg_id, conn, needs_admin=True,
-                            admin_reason="كلاهما وافق على السعر المقترح")
-                _notify_admin(neg, "ready_to_close", conn)
+                _notify_admin(neg, "ready_to_close", conn)  # إشعار للعلم فقط
             else:
                 wa_send(phone,
                     f"تم تسجيل موافقتك على {p_str} ر/سنة ✅\n"
@@ -550,12 +596,40 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
         wa_send(phone, reply)
         return True
 
-    # ── رفض حازم ─────────────────────────────────────────────────────────────
+    other_role = "المالك" if my_role == "مستأجر" else "المستأجر"
+
+    # ── رفض حازم للصفقة (وليس إحباطاً من البوت) ───────────────────────────────
     if (intent["intent"] == "reject"
             and intent.get("is_firm")
-            and intent.get("sentiment") == "negative"):
+            and intent.get("sentiment") == "negative"
+            and not _is_meta_complaint(text)):
         _notify_admin(neg, "party_leaving", conn)
         reply = "أفهم موقفك. سأطّلع المسؤول وسنعود إليك إن وُجد حل مناسب."
+        _append_log(neg_id, f"bot→{my_role}", reply, conn)
+        wa_send(phone, reply)
+        return True
+
+    # ── طلب رقم الطرف الآخر → اشرح الوساطة (لا تشارك أرقاماً) ──────────────────
+    if _wants_phone(text):
+        reply = (f"أنا الوسيط بينك وبين {other_role} 🤝 أنقل لك كل التفاصيل وأنسّق "
+                 f"المعاينة مباشرة — ما يحتاج تبادل أرقام. وعشان نتقدّم، وش آخر سعر تقبله؟")
+        _append_log(neg_id, f"bot→{my_role}", reply, conn)
+        wa_send(phone, reply)
+        return True
+
+    # ── طلب صور/معاينة → تنسيق فعلي (لا وعود وهمية ولا هلوسة) ──────────────────
+    if _wants_viewing(text):
+        what = "الصور وموعد المعاينة" if "صور" in text else "موعد المعاينة"
+        reply = (f"تمام 👌 أنسّق مع {other_role} بخصوص {what} وأرجع لك. "
+                 f"وعشان نمشّي الأمور بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
+        _append_log(neg_id, f"bot→{my_role}", reply, conn)
+        wa_send(phone, reply)
+        return True
+
+    # ── إحباط/شكوى موجّهة للبوت → إعادة تفاعل لطيفة نحو الهدف (لا تصعيد) ────────
+    if _is_meta_complaint(text):
+        reply = ("آسف إذا ضايقتك 🙏 خلّنا نركّز على المهم: "
+                 "وش السعر اللي تشوفه مناسب للإيجار السنوي ونتفاهم عليه؟")
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
         return True
@@ -572,6 +646,11 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
 
     # ── رد تلقائي (LLM) ───────────────────────────────────────────────────────
     reply = _generate_reply(neg, my_role, text, intent)
+    # حارس التكرار: لا نرسل نفس رد البوت السابق حرفياً
+    last_bot = next((e.get("text") for e in reversed(neg.get("chat_log", []))
+                     if str(e.get("role", "")).startswith("bot")), None)
+    if last_bot and reply.strip() == last_bot.strip():
+        reply = "خلّنا نركّز على السعر 👍 وش الرقم اللي يناسبك للإيجار السنوي؟"
     _append_log(neg_id, f"bot→{my_role}", reply, conn)
     wa_send(phone, reply)
     return True
