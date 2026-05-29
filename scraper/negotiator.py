@@ -421,8 +421,61 @@ def _build_context(neg: dict) -> str:
     return "\n".join(lines)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# آلة حالات التفاوض (Negotiation FSM)
+# الحالة = دالّة محضة على بيانات الصف (مصدر حقيقة واحد، لا انجراف).
+# الكود يفرض المسار والانتقالات؛ الـLLM يصوغ فقط ضمن هدف الحالة الحالية.
+# ══════════════════════════════════════════════════════════════════════════════
+
+STATE_OPENING  = "opening"    # لا أسعار بعد
+STATE_RELAY    = "relay"      # طرف واحد طرح سعراً
+STATE_CONVERGE = "converge"   # كلا السعرين معروفان والفجوة قائمة
+STATE_CLOSING  = "closing"    # سعر وسط مقترح، بانتظار القبول
+STATE_AGREED   = "agreed"
+STATE_CANCELLED = "cancelled"
+
+
+def fsm_state(neg: dict) -> str:
+    """اشتقّ حالة التفاوض من بيانات الصف."""
+    st = neg.get("status")
+    if st in (STATE_AGREED, STATE_CANCELLED):
+        return st
+    if neg.get("proposed_price"):
+        return STATE_CLOSING
+    lmax, omin = neg.get("lead_max_price"), neg.get("owner_min_price")
+    if lmax and omin:
+        return STATE_CONVERGE
+    if lmax or omin:
+        return STATE_RELAY
+    return STATE_OPENING
+
+
+def fsm_goal(state: str, neg: dict, my_role: str) -> str:
+    """الهدف الحتمي للحالة الحالية — يُحقن في صياغة الـLLM (لا يقرّر المسار، يوجّه الصياغة)."""
+    if state == STATE_CLOSING:
+        p = neg.get("proposed_price") or 0
+        return (f"يوجد سعر وسط مقترح ({p:,} ر/سنة). هدفك: احصل على موافقة صريحة "
+                f"(\"موافق/نعم\") على هذا الرقم تحديداً — لا تفتح مواضيع أخرى.")
+    if state == STATE_CONVERGE:
+        return ("كلا الطرفين طرح سعراً والفجوة قائمة. هدفك: قرّب وجهتي النظر "
+                "وادفع نحو رقم وسطٍ محدّد.")
+    if state == STATE_RELAY:
+        mine = neg.get("lead_max_price") if my_role == "مستأجر" else neg.get("owner_min_price")
+        if mine:
+            return ("هذا الطرف طرح سعره والطرف الآخر لم يردّ بعد. هدفك: طمئنه "
+                    "أنك نقلت عرضه وتنتظر ردّ الطرف الآخر — دون وعود زائدة.")
+        return ("الطرف الآخر طرح سعراً وهذا الطرف لم يطرح بعد. هدفك المباشر: "
+                "اطلب من هذا الطرف رقمه الصريح للإيجار السنوي.")
+    # OPENING
+    return ("لا توجد أسعار مطروحة بعد. هدفك المباشر: استخرج رقماً صريحاً من هذا "
+            "الطرف الآن (كم تقبل/تعرض للإيجار السنوي؟).")
+
+
 def _generate_reply(neg: dict, my_role: str, text: str, intent: dict) -> str:
     context     = _build_context(neg)
+    # ── حقن هدف الحالة الحالية: الـLLM يصوغ ضمن هدف الـFSM لا أكثر ──────────────
+    _state = fsm_state(neg)
+    context += f"\n\n🎯 حالة التفاوض الآن: [{_state}] — هدفك في هذا الرد: {fsm_goal(_state, neg, my_role)}"
     role_ctx    = _role_ctx(my_role)
     other_party = "المستأجر" if my_role == "مالك" else "المالك"
     intent_type = intent.get("intent", "other")
@@ -540,7 +593,8 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
             p_str    = f"{neg['proposed_price']:,}"
 
             if lead_ok and owner_ok:
-                # إتمام تلقائي للصفقة عند اتفاق الطرفين (بدون انتظار الداشبورد)
+                # انتقال FSM: closing → agreed (إتمام تلقائي عند اتفاق الطرفين)
+                print(f"[NEG #{neg_id}] FSM: closing → agreed (price={neg['proposed_price']:,})", flush=True)
                 _close(neg_id, "agreed", conn, agreed_price=neg["proposed_price"])
                 msg = (f"🎉 تم إتمام الصفقة على {p_str} ر/سنة بنجاح ✅\n"
                        f"مبروك! سيتم التواصل لإكمال إجراءات العقد.")
@@ -553,9 +607,10 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
                     f"ننتظر رد الطرف الآخر.")
             return True
 
-    # ── parse intent ──────────────────────────────────────────────────────────
+    # ── parse intent + سجّل حالة الـFSM الحالية ───────────────────────────────
     intent = parse_intent(text)
-    print(f"[NEG #{neg_id}] {my_role} intent={intent['intent']} "
+    _state_before = fsm_state(neg)
+    print(f"[NEG #{neg_id}] state={_state_before} {my_role} intent={intent['intent']} "
           f"amount={intent.get('amount')} firm={intent.get('is_firm')}", flush=True)
 
     _append_log(neg_id, my_role, text, conn)
@@ -584,12 +639,15 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
             near = (lmax >= omin) or (gap <= 1500) or (ref and gap / ref <= 0.12)
 
             if near:
-                # عند التقارب: اقتراح وسط مباشرة (لا relay زائد)
+                # انتقال FSM: converge → closing (اقتراح وسط مباشرة)
+                print(f"[NEG #{neg_id}] FSM: {_state_before} → closing (propose_middle)", flush=True)
                 _propose_middle(neg, lmax, omin, conn)
                 _notify_admin(neg, "near_agreement", conn)
                 return True
+            print(f"[NEG #{neg_id}] FSM: {_state_before} → converge (gap={gap:,})", flush=True)
 
-        # بعيدان: relay للطرف الآخر + تأكيد للمُرسِل
+        # بعيدان أو طرف واحد: relay للطرف الآخر + تأكيد للمُرسِل
+        print(f"[NEG #{neg_id}] FSM: → relay ({my_role} عرض {amount:,})", flush=True)
         _relay_price(neg, my_role, amount, conn)
         reply = f"وصل عرضك ({amount:,} ر) ✅ سأتابع مع الطرف الآخر وأعود إليك."
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
