@@ -110,6 +110,20 @@ def _asks_unknown_attr(text: str, facts: str) -> bool:
     return bool(hits) and any(w not in facts for w in hits)
 
 
+# أسئلة يطرحها المالك عن الباحث/المستأجر (عن الشخص لا العقار)
+_SEEKER_ATTR = ("وظيف", "شغل", "عمل", "راتب", "دخل", "كفيل", "كفال",
+                "عدد", "أفراد", "افراد", "اطفال", "أطفال", "عائلت", "عيال",
+                "متى تسكن", "متى بتسكن", "موعد السكن", "مدة", "كم سنة", "كم سنه",
+                "تدفع", "الدفع", "شيك", "كاش", "دفعات", "جنسي", "حيوان", "بيت شعر")
+
+
+def _needs_relay(my_role: str, text: str, neg: dict) -> bool:
+    """هل السؤال عن معلومة لدى الطرف الآخر؟ (حسب الدور)."""
+    if my_role == "مستأجر":            # يسأل عن العقار
+        return _asks_unknown_attr(text, neg.get("listing_facts"))
+    return any(w in text for w in _SEEKER_ATTR)   # المالك يسأل عن الباحث
+
+
 # ── System Prompts ─────────────────────────────────────────────────────────────
 
 def _role_ctx(my_role: str) -> str:
@@ -779,8 +793,8 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         wa_send(phone, reply)
         return True
 
-    # ── سؤال عن سمة غير معروفة → اطلبها من الطرف الآخر تلقائياً (relay حتمي) ────
-    if intent["intent"] == "question" and _asks_unknown_attr(text, neg.get("listing_facts")):
+    # ── سؤال عن معلومة لدى الطرف الآخر (عقار للمستأجر / الباحث للمالك) → relay ──
+    if intent["intent"] == "question" and _needs_relay(my_role, text, neg):
         _relay_info_request(neg, my_role, text, conn)
         reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً. "
                  f"وعشان نتقدّم بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
