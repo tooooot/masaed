@@ -83,11 +83,29 @@ def _neg_status(conn, neg_id):
     return (row[0], row[1]) if row else (None, None)
 
 
-def _cleanup_sandbox(conn):
-    """احذف كل صفوف الـsandbox (هذا التشغيل + أي معلّقات سابقة)."""
+def _cleanup_run(conn, lead_phone, listing_phone):
+    """احذف صفوف هذا التشغيل فقط (آمن مع المحاكاة المتزامنة)."""
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM sanad.masaed_negotiations WHERE lead_phone LIKE 'SIM%' OR listing_phone LIKE 'SIM%'")
-        cur.execute("DELETE FROM sanad.masaed_contacts WHERE phone LIKE 'SIM%'")
+        cur.execute(
+            "DELETE FROM sanad.masaed_negotiations WHERE lead_phone=%s OR listing_phone=%s",
+            (lead_phone, listing_phone),
+        )
+        cur.execute(
+            "DELETE FROM sanad.masaed_contacts WHERE phone IN (%s, %s)",
+            (lead_phone, listing_phone),
+        )
+        conn.commit()
+
+
+def _sweep_orphans(conn):
+    """اكنس صفوف sandbox المعلّقة من تشغيلات سابقة فشلت — المنتهية/القديمة فقط
+    (لا تلمس تشغيلاً متزامناً نشطاً، صلاحيته NOW()+1h)."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            DELETE FROM sanad.masaed_negotiations
+            WHERE (lead_phone LIKE 'SIM%' OR listing_phone LIKE 'SIM%')
+              AND (expires_at < NOW() OR created_at < NOW() - INTERVAL '1 hour')
+        """)
         conn.commit()
 
 
@@ -151,7 +169,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):
     conn = get_conn()
     neg_id = None
     try:
-        _cleanup_sandbox(conn)        # اكنس أي معلّقات قديمة أولاً
+        _sweep_orphans(conn)          # اكنس معلّقات قديمة فقط (لا تلمس المتزامن)
         progress("تجهيز جلسة التفاوض")
         neg_id = _insert_sandbox_neg(conn, reg_id, lead_phone, listing_phone, owner_data)
 
@@ -255,7 +273,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):
         # نظافة مضمونة: عطّل الاعتراض + احذف صفوف الـsandbox
         _tls.sim_buffer = None
         try:
-            _cleanup_sandbox(conn)
+            _cleanup_run(conn, lead_phone, listing_phone)
         except Exception as e:
             print(f"[SIM2] فشل التنظيف: {e}", flush=True)
         try:
