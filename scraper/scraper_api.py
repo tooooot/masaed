@@ -1211,8 +1211,8 @@ def _route_message(phone: str, text: str, media_url: str = None):
     # ── الحافظ: دائماً ────────────────────────────────────────────────────────
     get_contact(phone)                         # upsert + last_seen
 
-    # ── المفاوض: إذا تفاوض نشط ───────────────────────────────────────────────
-    if text and handle_negotiation_message(phone, text):
+    # ── المفاوض: إذا تفاوض نشط (يقبل نصاً و/أو وسائط) ─────────────────────────
+    if (text or media_url) and handle_negotiation_message(phone, text, media_url):
         return                                 # المفاوض تولّى
 
     # ── المعدّل: إذا جلسة تعديل جارية أو طلب تعديل صريح ────────────────────

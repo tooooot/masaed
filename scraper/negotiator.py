@@ -96,6 +96,20 @@ def _wants_viewing(text: str) -> bool:
     return any(k in text for k in _VIEW_REQ)
 
 
+# سمات العقار التي قد يسأل عنها طرف — إن لم تكن بالحقائق المخزّنة نطلبها من الآخر
+_ATTR_WORDS = ("مصعد", "موقف", "دور", "الطابق", "طابق", "مفروش", "مساحة", "اطلال",
+               "إطلال", "حديقة", "مسبح", "تكييف", "مكيف", "مطبخ", "عمر العقار",
+               "صيانة", "فواتير", "كهرباء", "ماء", "واجهة", "خادمة", "مستودع",
+               "اثاث", "أثاث", "حمام", "حمامات", "صالة")
+
+
+def _asks_unknown_attr(text: str, facts: str) -> bool:
+    """سؤال عن سمة عقار غير مذكورة في الحقائق المخزّنة → يستلزم سؤال الطرف الآخر."""
+    facts = facts or ""
+    hits = [w for w in _ATTR_WORDS if w in text]
+    return bool(hits) and any(w not in facts for w in hits)
+
+
 # ── System Prompts ─────────────────────────────────────────────────────────────
 
 def _role_ctx(my_role: str) -> str:
@@ -149,6 +163,7 @@ _SYS_NEGOTIATOR = """\
 - إن لم يُطرح سعر بعد: اذكر السعر المطروح واسأل الطرف صراحةً عن رقمه أو قبوله.
 - إن وُجد عرض على الطاولة (انظر "حالة التفاوض"): علّق عليه وادفع نحو تقارب برقم محدّد.
 - أجب على سؤاله من البيانات المتاحة فقط، باختصار، ثم أعِد توجيهه نحو السعر.
+- إن سُئلت عن معلومة غير موجودة في البيانات المتاحة، لا تختلقها ولا تقل "لا أعرف" — بل أجب بهذه العلامة فقط بلا أي نص آخر: [[ASK_OTHER]]  (سيتولّى النظام سؤال الطرف الآخر نيابةً عنك).
 - جُمل قصيرة (٢-٤)، عامية سعودية طبيعية، شخصية ودودة ثابتة.
 
 🚧 حدود صارمة:
@@ -205,6 +220,7 @@ def ensure_table(conn=None):
             ("admin_reason",    "TEXT"),
             ("admin_notified",  "BOOLEAN DEFAULT false"),
             ("listing_facts",   "TEXT"),
+            ("pending_req",     "JSONB"),
         ]:
             cur.execute(
                 f"ALTER TABLE sanad.masaed_negotiations "
@@ -222,7 +238,8 @@ def _load_neg(phone: str, conn) -> dict | None:
                    status, lead_name, listing_title, listing_city,
                    listing_price, lead_max_price, owner_min_price,
                    proposed_price, lead_accepted, owner_accepted,
-                   needs_admin, admin_notified, listing_facts, chat_log
+                   needs_admin, admin_notified, listing_facts, chat_log,
+                   pending_req
             FROM sanad.masaed_negotiations
             WHERE (lead_phone = %s OR listing_phone = %s)
               AND status = 'active'
@@ -238,6 +255,7 @@ def _load_neg(phone: str, conn) -> dict | None:
         'listing_price','lead_max_price','owner_min_price',
         'proposed_price','lead_accepted','owner_accepted',
         'needs_admin','admin_notified','listing_facts','chat_log',
+        'pending_req',
     ]
     d = dict(zip(cols, row))
     d['chat_log'] = d['chat_log'] or []
@@ -573,8 +591,9 @@ def _listing_photos(neg: dict, conn) -> list:
 
 
 def _relay_info_request(neg: dict, my_role: str, text: str, conn):
-    """أعد صياغة طلب الطرف وأرسله للطرف الآخر عبر واتساب (جلب المعلومة الناقصة)."""
+    """أعد صياغة طلب الطرف وأرسله للطرف الآخر، وسجّل طلباً معلّقاً لإغلاق الحلقة."""
     is_lead     = (my_role == "مستأجر")
+    asker_phone = neg["lead_phone"] if is_lead else neg["listing_phone"]
     other_phone = neg["listing_phone"] if is_lead else neg["lead_phone"]
     asker       = "المستأجر" if is_lead else "المالك"
     reworded = _llm(
@@ -584,12 +603,16 @@ def _relay_info_request(neg: dict, my_role: str, text: str, conn):
     ) or text
     msg = f"🔔 {asker} يطلب:\n{reworded}\n\nياليت تزوّدني بها وأنقلها له فوراً."
     _append_log(neg["id"], f"relay→{'مالك' if is_lead else 'مستأجر'}", msg, conn)
+    # سجّل الطلب المعلّق: من سأل + سؤاله — لإرجاع رد الطرف الآخر إليه لاحقاً
+    _update_neg(neg["id"], conn, pending_req=json.dumps({
+        "asker_role": asker, "asker_phone": asker_phone, "question": text[:200],
+    }))
     wa_send(other_phone, msg)
 
 
 # ── Main handler ───────────────────────────────────────────────────────────────
 
-def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
+def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None) -> bool:
     neg_id   = neg["id"]
     is_lead  = (phone == neg["lead_phone"])
     my_role  = "مستأجر" if is_lead else "مالك"
@@ -651,6 +674,27 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
           f"amount={intent.get('amount')} firm={intent.get('is_firm')}", flush=True)
 
     _append_log(neg_id, my_role, text, conn)
+
+    # ── إغلاق الحلقة: ردّ الطرف الذي سألناه عن معلومة معلّقة → أوصِله للسائل ────
+    pending = neg.get("pending_req")
+    if (pending and phone != pending.get("asker_phone")
+            and (media_url or intent["intent"] in ("question", "other"))
+            and not _wants_phone(text)):
+        asker_phone = pending["asker_phone"]
+        q = (pending.get("question") or "").strip()
+        asker_role  = "مالك" if asker_phone == neg["listing_phone"] else "مستأجر"
+        body = text.strip() or "(أرسل لك ملفاً)"
+        fwd = (f"بخصوص استفسارك" + (f' ("{q[:50]}")' if q else "") + ":\n"
+               f"الطرف الآخر يقول: {body}")
+        _append_log(neg_id, f"answer→{asker_role}", fwd, conn)
+        wa_send(asker_phone, fwd)
+        if media_url:                       # مرّر أي صورة/ملف أرفقه الطرف المسؤول
+            wa_send_media(asker_phone, media_url, caption="من الطرف الآخر")
+        _update_neg(neg_id, conn, pending_req=None)
+        ack = "تمام، وصلني ونقلته له ✅ نكمّل — وش آخر سعر تقبله؟"
+        _append_log(neg_id, f"bot→{my_role}", ack, conn)
+        wa_send(phone, ack)
+        return True
 
     # ── قبول صريح (بدون proposed_price) ─────────────────────────────────────
     if intent["intent"] == "accept":
@@ -735,6 +779,15 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
         wa_send(phone, reply)
         return True
 
+    # ── سؤال عن سمة غير معروفة → اطلبها من الطرف الآخر تلقائياً (relay حتمي) ────
+    if intent["intent"] == "question" and _asks_unknown_attr(text, neg.get("listing_facts")):
+        _relay_info_request(neg, my_role, text, conn)
+        reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً. "
+                 f"وعشان نتقدّم بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
+        _append_log(neg_id, f"bot→{my_role}", reply, conn)
+        wa_send(phone, reply)
+        return True
+
     # ── إحباط/شكوى موجّهة للبوت → إعادة تفاعل لطيفة نحو الهدف (لا تصعيد) ────────
     if _is_meta_complaint(text):
         reply = ("آسف إذا ضايقتك 🙏 خلّنا نركّز على المهم: "
@@ -755,6 +808,14 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
 
     # ── رد تلقائي (LLM) ───────────────────────────────────────────────────────
     reply = _generate_reply(neg, my_role, text, intent)
+    # معلومة ناقصة: النموذج أصدر [[ASK_OTHER]] → اطلبها من الطرف الآخر تلقائياً
+    if "ASK_OTHER" in reply:
+        _relay_info_request(neg, my_role, text, conn)
+        reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً. "
+                 f"وعشان نتقدّم بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
+        _append_log(neg_id, f"bot→{my_role}", reply, conn)
+        wa_send(phone, reply)
+        return True
     # حارس التكرار: لا نرسل نفس رد البوت السابق حرفياً
     last_bot = next((e.get("text") for e in reversed(neg.get("chat_log", []))
                      if str(e.get("role", "")).startswith("bot")), None)
@@ -765,7 +826,7 @@ def _handle_active(neg: dict, phone: str, text: str, conn) -> bool:
     return True
 
 
-def handle_negotiation_message(phone: str, text: str) -> bool:
+def handle_negotiation_message(phone: str, text: str, media_url: str = None) -> bool:
     with _phone_lock(phone):
         with _conn_ctx() as conn:
             neg = _load_neg(phone, conn)
@@ -784,7 +845,7 @@ def handle_negotiation_message(phone: str, text: str) -> bool:
                 neg["_profile"] = build_party_profile(phone, conn)  # ملف الحافظ المضغوط
             except Exception:
                 pass
-            return _handle_active(neg, phone, text, conn)
+            return _handle_active(neg, phone, text or "", conn, media_url)
 
 
 # ── بدء تفاوض جديد ────────────────────────────────────────────────────────────
