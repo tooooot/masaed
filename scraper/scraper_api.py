@@ -1302,6 +1302,28 @@ def bot_test():
         _wa_test_local.log    = []
 
 
+@app.route("/outbound/run", methods=["POST"])
+def outbound_run():
+    """
+    المحرّك الصادر المدفوع بالطلب: طلب باحث → مطابقة → سحب حراج عند الحاجة →
+    مبادرة الملاك المطابقين (مبادرة باردة).
+    Body: {phone: "<رقم الباحث المسجّل>", scrape?: bool, max?: int}
+    """
+    from goals import run_outbound_for_phone
+    data = request.get_json() or {}
+    phone = data.get("phone")
+    if not phone:
+        return jsonify({"ok": False, "error": "phone مطلوب (رقم باحث مسجّل)"}), 400
+    do_scrape = bool(data.get("scrape", True))
+    max_c     = int(data.get("max", 3))
+    try:
+        res = run_outbound_for_phone(phone, do_scrape=do_scrape, max_contacts=max_c)
+        return jsonify(res), (200 if res.get("ok") else 404)
+    except Exception as e:
+        print(f"[API] خطأ في المحرّك الصادر: {e}", flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SIMULATOR & CRITIC ENDPOINTS (مساعد المختبر المتقدم)
 # ══════════════════════════════════════════════════════════════════════════════
