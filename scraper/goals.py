@@ -240,6 +240,98 @@ def run_outbound_for_phone(seeker_phone: str, do_scrape: bool = True, max_contac
         conn.close()
 
 
+def handle_cold_reply(phone: str, text: str, conn=None) -> bool:
+    """
+    إكمال محادثة المبادرة الباردة: المالك المُبادَر ردّ.
+    - رفض → إغلاق مهذّب ووسم declined.
+    - موافقة → سجّل عقاره من بيانات الإعلان + افتح تفاوضاً مع الباحث المربوط.
+    - غير ذلك (سؤال/تردّد) → عرّف بمساعد، اذكر الباحث، واطلب الإذن.
+    يُرجع True إذا تولّى الرسالة.
+    """
+    from bot import wa_send
+    from intent_parser import parse_intent
+    from negotiator import start_negotiation
+
+    own = conn is None
+    if own:
+        conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, title, city, price, rooms, property_type, outreach_to
+                FROM sanad.masaed_listings
+                WHERE phone=%s AND status='contacted'
+                ORDER BY id DESC LIMIT 1
+            """, (phone,))
+            row = cur.fetchone()
+        if not row:
+            return False
+        lid, title, city, price, rooms, ptype, seeker_phone = row
+
+        # بيانات الباحث المربوط (للذكر والربط)
+        seeker_id, hint = None, ""
+        if seeker_phone:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, rooms, budget_annual, for_family FROM sanad.masaed_registrations
+                    WHERE phone=%s AND type='wanted' AND status<>'abandoned'
+                    ORDER BY created_at DESC LIMIT 1
+                """, (seeker_phone,))
+                s = cur.fetchone()
+            if s:
+                seeker_id = s[0]
+                hint = _seeker_hint({"rooms": s[1], "budget_annual": s[2], "for_family": s[3]})
+
+        intent = parse_intent(text)
+        itype  = intent.get("intent")
+        senti  = intent.get("sentiment")
+
+        # ── رفض → إغلاق مهذّب ──────────────────────────────────────────────
+        if itype in ("reject", "cancel") and senti != "positive":
+            with conn.cursor() as cur:
+                cur.execute("UPDATE sanad.masaed_listings SET status='declined' WHERE id=%s", (lid,))
+                conn.commit()
+            wa_send(phone, "تمام، شكراً لوقتك 🙏 لو احتجت تأجير عقارك مستقبلاً أنا موجود.")
+            return True
+
+        # ── ليست موافقة واضحة → عرّف بمساعد + اذكر الباحث + اطلب الإذن ──────
+        if itype != "accept" and senti != "positive":
+            extra = f" يطابق عقارك ({hint})" if hint else " يطابق عقارك"
+            wa_send(phone,
+                "أنا «مساعد» — وكيل عقاري يعمل بالذكاء الاصطناعي 🤝 "
+                f"عندي مستأجر جاد{extra}، وأتولّى التنسيق والتفاوض نيابةً عنك.\n"
+                "تحب أربطك فيه ونبدأ؟")
+            return True
+
+        # ── موافقة → سجّل المالك من الإعلان + افتح التفاوض ──────────────────
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE sanad.masaed_registrations SET status='abandoned'
+                           WHERE phone=%s AND status<>'abandoned'""", (phone,))
+            cur.execute("""
+                INSERT INTO sanad.masaed_registrations
+                    (phone, type, status, city, rooms, property_type, price_annual)
+                VALUES (%s, 'listing', 'complete', %s, %s, %s, %s) RETURNING id
+            """, (phone, city, rooms, ptype, price))
+            owner_reg = cur.fetchone()[0]
+            cur.execute("UPDATE sanad.masaed_listings SET status='registered' WHERE id=%s", (lid,))
+            conn.commit()
+
+        if not seeker_id:   # الباحث لم يعد متاحاً
+            wa_send(phone, "ممتاز! 🎉 سجّلت عقارك، وبنتواصل معك بتفاصيل المستأجر قريباً.")
+            return True
+
+        start_negotiation(
+            lead_id=seeker_id, listing_id=None,
+            lead_phone=seeker_phone, listing_phone=phone,
+            listing_title=title or "عقارك", listing_city=city, listing_price=price,
+        )
+        print(f"[COLD] المالك {phone} وافق → سجّلته (#{owner_reg}) وفتحت تفاوضاً مع الباحث {seeker_phone}", flush=True)
+        return True
+    finally:
+        if own:
+            conn.close()
+
+
 # وصف مختصر لكل هدف (للسجل/الواجهة)
 GOAL_LABELS = {
     "negotiate":             "تفاوض نشط",

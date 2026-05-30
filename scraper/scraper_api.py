@@ -1220,6 +1220,12 @@ def _route_message(phone: str, text: str, media_url: str = None):
     if (text or media_url) and handle_negotiation_message(phone, text, media_url):
         return                                 # المفاوض تولّى
 
+    # ── ردّ على مبادرة باردة: مالك معلِن في حراج راسلناه ───────────────────────
+    if goal == "cold_reply" and text:
+        from goals import handle_cold_reply
+        if handle_cold_reply(phone, text):
+            return                             # محرّك المبادرة تولّى
+
     # ── المعدّل: إذا جلسة تعديل جارية أو طلب تعديل صريح ────────────────────
     from bot import get_active_reg
     in_edit_session = get_editing_reg(phone) is not None
