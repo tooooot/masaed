@@ -356,12 +356,24 @@ def start_test_negotiation(lead_id: int) -> dict:
                     seeker_reg = rid
             conn.commit()
 
+        # نبدأ التفاوض بلا افتتاح آلي، ثم نرسل افتتاحاً واضحاً للمحاكاة
         res = start_negotiation(
             lead_id=seeker_reg, listing_id=None,
             lead_phone=seeker, listing_phone=owner,
             listing_title=title[:80], listing_city=city, listing_price=None,
+            send_intro=False,
         )
         if res.get("ok"):
+            from bot import wa_send
+            loc = f" في {city}" if city else ""
+            # الباحث (أنت): طلب حقيقي
+            wa_send(seeker,
+                f"🧪 [محاكاة اختبار]\nمرحباً 👋 معك مساعد العقاري. بخصوص بحثك «{title[:60]}» — "
+                f"لقيت لك عرضاً مناسباً، تحدّث معي وأنا الوسيط بينك وبين المالك.")
+            # المالك (أنت): بلا ادّعاء إعلان — عرض مستأجر مطابق
+            wa_send(owner,
+                f"🧪 [محاكاة اختبار]\nمرحباً 👋 معك مساعد العقاري. عندي مستأجر جاد يبحث عن "
+                f"عقار{loc} يطابق ما لديك، تحدّث معي وأنا الوسيط بينك وبين المستأجر.")
             res["note"] = f"بدأ التفاوض على رقميك — تقمّص الباحث ({seeker}) والمالك ({owner})"
         return res
     finally:

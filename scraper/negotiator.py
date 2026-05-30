@@ -867,7 +867,8 @@ def handle_negotiation_message(phone: str, text: str, media_url: str = None) -> 
 def start_negotiation(lead_id: int, listing_id: int,
                       lead_phone: str, listing_phone: str,
                       lead_name: str = None, listing_title: str = None,
-                      listing_city: str = None, listing_price: int = None) -> dict:
+                      listing_city: str = None, listing_price: int = None,
+                      send_intro: bool = True) -> dict:
     ensure_table()
 
     if lead_phone == listing_phone:
@@ -935,25 +936,26 @@ def start_negotiation(lead_id: int, listing_id: int,
     listing_reg_note = " (مسجّل ✅)" if listing_regs else " (غير مسجّل)"
     print(f"[NEG] lead{lead_reg_note} listing{listing_reg_note}", flush=True)
 
-    # رسالة المستأجر
-    greeting_lead = f"مرحباً {lead_name_resolved} 👋" if lead_name_resolved else "مرحباً 👋"
-    wa_send(lead_phone,
-        f"{greeting_lead}، أنا مساعد العقاري — وسيط إلكتروني.\n"
-        f"وجدت طلبك المُسجَّل وربطتك بعرض يناسبه:\n"
-        f"📍 {title_str}" + (f" — {city_str}" if city_str else "") + "\n"
-        f"💰 {price_str}\n\n"
-        f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المالك."
-    )
+    if send_intro:
+        # رسالة المستأجر
+        greeting_lead = f"مرحباً {lead_name_resolved} 👋" if lead_name_resolved else "مرحباً 👋"
+        wa_send(lead_phone,
+            f"{greeting_lead}، أنا مساعد العقاري — وسيط إلكتروني.\n"
+            f"وجدت طلبك المُسجَّل وربطتك بعرض يناسبه:\n"
+            f"📍 {title_str}" + (f" — {city_str}" if city_str else "") + "\n"
+            f"💰 {price_str}\n\n"
+            f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المالك."
+        )
 
-    # رسالة المالك
-    greeting_listing = f"مرحباً {listing_name_resolved} 👋" if listing_name_resolved else "مرحباً 👋"
-    wa_send(listing_phone,
-        f"{greeting_listing}، أنا مساعد العقاري — وسيط إلكتروني.\n"
-        f"وجدت إعلانك في حراج وربطتك بمستأجر مهتم"
-        + (f" في {city_str}" if city_str else "") + ".\n"
-        f"💰 {price_str}\n\n"
-        f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المستأجر."
-    )
+        # رسالة المالك
+        greeting_listing = f"مرحباً {listing_name_resolved} 👋" if listing_name_resolved else "مرحباً 👋"
+        wa_send(listing_phone,
+            f"{greeting_listing}، أنا مساعد العقاري — وسيط إلكتروني.\n"
+            f"وجدت إعلانك في حراج وربطتك بمستأجر مهتم"
+            + (f" في {city_str}" if city_str else "") + ".\n"
+            f"💰 {price_str}\n\n"
+            f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المستأجر."
+        )
 
     print(f"[NEG] Active #{neg_id}: {lead_phone} ↔ {listing_phone}", flush=True)
     return {"ok": True, "neg_id": neg_id}
