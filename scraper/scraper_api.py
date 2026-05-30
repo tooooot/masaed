@@ -1308,6 +1308,27 @@ def bot_test():
         _wa_test_local.log    = []
 
 
+@app.route("/outbound/rematch", methods=["POST"])
+def outbound_rematch():
+    """
+    المتابعة الدورية: أعِد مطابقة كل الباحثين النشطين ضد العروض الحالية،
+    بادر أصحاب العروض الجديدة، وطمئن الباحثين. (تُشغّل دورياً عبر cron/جدولة).
+    Body (اختياري): {scrape?: bool, max?: int, followup_hours?: int}
+    """
+    from goals import run_periodic_rematch
+    data = request.get_json(silent=True) or {}
+    try:
+        res = run_periodic_rematch(
+            do_scrape=bool(data.get("scrape", False)),
+            max_per_seeker=int(data.get("max", 2)),
+            followup_hours=int(data.get("followup_hours", 12)),
+        )
+        return jsonify(res)
+    except Exception as e:
+        print(f"[API] خطأ في إعادة المطابقة: {e}", flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/outbound/run", methods=["POST"])
 def outbound_run():
     """

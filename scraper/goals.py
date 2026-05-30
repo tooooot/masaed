@@ -14,6 +14,7 @@
   new_inbound            جديد كلياً
 """
 
+from datetime import datetime, timezone
 from bot import get_conn
 
 
@@ -236,6 +237,59 @@ def run_outbound_for_phone(seeker_phone: str, do_scrape: bool = True, max_contac
         res = run_outbound_for_seeker(seeker, do_scrape=do_scrape, max_contacts=max_contacts, conn=conn)
         res["ok"] = True
         return res
+    finally:
+        conn.close()
+
+
+def run_periodic_rematch(do_scrape: bool = False, max_per_seeker: int = 2,
+                         followup_hours: int = 12) -> dict:
+    """
+    المتابعة الدورية (نفَس المكتب الطويل): لكل باحث نشِط بلا تفاوض جارٍ،
+    أعِد المطابقة ضد العروض الحالية وبادر أصحاب العروض الجديدة، وطمئن الباحث
+    (مرة كل followup_hours) أنك تتابع له. تُشغّل دورياً (cron/جدولة).
+    """
+    from bot import wa_send
+    conn = get_conn()
+    out = {"ok": True, "seekers": 0, "contacted_total": 0, "followups": 0, "details": []}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT r.phone, r.city, r.district, r.rooms, r.budget_annual,
+                       r.property_type, r.for_family, r.last_followup
+                FROM sanad.masaed_registrations r
+                WHERE r.type='wanted' AND r.status='complete'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM sanad.masaed_negotiations n
+                    WHERE (n.lead_phone=r.phone OR n.listing_phone=r.phone)
+                      AND n.status='active')
+                ORDER BY r.created_at DESC LIMIT 100
+            """)
+            cols = [d[0] for d in cur.description]
+            seekers = [dict(zip(cols, row)) for row in cur.fetchall()]
+
+        for s in seekers:
+            res = run_outbound_for_seeker(s, do_scrape=do_scrape,
+                                          max_contacts=max_per_seeker, conn=conn)
+            out["seekers"] += 1
+            out["contacted_total"] += res.get("contacted", 0)
+
+            # متابعة لطيفة للباحث عند وجود عروض جديدة (محكومة بمعدّل)
+            if res.get("contacted", 0) > 0:
+                last = s.get("last_followup")
+                due = last is None or \
+                    (datetime.now(timezone.utc) - last).total_seconds() > followup_hours * 3600
+                if due:
+                    wa_send(s["phone"],
+                        "أبشّرك 👋 لقيت عروضاً جديدة قد تناسب طلبك وأتواصل مع أصحابها — "
+                        "أوافيك أول ما يردّون 🤝")
+                    with conn.cursor() as cur:
+                        cur.execute("""UPDATE sanad.masaed_registrations SET last_followup=NOW()
+                                       WHERE phone=%s AND type='wanted'""", (s["phone"],))
+                        conn.commit()
+                    out["followups"] += 1
+            out["details"].append({"seeker": s["phone"], "contacted": res.get("contacted", 0)})
+        print(f"[REMATCH] باحثون={out['seekers']} مبادرات={out['contacted_total']} متابعات={out['followups']}", flush=True)
+        return out
     finally:
         conn.close()
 
