@@ -125,22 +125,40 @@ def _is_registered(phone: str, cur) -> bool:
     return cur.fetchone() is not None
 
 
-def _match_listings(lead: dict, conn) -> list:
-    """طابق العروض النشطة ضد الطلب وأرجعها مرتّبة بالدرجة."""
-    from scraper_api import score_match     # lazy: تجنّب الاستيراد الدائري
+def _score(seeker: dict, lst: dict) -> int:
+    """مطابقة مبنية على الحقول المنظَّمة (مستقلّة، لا تحتاج bs4): مدينة40 غرف25 نوع15 سعر20."""
+    score = 0
+    sc = (seeker.get("city") or "").strip()
+    lc = (lst.get("city") or "").strip()
+    if sc and lc:
+        if sc == lc:                 score += 40
+        elif sc in lc or lc in sc:   score += 20
+    sr, lr = seeker.get("rooms"), lst.get("rooms")
+    if sr and lr:
+        if sr == lr:                 score += 25
+        elif abs(sr - lr) == 1:      score += 10
+    st, lt = seeker.get("property_type"), lst.get("property_type")
+    if st and lt and st == lt:       score += 15
+    sb = seeker.get("budget_annual") or seeker.get("price_annual")
+    lp = lst.get("price")
+    if sb and lp:
+        if lp <= sb:                 score += 20
+        elif lp <= sb * 1.15:        score += 8
+    return min(score, 100)
+
+
+def _match_listings(seeker: dict, conn) -> list:
+    """طابق العروض النشطة ضد طلب الباحث وأرجعها مرتّبة بالدرجة."""
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, title, body, city, property_type, rooms, price, phone, status, url
             FROM sanad.masaed_listings
             WHERE status='active' AND phone IS NOT NULL
             ORDER BY CASE WHEN city=%s THEN 0 ELSE 1 END, scraped_at DESC LIMIT 200
-        """, (lead.get("city") or "",))
+        """, (seeker.get("city") or "",))
         cols = [d[0] for d in cur.description]
         listings = [dict(zip(cols, r)) for r in cur.fetchall()]
-    out = []
-    for lst in listings:
-        sc, reason, _ = score_match(lead, lst)
-        out.append({**lst, "score": sc, "reason": reason})
+    out = [{**lst, "score": _score(seeker, lst)} for lst in listings]
     out.sort(key=lambda x: x["score"], reverse=True)
     return out
 
@@ -157,20 +175,19 @@ def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
         conn = get_conn()
     summary = {"matched": 0, "contacted": 0, "scraped": False, "details": []}
     try:
-        lead = _seeker_to_lead(seeker)
         hint = _seeker_hint(seeker)
-        matches = _match_listings(lead, conn)
+        matches = _match_listings(seeker, conn)
         good = [m for m in matches if m["score"] >= MATCH_MIN]
 
         # سحب حراج عند قلّة النتائج (المدفوع بالطلب: نبحث في النت)
-        if do_scrape and len(good) < MIN_RESULTS and lead.get("city"):
+        if do_scrape and len(good) < MIN_RESULTS and seeker.get("city"):
             try:
                 import asyncio
                 from haraj_scraper import run_scrape_listings
-                print(f"[OUTBOUND] نتائج قليلة ({len(good)}) — أسحب حراج لـ{lead['city']}", flush=True)
-                asyncio.run(run_scrape_listings(cities=[lead["city"]]))
+                print(f"[OUTBOUND] نتائج قليلة ({len(good)}) — أسحب حراج لـ{seeker['city']}", flush=True)
+                asyncio.run(run_scrape_listings(cities=[seeker["city"]]))
                 summary["scraped"] = True
-                matches = _match_listings(lead, conn)
+                matches = _match_listings(seeker, conn)
                 good = [m for m in matches if m["score"] >= MATCH_MIN]
             except Exception as e:
                 print(f"[OUTBOUND] فشل السحب: {e}", flush=True)
