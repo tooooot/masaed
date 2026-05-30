@@ -170,11 +170,13 @@ def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
     المحرّك الصادر لطلب باحث واحد.
     seeker: dict فيه phone, city, rooms, budget_annual, property_type, for_family, district
     """
-    from bot import wa_send       # حارس sandbox مدمج
+    from bot import wa_send, get_config       # حارس sandbox مدمج + إعدادات الاختبار
     own = conn is None
     if own:
         conn = get_conn()
-    summary = {"matched": 0, "contacted": 0, "scraped": False, "details": []}
+    test_mode  = get_config("test_mode", "off") == "on"
+    test_owner = (get_config("test_owner", "") or "").replace("+", "").replace(" ", "") if test_mode else ""
+    summary = {"matched": 0, "contacted": 0, "scraped": False, "test_mode": test_mode, "details": []}
     try:
         hint = _seeker_hint(seeker)
         matches = _match_listings(seeker, conn)
@@ -203,7 +205,27 @@ def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
                 if not owner or _is_registered(owner, cur):
                     continue
                 msg = build_cold_outbound_intro(m, hint)
-                sent = wa_send(owner, msg)   # يُحجب تلقائياً إن لم يكن sandbox
+                if test_mode and test_owner:
+                    # وضع الاختبار: أنشئ عرضاً برقم الاختبار (ليعمل لوب cold_reply) وأرسل له
+                    cur.execute("""
+                        INSERT INTO sanad.masaed_listings
+                            (source, external_id, title, city, price, rooms, property_type, phone, status, outreach_to)
+                        VALUES ('test', %s, %s, %s, %s, %s, %s, %s, 'contacted', %s)
+                        ON CONFLICT (source, external_id) DO UPDATE
+                            SET status='contacted', outreach_to=EXCLUDED.outreach_to,
+                                phone=EXCLUDED.phone, title=EXCLUDED.title, price=EXCLUDED.price
+                    """, (f"TESTREDIR-{seeker_phone}", m.get("title"), m.get("city"),
+                          m.get("price"), m.get("rooms"), m.get("property_type"),
+                          test_owner, seeker_phone))
+                    conn.commit()
+                    sent = wa_send(test_owner, msg)
+                    summary["contacted"] += 1
+                    summary["details"].append({"listing": "TEST", "owner": test_owner,
+                                                "orig_owner": owner, "score": m["score"], "sent": bool(sent)})
+                    print(f"[OUTBOUND-TEST] بادرت رقم الاختبار {test_owner} بدل {owner} (درجة {m['score']})", flush=True)
+                    break    # عرض واحد يكفي في الاختبار
+                # وضع الإنتاج: المالك الحقيقي (محكوم بحارس wa_send)
+                sent = wa_send(owner, msg)
                 cur.execute("""UPDATE sanad.masaed_listings
                                SET status='contacted', outreach_to=%s WHERE id=%s""",
                             (seeker_phone, m["id"]))

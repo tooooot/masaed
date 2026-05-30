@@ -44,6 +44,30 @@ def get_conn():
     return psycopg2.connect(host=DB_HOST, port=DB_PORT,
                             dbname=DB_NAME, user=DB_USER, password=DB_PASS)
 
+
+# ── إعدادات قابلة للتعديل من اللوحة (وضع الاختبار) ──────────────────────────────
+def get_config(key: str, default=None):
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT value FROM sanad.masaed_config WHERE key=%s", (key,))
+            row = cur.fetchone()
+        conn.close()
+        return row[0] if row and row[0] is not None else default
+    except Exception:
+        return default
+
+
+def set_config(key: str, value: str):
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("CREATE TABLE IF NOT EXISTS sanad.masaed_config (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())")
+        cur.execute("""INSERT INTO sanad.masaed_config (key, value) VALUES (%s, %s)
+                       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()""",
+                    (key, str(value)))
+        conn.commit()
+    conn.close()
+
 def get_contact(phone: str) -> dict:
     """Load permanent contact profile. Creates if new."""
     conn = get_conn()
@@ -586,9 +610,18 @@ def wa_send(phone: str, text: str):
         print(f"[WA MOCK] → {phone_clean}: {text[:80]}")
         return
 
+    # ── وضع الاختبار: حوّل أي رسالة لرقم غير مُصرّح إلى رقم الاختبار ──────────────
+    test_owner = ""
+    if get_config("test_mode", "off") == "on":
+        test_owner = (get_config("test_owner", "") or "").replace("+", "").replace(" ", "")
+        if test_owner and phone_clean != test_owner and phone_clean not in SANDBOX_PHONES:
+            print(f"[WA TEST-REDIRECT] {phone_clean} → {test_owner}", flush=True)
+            text = f"🧪 [موجّهة أصلاً لـ {phone_clean}]\n\n{text}"
+            phone_clean = test_owner
+
     # ── SAFEGUARD: Check if phone is in sandbox list ───────────────────────────
     allow_real = os.getenv("MASAED_ALLOW_REAL_SEND", "false").lower() == "true"
-    is_sandbox = phone_clean in SANDBOX_PHONES
+    is_sandbox = phone_clean in SANDBOX_PHONES or (test_owner and phone_clean == test_owner)
 
     if not is_sandbox and not allow_real:
         print(f"[WA BLOCKED] ❌ CRITICAL: Attempted to send to {phone_clean} (not in sandbox)", flush=True)

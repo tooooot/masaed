@@ -1308,6 +1308,23 @@ def bot_test():
         _wa_test_local.log    = []
 
 
+@app.route("/config/test", methods=["GET", "POST"])
+def config_test():
+    """قراءة/تعيين إعدادات وضع الاختبار (تبديل أرقام الملاك لرقم اختبار)."""
+    from bot import get_config, set_config
+    if request.method == "POST":
+        data = request.get_json() or {}
+        if "test_mode" in data:
+            set_config("test_mode", "on" if data["test_mode"] in (True, "on", "true", 1) else "off")
+        if "test_owner" in data:
+            num = str(data["test_owner"]).replace("+", "").replace(" ", "")
+            set_config("test_owner", num)
+    return jsonify({
+        "test_mode":  get_config("test_mode", "off"),
+        "test_owner": get_config("test_owner", ""),
+    })
+
+
 @app.route("/outbound/rematch", methods=["POST"])
 def outbound_rematch():
     """

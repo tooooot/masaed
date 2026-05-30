@@ -153,6 +153,20 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
     </div>
   </div>
 
+  <!-- ── إعدادات وضع الاختبار ── -->
+  <div id="testCfg" style="margin:10px 16px;padding:12px 14px;background:#1a2129;border:1px solid #2a3540;border-radius:10px;font-size:.85rem">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="tmToggle" onchange="saveTestCfg()"> 🧪 وضع الاختبار (تبديل أرقام الملاك)
+      </label>
+      <input id="tmOwner" placeholder="رقم المالك للاختبار (9665...)" inputmode="tel"
+             style="flex:1;min-width:180px;padding:6px 10px;background:#0b0f14;border:1px solid #2a3540;border-radius:8px;color:#e6edf3">
+      <button onclick="saveTestCfg()" style="padding:6px 14px;background:#3fb950;border:0;border-radius:8px;color:#001;font-weight:700;cursor:pointer">حفظ</button>
+      <span id="tmStatus" style="color:#8b98a5"></span>
+    </div>
+    <div style="color:#8b98a5;font-size:.75rem;margin-top:6px">عند التفعيل: كل رسالة لمالك حقيقي تُحوّل لهذا الرقم مع بادئة الرقم الأصلي. رقمك (الباحث) يبقى كما هو.</div>
+  </div>
+
   <div class="body" id="body">
 
     <!-- ── List Panel ── -->
@@ -690,6 +704,28 @@ function enableSimulationBtn() {
     btn.disabled = false;
   }
 }
+
+// ── إعدادات وضع الاختبار ──
+async function loadTestCfg() {
+  try {
+    const r = await fetch(`${API}/config/test`); const c = await r.json();
+    document.getElementById('tmToggle').checked = (c.test_mode === 'on');
+    document.getElementById('tmOwner').value = c.test_owner || '';
+    document.getElementById('tmStatus').textContent = c.test_mode === 'on' ? '🟢 مفعّل' : '⚪ متوقف';
+  } catch(e) {}
+}
+async function saveTestCfg() {
+  const test_mode = document.getElementById('tmToggle').checked;
+  const test_owner = document.getElementById('tmOwner').value.trim();
+  document.getElementById('tmStatus').textContent = '… جارٍ الحفظ';
+  try {
+    const r = await fetch(`${API}/config/test`, {method:'POST',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({test_mode, test_owner})});
+    const c = await r.json();
+    document.getElementById('tmStatus').textContent = c.test_mode === 'on' ? '🟢 مفعّل ('+c.test_owner+')' : '⚪ متوقف';
+  } catch(e) { document.getElementById('tmStatus').textContent = '⚠️ فشل الحفظ'; }
+}
+loadTestCfg();
 
 loadRequests();
 </script>
