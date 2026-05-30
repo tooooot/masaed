@@ -33,6 +33,9 @@ USE_ANTHROPIC  = os.getenv("MASAED_USE_ANTHROPIC", "false").lower() == "true"
 SANDBOX_PHONES = set(os.getenv("MASAED_SANDBOX_PHONES", "966500000000,966500000001,0500000000,0500000001").split(","))
 print(f"[INIT] Sandbox phones for testing: {SANDBOX_PHONES}", flush=True)
 
+# منع الإزعاج: آخر رسالة لكل رقم {phone: (text, ts)} لتجاهل المكرر المتطابق
+_recent_sends = {}
+
 DB_HOST = os.getenv("POSTGRES_HOST", "sanad-postgres")
 DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_NAME = os.getenv("POSTGRES_DB", "sanad")
@@ -631,6 +634,15 @@ def wa_send(phone: str, text: str):
 
     if not is_sandbox:
         print(f"[WA REAL] ⚠️ Sending to real phone {phone_clean}", flush=True)
+
+    # ── منع الإزعاج: تجاهل رسالة متطابقة لنفس الرقم خلال 30 ثانية ───────────────
+    import time as _t
+    _k = phone_clean
+    _prev = _recent_sends.get(_k)
+    if _prev and _prev[0] == text and (_t.time() - _prev[1]) < 30:
+        print(f"[WA DEDUP] تجاهل رسالة مكررة → {phone_clean}", flush=True)
+        return
+    _recent_sends[_k] = (text, _t.time())
 
     url = f"https://api.green-api.com/waInstance{GREEN_INSTANCE}/sendMessage/{GREEN_TOKEN}"
     try:

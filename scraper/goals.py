@@ -77,12 +77,14 @@ def build_cold_outbound_intro(listing: dict, seeker_hint: str = "") -> str:
     title = (listing.get("title") or "عقارك المعروض").strip()
     city  = listing.get("city")
     price = listing.get("price")
+    url   = listing.get("url")
     loc   = f" في {city}" if city else ""
     pr    = f" بسعر {int(price):,} ريال" if price else ""
     hint  = f" ({seeker_hint})" if seeker_hint else ""
+    link  = f"\n🔗 إعلانك: {url}" if url else ""
     return (
         "السلام عليكم ورحمة الله 👋\n"
-        f"شفت إعلانك في حراج عن «{title}»{loc}{pr}، وأتواصل معك بخصوصه.\n\n"
+        f"شفت إعلانك في حراج عن «{title}»{loc}{pr}، وأتواصل معك بخصوصه.{link}\n\n"
         "أنا «مساعد» — وكيل عقاري يعمل بالذكاء الاصطناعي. مهمتي أجيب لك "
         f"مستأجرين جادّين وأتولّى التنسيق والتفاوض نيابةً عنك بدون عناء.\n"
         f"وعندي حالياً باحث جاد يطابق مواصفات عقارك{hint}.\n\n"
@@ -148,8 +150,19 @@ def _score(seeker: dict, lst: dict) -> int:
     return min(score, 100)
 
 
-def _match_listings(seeker: dict, conn) -> list:
-    """طابق العروض النشطة ضد طلب الباحث وأرجعها مرتّبة بالدرجة."""
+def _tried_phones(seeker_phone: str, conn) -> set:
+    """أرقام عروض جُرِّبت سابقاً لهذا الباحث (تفاوضات أُلغيت/رُفضت) — تُستبعد من الترشيح الجديد."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT DISTINCT listing_phone FROM sanad.masaed_negotiations
+            WHERE lead_phone=%s AND status IN ('cancelled','declined','expired')
+        """, (seeker_phone,))
+        return {r[0] for r in cur.fetchall() if r[0]}
+
+
+def _match_listings(seeker: dict, conn, exclude_phones: set = None) -> list:
+    """طابق العروض النشطة ضد طلب الباحث وأرجعها مرتّبة بالدرجة (مستبعِداً المُجرَّبة)."""
+    exclude_phones = exclude_phones or set()
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, title, body, city, property_type, rooms, price, phone, status, url
@@ -159,9 +172,28 @@ def _match_listings(seeker: dict, conn) -> list:
         """, (seeker.get("city") or "",))
         cols = [d[0] for d in cur.description]
         listings = [dict(zip(cols, r)) for r in cur.fetchall()]
-    out = [{**lst, "score": _score(seeker, lst)} for lst in listings]
+    self_phone = seeker.get("phone")
+    out = [{**lst, "score": _score(seeker, lst)} for lst in listings
+           if lst.get("phone") not in exclude_phones and lst.get("phone") != self_phone]
     out.sort(key=lambda x: x["score"], reverse=True)
     return out
+
+
+def recommend_offer(seeker: dict, conn, do_scrape: bool = True) -> dict | None:
+    """مساعد الطلبات: يرشّح أفضل عرض مطابق غير مُجرَّب (يسحب حراج عند الحاجة)."""
+    seeker_phone = seeker.get("phone") or ""
+    tried = _tried_phones(seeker_phone, conn)
+    matches = [m for m in _match_listings(seeker, conn, tried) if m["score"] >= MATCH_MIN]
+    if not matches and do_scrape and seeker.get("city"):
+        try:
+            import asyncio
+            from haraj_scraper import run_scrape_listings
+            print(f"[SOURCING] لا عرض غير مُجرَّب — أسحب حراج لـ{seeker['city']}", flush=True)
+            asyncio.run(run_scrape_listings(cities=[seeker["city"]]))
+            matches = [m for m in _match_listings(seeker, conn, tried) if m["score"] >= MATCH_MIN]
+        except Exception as e:
+            print(f"[SOURCING] فشل السحب: {e}", flush=True)
+    return matches[0] if matches else None
 
 
 def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
@@ -179,26 +211,27 @@ def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
     summary = {"matched": 0, "contacted": 0, "scraped": False, "test_mode": test_mode, "details": []}
     try:
         hint = _seeker_hint(seeker)
-        matches = _match_listings(seeker, conn)
+        seeker_phone = seeker.get("phone") or ""
+        tried = _tried_phones(seeker_phone, conn)   # استبعاد العروض المُجرَّبة (الحلقة)
+        matches = _match_listings(seeker, conn, tried)
         good = [m for m in matches if m["score"] >= MATCH_MIN]
 
-        # سحب حراج عند قلّة النتائج (المدفوع بالطلب: نبحث في النت)
+        # سحب حراج عند قلّة النتائج غير المُجرَّبة (المدفوع بالطلب: نبحث في النت)
         if do_scrape and len(good) < MIN_RESULTS and seeker.get("city"):
             try:
                 import asyncio
                 from haraj_scraper import run_scrape_listings
-                print(f"[OUTBOUND] نتائج قليلة ({len(good)}) — أسحب حراج لـ{seeker['city']}", flush=True)
+                print(f"[OUTBOUND] لا عرض جديد كافٍ — أسحب حراج لـ{seeker['city']}", flush=True)
                 asyncio.run(run_scrape_listings(cities=[seeker["city"]]))
                 summary["scraped"] = True
-                matches = _match_listings(seeker, conn)
+                matches = _match_listings(seeker, conn, tried)
                 good = [m for m in matches if m["score"] >= MATCH_MIN]
             except Exception as e:
                 print(f"[OUTBOUND] فشل السحب: {e}", flush=True)
 
         summary["matched"] = len(good)
-
-        # بادر الملاك المطابقين غير المسجّلين (مبادرة باردة)
-        seeker_phone = seeker.get("phone") or ""
+        if tried:
+            print(f"[OUTBOUND] استبعدت {len(tried)} عرضاً مُجرَّباً للباحث {seeker_phone}", flush=True)
         with conn.cursor() as cur:
             for m in good[:max_contacts]:
                 owner = m.get("phone")
@@ -340,6 +373,16 @@ def start_test_negotiation(lead_id: int) -> dict:
         title, city = (row[0] or "عقار مطلوب"), (row[1] or "")
 
         ensure_table()
+        # idempotent: لا تُعِد الإرسال إن وُجد تفاوض نشط حديث على نفس الرقمين (تجنّب الإزعاج)
+        with conn.cursor() as cur:
+            cur.execute("""SELECT id FROM sanad.masaed_negotiations
+                           WHERE status='active' AND lead_phone=%s AND listing_phone=%s
+                             AND created_at > NOW() - INTERVAL '5 minutes' LIMIT 1""",
+                        (seeker, owner))
+            recent = cur.fetchone()
+        if recent:
+            return {"ok": True, "neg_id": recent[0],
+                    "note": "التفاوض جارٍ بالفعل — لم تُرسَل رسائل جديدة (تجنّباً للإزعاج). أرسل رسالة من جوّالك لتكمل."}
         with conn.cursor() as cur:
             # ألغِ أي تفاوض نشط على رقمي الاختبار (لإعادة التجربة بنظافة)
             cur.execute("""UPDATE sanad.masaed_negotiations SET status='cancelled'
@@ -460,12 +503,24 @@ def handle_cold_reply(phone: str, text: str, conn=None) -> bool:
             wa_send(phone, "ممتاز! 🎉 سجّلت عقارك، وبنتواصل معك بتفاصيل المستأجر قريباً.")
             return True
 
+        # شكر المالك (الجمع تمّ عبر الإعلان + سيُكمل الناقص أثناء التفاوض عبر الـrelay)
+        wa_send(phone, "ممتاز! 🎉 سجّلت عقارك. بأعرضه على المستأجر الآن وأبدأ التنسيق بينكما.")
+
+        # ── عرض: قدّم العقار للباحث قبل التفاوض ──────────────────────────────
+        loc = f" في {city}" if city else ""
+        pr  = f" بسعر {int(price):,} ريال/سنة" if price else ""
+        wa_send(seeker_phone,
+            f"بشّرك 👋 لقيت لك عرضاً يطابق طلبك: «{(title or 'عقار')[:60]}»{loc}{pr}.\n"
+            f"المالك جاهز للتفاوض — أبدأ التنسيق بينكما الآن؟")
+
+        # ── تفاوض ────────────────────────────────────────────────────────────
         start_negotiation(
             lead_id=seeker_id, listing_id=None,
             lead_phone=seeker_phone, listing_phone=phone,
             listing_title=title or "عقارك", listing_city=city, listing_price=price,
+            send_intro=False,   # عرضنا للباحث يدوياً أعلاه؛ نتجنّب ازدواج الافتتاح
         )
-        print(f"[COLD] المالك {phone} وافق → سجّلته (#{owner_reg}) وفتحت تفاوضاً مع الباحث {seeker_phone}", flush=True)
+        print(f"[COLD] المالك {phone} وافق → سجّلته (#{owner_reg}) → عرضت للباحث {seeker_phone} → بدأ التفاوض", flush=True)
         return True
     finally:
         if own:
