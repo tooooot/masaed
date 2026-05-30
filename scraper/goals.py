@@ -316,6 +316,58 @@ def run_periodic_rematch(do_scrape: bool = False, max_per_seeker: int = 2,
         conn.close()
 
 
+def start_test_negotiation(lead_id: int) -> dict:
+    """
+    يبدأ تفاوضاً تجريبياً على رقمي الاختبار (باحث/مالك) مزروعاً ببيانات طلب حقيقي،
+    فيتقمّص المالكُ الرقمين الطرفين ويرى الحوار حياً. يُستدعى من زر «اختبار محاكاة».
+    """
+    from bot import get_config
+    from negotiator import start_negotiation, ensure_table
+    seeker = (get_config("test_seeker", "") or "").replace("+", "").replace(" ", "")
+    owner  = (get_config("test_owner", "") or "").replace("+", "").replace(" ", "")
+    if not seeker or not owner:
+        return {"ok": False, "error": "عيّن رقمي الاختبار (الباحث والمالك) في إعدادات وضع الاختبار أولاً"}
+    if seeker == owner:
+        return {"ok": False, "error": "رقم الباحث والمالك يجب أن يختلفا"}
+
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT title, city FROM sanad.masaed_leads WHERE id=%s", (lead_id,))
+            row = cur.fetchone()
+        if not row:
+            return {"ok": False, "error": "الطلب غير موجود"}
+        title, city = (row[0] or "عقار مطلوب"), (row[1] or "")
+
+        ensure_table()
+        with conn.cursor() as cur:
+            # ألغِ أي تفاوض نشط على رقمي الاختبار (لإعادة التجربة بنظافة)
+            cur.execute("""UPDATE sanad.masaed_negotiations SET status='cancelled'
+                           WHERE status='active' AND (lead_phone IN (%s,%s) OR listing_phone IN (%s,%s))""",
+                        (seeker, owner, seeker, owner))
+            # سجّل الرقمين (مطلوب لبدء التفاوض): الباحث wanted، المالك listing
+            seeker_reg = None
+            for ph, typ in ((seeker, "wanted"), (owner, "listing")):
+                cur.execute("UPDATE sanad.masaed_registrations SET status='abandoned' WHERE phone=%s AND status<>'abandoned'", (ph,))
+                cur.execute("""INSERT INTO sanad.masaed_registrations (phone, type, status, city)
+                               VALUES (%s, %s, 'complete', %s) RETURNING id""", (ph, typ, city))
+                rid = cur.fetchone()[0]
+                if typ == "wanted":
+                    seeker_reg = rid
+            conn.commit()
+
+        res = start_negotiation(
+            lead_id=seeker_reg, listing_id=None,
+            lead_phone=seeker, listing_phone=owner,
+            listing_title=title[:80], listing_city=city, listing_price=None,
+        )
+        if res.get("ok"):
+            res["note"] = f"بدأ التفاوض على رقميك — تقمّص الباحث ({seeker}) والمالك ({owner})"
+        return res
+    finally:
+        conn.close()
+
+
 def handle_cold_reply(phone: str, text: str, conn=None) -> bool:
     """
     إكمال محادثة المبادرة الباردة: المالك المُبادَر ردّ.

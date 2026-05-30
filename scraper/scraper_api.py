@@ -1308,6 +1308,22 @@ def bot_test():
         _wa_test_local.log    = []
 
 
+@app.route("/lab/test-negotiation", methods=["POST"])
+def lab_test_negotiation():
+    """يبدأ تفاوضاً تجريبياً على رقمي الاختبار مزروعاً بطلب حقيقي (زر اختبار المحاكاة)."""
+    from goals import start_test_negotiation
+    data = request.get_json() or {}
+    lead_id = data.get("lead_id")
+    if not lead_id:
+        return jsonify({"ok": False, "error": "lead_id مطلوب"}), 400
+    try:
+        res = start_test_negotiation(int(lead_id))
+        return jsonify(res), (200 if res.get("ok") else 400)
+    except Exception as e:
+        print(f"[API] خطأ في اختبار المحاكاة: {e}", flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/config/test", methods=["GET", "POST"])
 def config_test():
     """قراءة/تعيين إعدادات وضع الاختبار (تبديل أرقام الملاك لرقم اختبار)."""
@@ -1317,11 +1333,13 @@ def config_test():
         if "test_mode" in data:
             set_config("test_mode", "on" if data["test_mode"] in (True, "on", "true", 1) else "off")
         if "test_owner" in data:
-            num = str(data["test_owner"]).replace("+", "").replace(" ", "")
-            set_config("test_owner", num)
+            set_config("test_owner", str(data["test_owner"]).replace("+", "").replace(" ", ""))
+        if "test_seeker" in data:
+            set_config("test_seeker", str(data["test_seeker"]).replace("+", "").replace(" ", ""))
     return jsonify({
-        "test_mode":  get_config("test_mode", "off"),
-        "test_owner": get_config("test_owner", ""),
+        "test_mode":   get_config("test_mode", "off"),
+        "test_owner":  get_config("test_owner", ""),
+        "test_seeker": get_config("test_seeker", ""),
     })
 
 

@@ -610,18 +610,19 @@ def wa_send(phone: str, text: str):
         print(f"[WA MOCK] → {phone_clean}: {text[:80]}")
         return
 
-    # ── وضع الاختبار: حوّل أي رسالة لرقم غير مُصرّح إلى رقم الاختبار ──────────────
-    test_owner = ""
-    if get_config("test_mode", "off") == "on":
-        test_owner = (get_config("test_owner", "") or "").replace("+", "").replace(" ", "")
-        if test_owner and phone_clean != test_owner and phone_clean not in SANDBOX_PHONES:
+    # ── وضع الاختبار: الرقمان المُعدّان مسموحان دائماً؛ وعند التفعيل تُحوّل الأرقام الحقيقية ──
+    test_owner  = (get_config("test_owner", "") or "").replace("+", "").replace(" ", "")
+    test_seeker = (get_config("test_seeker", "") or "").replace("+", "").replace(" ", "")
+    test_nums = {n for n in (test_owner, test_seeker) if n}
+    if get_config("test_mode", "off") == "on" and test_owner:
+        if phone_clean not in SANDBOX_PHONES and phone_clean not in test_nums:
             print(f"[WA TEST-REDIRECT] {phone_clean} → {test_owner}", flush=True)
             text = f"🧪 [موجّهة أصلاً لـ {phone_clean}]\n\n{text}"
             phone_clean = test_owner
 
     # ── SAFEGUARD: Check if phone is in sandbox list ───────────────────────────
     allow_real = os.getenv("MASAED_ALLOW_REAL_SEND", "false").lower() == "true"
-    is_sandbox = phone_clean in SANDBOX_PHONES or (test_owner and phone_clean == test_owner)
+    is_sandbox = phone_clean in SANDBOX_PHONES or phone_clean in test_nums
 
     if not is_sandbox and not allow_real:
         print(f"[WA BLOCKED] ❌ CRITICAL: Attempted to send to {phone_clean} (not in sandbox)", flush=True)

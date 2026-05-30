@@ -342,6 +342,17 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
     <div class="page" id="page-leads">
       <div class="page-body">
 
+        <div class="blet-box" style="border-color:#3fb95055">
+          <div style="font-size:.75rem;color:var(--muted);margin-bottom:8px;font-weight:600">🧪 أرقام الاختبار — تقمّص الطرفين على طلب حقيقي</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input id="tnSeeker" placeholder="رقم الباحث (أنت)" inputmode="tel" style="flex:1;min-width:130px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text)">
+            <input id="tnOwner" placeholder="رقم المالك (أنت)" inputmode="tel" style="flex:1;min-width:130px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text)">
+            <button class="btn btn-blue btn-sm" onclick="saveTestNums()">حفظ الرقمين</button>
+            <span id="tnStatus" style="font-size:.75rem;color:var(--muted)"></span>
+          </div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:6px">احفظ رقميك، ثم اضغط «🧪 اختبار محاكاة» على أي طلب — يصلك على الرقمين افتتاح الوسيط فتتفاوضان وترى الحوار في «جلسات».</div>
+        </div>
+
         <div class="blet-box">
           <div style="font-size:.75rem;color:var(--muted);margin-bottom:10px;font-weight:600">📌 Bookmarklet — استخراج الأرقام من أي موقع</div>
           <a id="blet-btn" class="blet-btn" href="#" onclick="return false">📱 استخرج رقم الهاتف</a>
@@ -593,6 +604,7 @@ async function loadLeads(){
   const d = await sfetch('/leads?limit=300');
   leadsAll = d.leads||[];
   renderLeads();
+  loadTestNums();
 }
 function filterLeads(s,el){
   document.querySelectorAll('#leads-filters .filter').forEach(c=>c.classList.remove('active'));
@@ -629,8 +641,30 @@ function renderLeads(){
       <button class="btn btn-blue btn-sm" onclick="markContacted(${l.id},this)">✓ تواصلت</button>
     `:''}
     <button class="btn btn-orange btn-sm" onclick="openMatch(${l.id},'${esc(l.city||'')}','${esc((l.title||'').substring(0,60))}')">🔍 عروض</button>
+    <button class="btn btn-wa btn-sm" onclick="testSim(${l.id},this)">🧪 اختبار محاكاة</button>
   </div>
 </div>`).join('');
+}
+// ── أرقام الاختبار + زر اختبار المحاكاة ──
+async function loadTestNums(){
+  try{ const c=await sfetch('/config/test');
+    document.getElementById('tnSeeker').value=c.test_seeker||'';
+    document.getElementById('tnOwner').value=c.test_owner||'';
+  }catch(e){}
+}
+async function saveTestNums(){
+  const test_seeker=document.getElementById('tnSeeker').value.trim();
+  const test_owner=document.getElementById('tnOwner').value.trim();
+  document.getElementById('tnStatus').textContent='… حفظ';
+  await sfetch('/config/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({test_seeker,test_owner})});
+  document.getElementById('tnStatus').textContent='✅ محفوظ';
+}
+async function testSim(id,btn){
+  if(btn){btn.disabled=true;btn.textContent='… جارٍ';}
+  const r=await sfetch(`/lab/test-negotiation`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lead_id:id})});
+  if(r&&r.ok){ toast('🧪 بدأ التفاوض على رقميك — شوف واتساب وتابع في «جلسات»'); }
+  else { toast('⚠️ '+((r&&r.error)||'فشل — عيّن رقمي الاختبار أولاً')); }
+  if(btn){btn.disabled=false;btn.textContent='🧪 اختبار محاكاة';}
 }
 function openFill(){ nav('fill', document.getElementById('bn-fill')); }
 async function markContacted(id,btn){
