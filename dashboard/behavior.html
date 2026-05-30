@@ -30,6 +30,22 @@ th{background:#0b0f14;color:var(--mut)}
 .st{display:inline-block;background:var(--blu);color:#001;padding:3px 10px;border-radius:6px;font-weight:700;margin:2px}
 .st.end{background:var(--grn)}
 .ar{color:var(--yel);margin:0 6px}
+/* أنماط قسم الأهداف */
+.vision{background:#58a6ff22;color:var(--blu);border:1px solid var(--blu);padding:2px 8px;border-radius:6px;font-size:.7rem;font-weight:700}
+.goal{display:flex;gap:10px;align-items:flex-start;background:#0b0f14;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;margin:8px 0}
+.goal .ico{font-size:1.1rem;flex-shrink:0}
+.goal b{color:var(--blu)}
+.chat{background:#0b0f14;border:1px solid var(--bd);border-radius:10px;padding:12px;margin:10px 0}
+.bub{max-width:85%;padding:8px 12px;border-radius:12px;margin:6px 0;font-size:.85rem;line-height:1.6;clear:both}
+.bub.bot{background:#16241b;border:1px solid var(--grn);float:right;border-bottom-right-radius:3px}
+.bub.usr{background:#1c2530;border:1px solid var(--bd);float:left;border-bottom-left-radius:3px}
+.bub .who{font-size:.68rem;color:var(--mut);margin-bottom:3px}
+.clr{clear:both}
+.step{display:flex;gap:12px;align-items:flex-start;margin:10px 0}
+.step .num{background:var(--grn);color:#001;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0}
+.step .body{flex:1}
+.step .body .t{font-weight:700;margin-bottom:2px}
+.nice li{margin:6px 0}
 </style></head><body>
 <header>
   <h1>⚙️ السلوك البرمجي لمساعد (الكود الحتمي)</h1>
@@ -44,6 +60,70 @@ th{background:#0b0f14;color:var(--mut)}
 
 <div class="legend">
   <span class="tag c">برمجي</span> منطق ثابت بالكود — يحدّد <b>متى</b> ينقل/يقترح/يغلق و<b>كيف</b> يوجّه المحادثة. النموذج لا يقرّر هذه، فقط يصوغ الكلام داخلها.
+</div>
+
+<!-- ═══════════ قسم الأهداف ═══════════ -->
+<div class="block" style="border-color:var(--blu)">
+  <h3>🎯 الأهداف وأنماط فتح الحوار <span class="vision">تصميم مقترح</span></h3>
+  <div class="exp">هذا القسم يشرح <b>الصورة الكبيرة</b>: كيف يعرف مساعد مهمته مع كل شخص. بعضه مبني وبعضه مقترح (موضّح أسفل القسم).</div>
+
+  <div style="margin-top:14px;font-weight:700;color:var(--tx)">المشكلة التي يحلّها</div>
+  <div class="exp">مساعد يكلّم ناساً في مواقف مختلفة: مالك جديد يعرض، باحث يدوّر، شخص في نص تفاوض، أو يبي يعدّل بياناته. لو ما عرف «في أي موقف هذا الشخص؟» يرد عشوائياً ويتوه. الحل: <b>بوصلة</b> يقرأها قبل كل رد تقول له مهمته الآن — نسمّيها «هدف الجلسة».</div>
+
+  <div style="margin-top:16px;font-weight:700;color:var(--tx)">كيف يحدّد الهدف؟ (استنتاج لا تخمين)</div>
+  <div class="exp">ينظر لحالة الشخص المخزّنة ويستنتج المهمة منطقياً — أول شرط يتحقق يحدّد المهمة:</div>
+  <div class="goal"><span class="ico">💬</span><div>عنده تفاوض نشط؟ → <b>المهمة: أكمل التفاوض</b> (آلة الحالات بالأسفل)</div></div>
+  <div class="goal"><span class="ico">📝</span><div>عنده تسجيل ناقص (بدأ ولم يُكمل)؟ → <b>المهمة: أكمل جمع بياناته</b></div></div>
+  <div class="goal"><span class="ico">🔔</span><div>أرسلنا له عرضاً وننتظر؟ → <b>المهمة: خذ موافقته على العرض</b></div></div>
+  <div class="goal"><span class="ico">👋</span><div>معروف ومسجّل سابقاً؟ → <b>المهمة: رحّب به واسأل «تكمل القديم ولا جديد؟»</b></div></div>
+  <div class="goal"><span class="ico">🆕</span><div>جديد كلياً؟ → <b>المهمة: افهم نيّته (يعرض؟ يدوّر؟)</b></div></div>
+
+  <div style="margin-top:18px;font-weight:700;color:var(--tx)">الموقف الأول: العميل يبدأ (وارد)</div>
+  <div class="exp">شخص يراسل مساعد بنفسه. مثال — مالك جديد:</div>
+  <div class="chat">
+    <div class="bub usr"><div class="who">المالك</div>السلام عليكم، عندي شقة أبي أأجرها</div><div class="clr"></div>
+    <div class="bub bot"><div class="who">مساعد (استنتج: جديد + كلامه عرض عقار)</div>حياك الله 👋 بسجّل لك الشقة عشان ألقى لها مستأجر مناسب. كم غرفة وفي أي حي؟</div><div class="clr"></div>
+  </div>
+  <div class="exp">ثم يجمع البيانات <b>خطوة خطوة، يسأل عن الناقص فقط</b> (المدينة، الحي، الغرف، السعر، الصور)، ويطمئنه بالتقدّم: «تمام، باقي شي واحد 👌». لمّا يكمل → ينتقل تلقائياً لمهمة: <b>يبحث عن باحث يناسب هذا العرض</b>. ونفس الشيء لو باحث بدأ «أدوّر شقة».</div>
+
+  <div style="margin-top:18px;font-weight:700;color:var(--tx)">الموقف الثاني: مساعد يبدأ (صادر) — الأهم</div>
+  <div class="exp">مساعد لا ينتظر أحداً. عنده مالك سجّل عرضاً وباحث سجّل طلباً، فيطابق بينهما (<span class="file">score_match</span>: نفس المدينة؟ الغرف تناسب؟ الميزانية تكفي؟). لو الدرجة عالية → يبادر <b>بلطف وعلى ٣ خطوات</b>:</div>
+
+  <div class="step"><div class="num">1</div><div class="body">
+    <div class="t">يسأل الباحث أولاً (بشخصنة من ذاكرته)</div>
+    <div class="chat"><div class="bub bot"><div class="who">مساعد → الباحث</div>مرحباً محمد 👋 لاحظت إنك تدوّر ٣ غرف بجدة بحدود ٤٠ ألف — لقيت لك عرض قد يناسبك، تحب أعرضه عليك؟</div><div class="clr"></div></div>
+    <div class="exp">ينتظر «نعم» — هذي <b>بوابة الموافقة</b>: لو ما وافق، ما نزعجه ولا نزعج المالك.</div>
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div class="body">
+    <div class="t">لو وافق الباحث، يسأل المالك</div>
+    <div class="chat"><div class="bub bot"><div class="who">مساعد → المالك</div>مرحباً خالد 👋 عندي مستأجر جاد مهتم بشقتك — عائلة صغيرة وجاهز يتفاوض. أربطك فيه؟</div><div class="clr"></div></div>
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div class="body">
+    <div class="t">لو وافق الطرفان → يفتح التفاوض</div>
+    <div class="exp">آلة حالات التفاوض (بالأسفل) تتولّى: السعر → التقارب → الإغلاق.</div>
+  </div></div>
+
+  <div class="exp"><b>لماذا الموافقة المزدوجة؟</b> عشان لا يُفاجأ أحد برسالة من طرف غريب — كلٌّ وافق قبل أن يبدأ.</div>
+
+  <div style="margin-top:16px;font-weight:700;color:var(--tx)">لمسات تجعلها لطيفة لا مزعجة</div>
+  <ul class="exp nice">
+    <li><b>شخصنة:</b> يذكر اسمه وتفضيلاته (من ملف الحافظ) — يحس أنه يكلّم إنساناً فاهماً وضعه.</li>
+    <li><b>القيمة أولاً:</b> يبدأ بـ«لقيت لك شي يفيدك» لا بـ«ربطناك».</li>
+    <li><b>سؤال واحد واضح:</b> نعم/لا، لا قائمة خيارات.</li>
+    <li><b>احترام الوقت:</b> لا يرسل ليلاً، ولا يكرّر المبادرة كثيراً (حد أقصى).</li>
+    <li><b>خروج سهل:</b> «قول إيقاف وأوقف فوراً».</li>
+    <li><b>إعادة تنشيط الخامل:</b> لباحث سكت فترة: «صار لك مدة — لا زلت تدوّر؟ عندي جديد».</li>
+  </ul>
+
+  <div style="margin-top:16px;font-weight:700;color:var(--tx)">كيف يُبنى (ملموس)</div>
+  <div class="exp">«موجِّه أهداف» في أعلى الكود يقرأ حالة الشخص ويوزّعه للمسار الصحيح (تسجيل/تفاوض/مبادرة/تعديل). والمبادرة تمر بآلة حالات صغيرة:</div>
+  <div class="fsm">
+    <span class="st">طابقتُ</span><span class="ar">→</span><span class="st">الباحث وافق</span><span class="ar">→</span><span class="st">المالك وافق</span><span class="ar">→</span><span class="st end">فُتح التفاوض</span>
+  </div>
+
+  <div class="fix"><b>الحالة:</b> ✅ مبني: التسجيل واستنتاج النوع، المطابقة (score_match)، المبادرة الأولى (start_negotiation)، آلة حالات التفاوض. 🔜 مقترح: موجِّه الأهداف الأعلى، بوابة الموافقة المزدوجة، الشخصنة في المبادرة، ساعات الهدوء وإعادة التنشيط.</div>
 </div>
 
 <div class="block">
