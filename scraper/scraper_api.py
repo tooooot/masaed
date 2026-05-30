@@ -1207,9 +1207,14 @@ def _route_message(phone: str, text: str, media_url: str = None):
     from bot import get_contact, handle_message, wa_send as bot_wa
     from negotiator import handle_negotiation_message
     from editor import handle_edit_message, is_edit_request, get_editing_reg
+    from goals import session_goal, GOAL_LABELS
 
     # ── الحافظ: دائماً ────────────────────────────────────────────────────────
     get_contact(phone)                         # upsert + last_seen
+
+    # ── موجّه الأهداف: حدّد مهمة هذه الجلسة (للمراقبة والتوجيه) ────────────────
+    goal = session_goal(phone)
+    print(f"[GOAL] {phone} → {goal} ({GOAL_LABELS.get(goal, goal)})", flush=True)
 
     # ── المفاوض: إذا تفاوض نشط (يقبل نصاً و/أو وسائط) ─────────────────────────
     if (text or media_url) and handle_negotiation_message(phone, text, media_url):
