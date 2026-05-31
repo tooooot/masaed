@@ -1204,41 +1204,38 @@ def stats():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _route_message(phone: str, text: str, media_url: str = None):
-    from bot import get_contact, handle_message, wa_send as bot_wa
-    from negotiator import handle_negotiation_message
-    from editor import handle_edit_message, is_edit_request, get_editing_reg
-    from goals import session_goal, GOAL_LABELS
+    """المنسّق (Orchestrator): ينادي الموظفين ككتل متكاملة، لا يمدّ يده في تفاصيلهم."""
+    from memory import Memory               # 🧠 الحافظ
+    from registrar import Registrar         # 📝 المسجّل والمعدّل
+    from negotiator import handle_negotiation_message  # 💬 المفاوض
+    from goals import session_goal, GOAL_LABELS, handle_cold_reply  # 🎯 الموجّه + المبادرة
+    from bot import wa_send as bot_wa
 
-    # ── الحافظ: دائماً ────────────────────────────────────────────────────────
-    get_contact(phone)                         # upsert + last_seen
+    # 🧠 الحافظ: سجّل الحضور دائماً
+    Memory.touch(phone)
 
-    # ── موجّه الأهداف: حدّد مهمة هذه الجلسة (للمراقبة والتوجيه) ────────────────
+    # 🎯 موجّه الأهداف: ما مهمة هذه الجلسة؟
     goal = session_goal(phone)
     print(f"[GOAL] {phone} → {goal} ({GOAL_LABELS.get(goal, goal)})", flush=True)
 
-    # ── المفاوض: إذا تفاوض نشط (يقبل نصاً و/أو وسائط) ─────────────────────────
+    # 💬 المفاوض: تفاوض نشط (نص و/أو وسائط)
     if (text or media_url) and handle_negotiation_message(phone, text, media_url):
-        return                                 # المفاوض تولّى
+        return
 
-    # ── ردّ على مبادرة باردة: مالك معلِن في حراج راسلناه ───────────────────────
-    if goal == "cold_reply" and text:
-        from goals import handle_cold_reply
-        if handle_cold_reply(phone, text):
-            return                             # محرّك المبادرة تولّى
+    # 📞 ردّ على مبادرة باردة (مالك معلِن في حراج)
+    if goal == "cold_reply" and text and handle_cold_reply(phone, text):
+        return
 
-    # ── المعدّل: إذا جلسة تعديل جارية أو طلب تعديل صريح ────────────────────
-    from bot import get_active_reg
-    in_edit_session = get_editing_reg(phone) is not None
-    in_reg_session  = get_active_reg(phone) is not None
-
-    if text and (in_edit_session or (not in_reg_session and is_edit_request(text))):
-        reply = handle_edit_message(phone, text)
+    # 📝 المسجّل والمعدّل: جلسة تعديل جارية أو طلب تعديل صريح
+    if text and (Registrar.in_edit(phone) or
+                 (not Registrar.in_registration(phone) and Registrar.wants_edit(text))):
+        reply = Registrar.edit(phone, text)
         if reply:
             bot_wa(phone, reply)
-            return                             # المعدّل تولّى
+            return
 
-    # ── المسجّل: كل ما تبقى ───────────────────────────────────────────────────
-    reply = handle_message(phone, text, media_url)
+    # 📝 المسجّل: كل ما تبقى (جمع البيانات)
+    reply = Registrar.handle(phone, text, media_url)
     if reply:
         bot_wa(phone, reply)
 

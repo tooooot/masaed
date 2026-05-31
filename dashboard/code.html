@@ -37,7 +37,7 @@ nav a.active{background:var(--org);border-color:var(--org);color:#001}
 <div class="wrap">
 
 <div class="intro">
-  النظام مقسوم إلى «مساعدين» متخصّصين، كلٌّ ملفّ مستقل بمسؤولية واحدة. هذه خريطة تربط كل وظيفة بمكانها — لتعرف أين تعدّل أي سلوك.
+  النظام مقسوم إلى «موظفين» متخصّصين، كلٌّ له <b>واجهة موحّدة</b> (facade) يناديها المنسّق ككتلة — لو طوّرت داخل موظف لا ينكسر مسار الرسالة. <b>الأقوال</b> كلها معزولة في <span style="font-family:monospace">prompts.py</span>، و<b>المنسّق</b> هو <span style="font-family:monospace">_route_message</span> في scraper_api.py.
 </div>
 
 <div class="flow">
@@ -57,6 +57,13 @@ nav a.active{background:var(--org);border-color:var(--org);color:#001}
   <div class="file">goals.py + haraj_scraper.py</div>
   <div class="role">المحرّك المدفوع بالطلب: يأخذ طلب الباحث، يطابقه بالعروض، يسحب من حراج عند الحاجة، يرشّح أفضل عرض غير مُجرَّب، ويبادر الملاك. وعند الفشل يرشّح عرضاً جديداً حتى الإتمام.</div>
   <div class="fns"><span class="fn">recommend_offer</span><span class="fn">_match_listings</span><span class="fn">_score</span><span class="fn">_tried_phones</span><span class="fn">run_outbound_for_seeker</span><span class="fn">run_periodic_rematch</span><span class="fn">build_cold_outbound_intro</span><span class="fn">run_scrape_listings</span><span class="fn">scrape_haraj</span><span class="fn">upsert_listing</span></div>
+</div>
+
+<div class="mod" style="--c:var(--org)">
+  <h3>📋 مساعد مُعِدّ الصفقة</h3>
+  <div class="file">deal_preparer.py</div>
+  <div class="role">جسر بين الطلبات والمختبر/المفاوض: عند المطابقة يجمع «ملف صفقة» كامل (الباحث + العقار + الصور + السعر + الرابط) جاهزاً للاختبار أو الإطلاق.</div>
+  <div class="fns"><span class="fn">DealPreparer.prepare</span></div>
 </div>
 
 <div class="mod" style="--c:var(--grn)">
