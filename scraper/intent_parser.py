@@ -9,25 +9,7 @@ ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 USE_ANTHROPIC = os.getenv("MASAED_USE_ANTHROPIC", "false").lower() == "true"
 DEEPSEEK_KEY  = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
 
-_SYSTEM = """\
-أنت محلل نصوص عقارية متخصص في العامية السعودية.
-استخرج النية من رسالة المستخدم وأعد JSON فقط — لا نص خارجه.
-
-الحقول:
-- intent: "price_offer" | "accept" | "reject" | "question" | "cancel" | "other"
-- amount: رقم صحيح للسعر المذكور، أو null
-- sentiment: "positive" | "negative" | "neutral"
-- is_firm: true إذا كان الموقف نهائياً حازماً ("آخر كلام"، "ما أقدر أنزل")
-
-أمثلة:
-"10000 وبس" → {"intent":"price_offer","amount":10000,"sentiment":"neutral","is_firm":true}
-"ممكن تنزل لـ11500؟" → {"intent":"price_offer","amount":11500,"sentiment":"neutral","is_firm":false}
-"موافق" → {"intent":"accept","amount":null,"sentiment":"positive","is_firm":true}
-"السعر غالي ما يناسبني" → {"intent":"reject","amount":null,"sentiment":"negative","is_firm":false}
-"في مصعد؟ كم الدور؟" → {"intent":"question","amount":null,"sentiment":"neutral","is_firm":false}
-"لا يهمني، إلغاء" → {"intent":"cancel","amount":null,"sentiment":"negative","is_firm":true}
-"حسناً سأفكر" → {"intent":"other","amount":null,"sentiment":"neutral","is_firm":false}
-"""
+from prompts import INTENT_SYSTEM as _SYSTEM
 
 _DEFAULT = {"intent": "other", "amount": None, "sentiment": "neutral", "is_firm": False}
 
