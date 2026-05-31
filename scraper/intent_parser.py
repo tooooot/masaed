@@ -35,9 +35,25 @@ _IDENTITY_TRIGGERS = {
     'ما غرضك','ما الغرض','ليش اتصلت',
 }
 
-_FIRM_WORDS = re.compile(r'وبس|فقط|نهائي|آخر كلام|ما أقدر|ما اقدر|لا أقدر|لا اقدر|أقل من كذا ما')
+_FIRM_WORDS = re.compile(r'وبس|فقط|نهائي|آخر كلام|ما أقدر|ما اقدر|لا أقدر|لا اقدر|أقل من كذا ما|ما أتعدا|ما اتعدا|ما أزيد|ما ازيد|سقف|أقصى|اقصى')
 _PRICE_RE   = re.compile(r'(?<!\d)(\d{4,6})(?!\d)')
+_THOUSANDS_RE = re.compile(r'(?<!\d)(\d{1,3})\s*(?:ألف|الف|آلاف|الاف)')
 _QUESTION_RE = re.compile(r'[؟?]|هل |في |كم |وين |فيه |يوجد |هناك |متاح ')
+
+
+def _amount_from(text: str):
+    """مبلغ إيجار معقول من النص: رقم 4-6 خانات أو «<n> ألف» (40 ألف → 40000)."""
+    m = _PRICE_RE.search(text)
+    if m:
+        a = int(m.group(1))
+        if 3_000 <= a <= 999_000:
+            return a
+    m = _THOUSANDS_RE.search(text)
+    if m:
+        a = int(m.group(1)) * 1000
+        if 3_000 <= a <= 999_000:
+            return a
+    return None
 
 
 def _fast_parse(text: str) -> dict | None:
@@ -64,26 +80,24 @@ def _fast_parse(text: str) -> dict | None:
         return {"intent": "cancel", "amount": None,
                 "sentiment": "negative", "is_firm": True}
 
-    # قبول — رسالة قصيرة أو كلمة واضحة
+    # قبول — رسالة قصيرة أو كلمة واضحة (مع التقاط أي سعر مذكور إن وُجد)
     if t_low in _ACCEPT_EXACT:
-        return {"intent": "accept", "amount": None,
+        return {"intent": "accept", "amount": _amount_from(t),
                 "sentiment": "positive", "is_firm": True}
     if len(words) <= 4 and words & _ACCEPT_EXACT:
-        return {"intent": "accept", "amount": None,
+        return {"intent": "accept", "amount": _amount_from(t),
                 "sentiment": "positive", "is_firm": True}
     for phrase in _ACCEPT_CONTAINS:
         if phrase in t_low:
-            return {"intent": "accept", "amount": None,
+            return {"intent": "accept", "amount": _amount_from(t),
                     "sentiment": "positive", "is_firm": True}
 
-    # عرض سعر — رقم 4-6 أرقام في نطاق معقول
-    m = _PRICE_RE.search(t)
-    if m:
-        amount = int(m.group(1))
-        if 3_000 <= amount <= 999_000:
-            firm = bool(_FIRM_WORDS.search(t))
-            return {"intent": "price_offer", "amount": amount,
-                    "sentiment": "neutral", "is_firm": firm}
+    # عرض سعر — رقم 4-6 أرقام أو «<n> ألف» في نطاق معقول
+    amount = _amount_from(t)
+    if amount is not None:
+        firm = bool(_FIRM_WORDS.search(t))
+        return {"intent": "price_offer", "amount": amount,
+                "sentiment": "neutral", "is_firm": firm}
 
     # سؤال — علامة استفهام أو كلمة استفهام
     if _QUESTION_RE.search(t):

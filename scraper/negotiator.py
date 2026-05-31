@@ -158,7 +158,13 @@ def _needs_relay(my_role: str, text: str, neg: dict) -> bool:
     if any(k in text for k in _PRICE_Q):
         return False                       # سؤال سعر/تفاوض → المفاوض يجيب
     if my_role == "مستأجر":               # يسأل عن العقار/الحي
-        return not _answerable_from_facts(text, neg)   # غير موجود بالحقائق → أحِل
+        facts = " ".join(str(neg.get(k) or "") for k in
+                         ("listing_facts", "listing_title", "listing_city"))
+        # سأل عن سمة عقار محدّدة (مصعد/موقف/فواتير…) غير موجودة في الحقائق → أحِل (منع تأليف)
+        if _asks_unknown_attr(text, facts):
+            return True
+        # أو لم تظهر أي كلمة من السؤال في الحقائق إطلاقاً → أحِل
+        return not _answerable_from_facts(text, neg)
     # المالك يسأل عن الباحث (معلومات الباحث ليست لدينا غالباً → أحِل)
     return any(w in text for w in _SEEKER_ATTR) or not _answerable_from_facts(text, neg)
 
@@ -540,8 +546,12 @@ def _relay_price(neg: dict, sender_role: str, amount: int, conn):
 
 
 def _propose_middle(neg: dict, lead_max: int, owner_min: int, conn):
-    """يقترح سعراً وسطاً للطرفين عند التقارب."""
-    mid   = round((lead_max + owner_min) / 2 / 500) * 500
+    """يقترح سعر إقفال عند التقارب. عند التداخل (المستأجر يقبل ≥ حدّ المالك)
+    نُسوّي عند حدّ المالك مباشرةً — لا منتصف أعلى منه — لإقفال أسرع وأعدل."""
+    if lead_max >= owner_min:
+        mid = owner_min                       # تداخل → سعر المالك يُرضي الطرفين
+    else:
+        mid = round((lead_max + owner_min) / 2 / 500) * 500
     gap   = owner_min - lead_max
     neg_id = neg["id"]
 
@@ -669,10 +679,10 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
     _append_log(neg_id, my_role, text, conn)
 
     # ── إغلاق الحلقة: ردّ الطرف الذي سألناه عن معلومة معلّقة → أوصِله للسائل ────
+    #    يُسلَّم الرد حتى لو تضمّن سعراً (نلتقط السعر أيضاً لمواصلة التقارب).
     pending = neg.get("pending_req")
     if (pending and phone != pending.get("asker_phone")
-            and (media_url or intent["intent"] in ("question", "other"))
-            and not _wants_phone(text)):
+            and not _has_cancel(text) and not _wants_phone(text)):
         asker_phone = pending["asker_phone"]
         q = (pending.get("question") or "").strip()
         asker_role  = "مالك" if asker_phone == neg["listing_phone"] else "مستأجر"
@@ -684,18 +694,52 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         if media_url:                       # مرّر أي صورة/ملف أرفقه الطرف المسؤول
             wa_send_media(asker_phone, media_url, caption="من الطرف الآخر")
         _update_neg(neg_id, conn, pending_req=None)
-        ack = "تمام، وصلني ونقلته له ✅ نكمّل — وش آخر سعر تقبله؟"
+        # التقط أي سعر ورد ضمن الرد لمواصلة التقارب
+        amt = intent.get("amount")
+        captured = ""
+        if amt and 3000 <= amt <= 999000:
+            field = "lead_max_price" if is_lead else "owner_min_price"
+            if neg.get(field) != amt:
+                _update_neg(neg_id, conn, **{field: amt}); neg[field] = amt
+            captured = f" وسجّلت سعرك ({amt:,} ر) ✅"
+        ack = f"تمام، وصلني ونقلته له ✅{captured} نكمّل — وش آخر سعر تقبله؟"
         _append_log(neg_id, f"bot→{my_role}", ack, conn)
         wa_send(phone, ack)
         return True
 
-    # ── قبول صريح (بدون proposed_price) ─────────────────────────────────────
-    if intent["intent"] == "accept":
-        reply = "ممتاز! وصلت موافقتك ✅\nسأُبلغ المسؤول لإتمام إجراءات الصفقة."
+    other_role = "المالك" if my_role == "مستأجر" else "المستأجر"
+
+    # ── حارس صارم ضد التأليف (مهما كانت النية): سؤال عن سمة غير متوفّرة → أحِل ──
+    #    يلتقط أي سعر ورد بالرسالة بصمت، ثم يُحيل السؤال للطرف الآخر (لا نخمّن إجابة).
+    facts_all = " ".join(str(neg.get(k) or "") for k in
+                         ("listing_facts", "listing_title", "listing_city"))
+    asks_unknown = ((my_role == "مستأجر" and _asks_unknown_attr(text, facts_all))
+                    or (my_role == "مالك" and any(w in text for w in _SEEKER_ATTR)))
+    if asks_unknown and not _wants_viewing(text) and not _wants_phone(text):
+        amt = intent.get("amount")
+        if amt and 3000 <= amt <= 999000:
+            field = "lead_max_price" if is_lead else "owner_min_price"
+            if neg.get(field) != amt:
+                _update_neg(neg_id, conn, **{field: amt}); neg[field] = amt
+        _relay_info_request(neg, my_role, text, conn)
+        reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
+                 + (f" وسجّلت رقمك ({amt:,} ر) ✅" if amt else "")
+                 + " وعشان نتقدّم بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
-        _notify_admin(neg, "ready_to_close", conn)
         return True
+
+    # ── قبول صريح ───────────────────────────────────────────────────────────
+    if intent["intent"] == "accept":
+        # قبول مقترن بسعر صريح ولا اقتراح وسط بعد → عامله كعرض سعر (يلتقط/يقارب/يقفل)
+        if intent.get("amount") and not neg.get("proposed_price"):
+            intent = {**intent, "intent": "price_offer"}
+        else:
+            reply = "ممتاز! وصلت موافقتك ✅\nسأُبلغ المسؤول لإتمام إجراءات الصفقة."
+            _append_log(neg_id, f"bot→{my_role}", reply, conn)
+            wa_send(phone, reply)
+            _notify_admin(neg, "ready_to_close", conn)
+            return True
 
     # ── عرض سعر — حفظ + فحص تقارب → relay أو propose_middle ───────────────
     if intent["intent"] == "price_offer" and intent.get("amount"):
@@ -803,7 +847,7 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
     reply = _generate_reply(neg, my_role, text, intent)
     # بروتوكول جلب المعلومة الناقصة (صارم — لا تأليف):
     # إمّا أصدر النموذج [[ASK_OTHER]]، أو سؤالٌ ظهر فيه تردّد/تأليف → اسأل الطرف الآخر
-    if "ASK_OTHER" in reply or (intent["intent"] == "question" and _is_hedge(reply)):
+    if "ASK_OTHER" in reply or _is_hedge(reply):
         _relay_info_request(neg, my_role, text, conn)
         reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً. "
                  f"وعشان نتقدّم بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
