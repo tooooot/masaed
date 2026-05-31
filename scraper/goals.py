@@ -45,20 +45,19 @@ def session_goal(phone: str, conn=None) -> str:
             """, (phone,)):
                 return "complete_registration"
 
-            registered = _scalar(cur, """
-                SELECT 1 FROM sanad.masaed_registrations
-                WHERE phone=%s AND status <> 'abandoned' AND type IS NOT NULL LIMIT 1
-            """, (phone,)) is not None
-
-            # 3) ردّ على مبادرة باردة: عرض في حراج راسلناه (contacted) وغير مسجّل
-            if not registered and _scalar(cur, """
+            # 3) ردّ على مبادرة باردة: عرضٌ راسلناه (contacted) ينتظر ردّه — أولوية على
+            #    'عائد' حتى لو كان مسجّلاً (قد يكون سُجّل في تجربة سابقة)
+            if _scalar(cur, """
                 SELECT 1 FROM sanad.masaed_listings
                 WHERE phone=%s AND status='contacted' LIMIT 1
             """, (phone,)):
                 return "cold_reply"
 
             # 4) عميل مسجّل عائد
-            if registered:
+            if _scalar(cur, """
+                SELECT 1 FROM sanad.masaed_registrations
+                WHERE phone=%s AND status <> 'abandoned' AND type IS NOT NULL LIMIT 1
+            """, (phone,)):
                 return "returning"
 
             # 5) جديد
