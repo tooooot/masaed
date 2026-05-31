@@ -68,28 +68,7 @@ def session_goal(phone: str, conn=None) -> str:
             conn.close()
 
 
-def build_cold_outbound_intro(listing: dict, seeker_hint: str = "") -> str:
-    """
-    رسالة المبادرة الباردة لمالك معلِن في حراج (غير مسجّل).
-    تُقدّم مبرّر الاتصال (إعلانه) + تعرّف بمساعد + تطرح القيمة + سؤال موافقة.
-    listing: {title, city, price, url}
-    """
-    title = (listing.get("title") or "عقارك المعروض").strip()
-    city  = listing.get("city")
-    price = listing.get("price")
-    url   = listing.get("url")
-    loc   = f" في {city}" if city else ""
-    pr    = f" بسعر {int(price):,} ريال" if price else ""
-    hint  = f" ({seeker_hint})" if seeker_hint else ""
-    link  = f"\n🔗 إعلانك: {url}" if url else ""
-    return (
-        "السلام عليكم ورحمة الله 👋\n"
-        f"شفت إعلانك في حراج عن «{title}»{loc}{pr}، وأتواصل معك بخصوصه.{link}\n\n"
-        "أنا «مساعد» — وكيل عقاري يعمل بالذكاء الاصطناعي. مهمتي أجيب لك "
-        f"مستأجرين جادّين وأتولّى التنسيق والتفاوض نيابةً عنك بدون عناء.\n"
-        f"وعندي حالياً باحث جاد يطابق مواصفات عقارك{hint}.\n\n"
-        "تحب أعرض عليك التفاصيل ونبدأ؟"
-    )
+from prompts import build_cold_outbound_intro
 
 
 # ══════════════════════════════════════════════════════════════════════════════
