@@ -242,6 +242,13 @@ def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
                                SET status='contacted', outreach_to=%s WHERE id=%s""",
                             (seeker_phone, m["id"]))
                 conn.commit()
+                # 📋 مُعِدّ الصفقة: سجّل ملف صفقة (الصفقات الجاهزة)
+                try:
+                    from deal_preparer import prepare as _prep_deal
+                    _prep_deal(seeker_phone, listing_id=m["id"], listing_phone=owner,
+                               status="contacted", conn=conn)
+                except Exception as _e:
+                    print(f"[DEAL] تعذّر إعداد الصفقة: {_e}", flush=True)
                 summary["contacted"] += 1
                 summary["details"].append({"listing_id": m["id"], "owner": owner,
                                             "score": m["score"], "sent": bool(sent)})
@@ -499,6 +506,12 @@ def handle_cold_reply(phone: str, text: str, conn=None) -> bool:
             listing_title=title or "عقارك", listing_city=city, listing_price=price,
             send_intro=False,   # عرضنا للباحث يدوياً أعلاه؛ نتجنّب ازدواج الافتتاح
         )
+        # 📋 مُعِدّ الصفقة: الصفقة دخلت التفاوض
+        try:
+            from deal_preparer import prepare as _prep_deal
+            _prep_deal(seeker_phone, listing_phone=phone, status="negotiating", conn=conn)
+        except Exception:
+            pass
         print(f"[COLD] المالك {phone} وافق → سجّلته (#{owner_reg}) → عرضت للباحث {seeker_phone} → بدأ التفاوض", flush=True)
         return True
     finally:

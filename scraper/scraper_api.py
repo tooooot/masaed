@@ -1305,6 +1305,34 @@ def bot_test():
         _wa_test_local.log    = []
 
 
+@app.route("/deals")
+def list_deals():
+    """📋 الصفقات الجاهزة (مخرجات مُعِدّ الصفقة) — للوحة التحكم."""
+    from bot import get_conn
+    status = request.args.get("status")
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            q = """SELECT id, seeker_phone, listing_id, listing_phone, status,
+                          deal_file, created_at, updated_at
+                   FROM sanad.masaed_deals"""
+            if status:
+                q += " WHERE status=%s"; args = (status,)
+            else:
+                args = ()
+            q += " ORDER BY updated_at DESC LIMIT 100"
+            cur.execute(q, args)
+            cols = [d[0] for d in cur.description]
+            deals = []
+            for r in cur.fetchall():
+                d = dict(zip(cols, r))
+                d["created_at"] = str(d["created_at"]); d["updated_at"] = str(d["updated_at"])
+                deals.append(d)
+        return jsonify({"count": len(deals), "deals": deals})
+    finally:
+        conn.close()
+
+
 @app.route("/lab/test-negotiation", methods=["POST"])
 def lab_test_negotiation():
     """يبدأ تفاوضاً تجريبياً على رقمي الاختبار مزروعاً بطلب حقيقي (زر اختبار المحاكاة)."""

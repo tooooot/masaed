@@ -1,46 +1,87 @@
 #!/usr/bin/env python3
 """📋 مساعد مُعِدّ الصفقة — جسر بين الطلبات والمختبر/المفاوض.
-عند مطابقة طلب بعرض، يجمع «ملف صفقة» كامل (الباحث + العقار + الصور + السعر)
-ويسلّمه للمختبر (محاكاة) أو المفاوض (إطلاق)."""
+
+عند مطابقة طلب بعرض، يجمع «ملف صفقة» كامل (الباحث + العقار + الصور + السعر +
+الرابط) ويحفظه في masaed_deals (الصفقات الجاهزة)، ويتتبّع حالته في دورة حياته:
+prepared → contacted → negotiating → agreed/failed.
+المختبر يستدعيه للمحاكاة، والمفاوض يستدعيه للإطلاق."""
+import json
 from bot import get_conn
 
 
-def prepare(seeker_phone: str, listing_id: int = None, listing_phone: str = None,
-            conn=None) -> dict:
-    """يجمع ملف صفقة متكامل جاهز للاختبار/الإطلاق."""
+def _assemble(seeker_phone, listing_id, listing_phone, conn):
+    """يجمع بيانات الباحث + العرض في ملف موحّد."""
+    with conn.cursor() as cur:
+        cur.execute("""SELECT phone, name, city, district, rooms, budget_annual,
+                              property_type, for_family
+                       FROM sanad.masaed_registrations
+                       WHERE phone=%s AND type='wanted' AND status<>'abandoned'
+                       ORDER BY created_at DESC LIMIT 1""", (seeker_phone,))
+        sc = [d[0] for d in cur.description]; sr = cur.fetchone()
+        seeker = dict(zip(sc, sr)) if sr else {"phone": seeker_phone}
+
+        offer = None
+        if listing_id or listing_phone:
+            where, val = ("id=%s", listing_id) if listing_id else \
+                         ("phone=%s AND status<>'declined'", listing_phone)
+            cur.execute(f"""SELECT id, title, body, city, rooms, property_type,
+                                   price, phone, url
+                            FROM sanad.masaed_listings WHERE {where}
+                            ORDER BY id DESC LIMIT 1""", (val,))
+            oc = [d[0] for d in cur.description]; orow = cur.fetchone()
+            offer = dict(zip(oc, orow)) if orow else None
+    if offer:
+        offer["photos"] = []   # العروض المسحوبة بلا صور مخزّنة (الصور في رابط الإعلان)
+    return {"seeker": seeker, "offer": offer,
+            "ready": bool(offer and seeker.get("phone"))}
+
+
+def prepare(seeker_phone, listing_id=None, listing_phone=None,
+            status="prepared", conn=None) -> dict:
+    """يجمع ملف الصفقة ويحفظه/يحدّثه في masaed_deals، ويُرجعه."""
+    own = conn is None
+    if own:
+        conn = get_conn()
+    try:
+        deal = _assemble(seeker_phone, listing_id, listing_phone, conn)
+        offer = deal.get("offer") or {}
+        lphone = listing_phone or offer.get("phone")
+        lid = listing_id or offer.get("id")
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO sanad.masaed_deals
+                        (seeker_phone, listing_id, listing_phone, status, deal_file)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (seeker_phone, listing_phone) DO UPDATE
+                        SET status=EXCLUDED.status, deal_file=EXCLUDED.deal_file,
+                            listing_id=EXCLUDED.listing_id, updated_at=NOW()
+                    RETURNING id
+                """, (seeker_phone, lid, lphone, status,
+                      json.dumps(deal, ensure_ascii=False, default=str)))
+                deal["id"] = cur.fetchone()[0]
+                conn.commit()
+        except Exception as e:
+            print(f"[DEAL] فشل حفظ ملف الصفقة: {e}", flush=True)
+        return deal
+    finally:
+        if own:
+            conn.close()
+
+
+def mark(seeker_phone, listing_phone, status, conn=None):
+    """حدّث حالة صفقة (negotiating/agreed/failed)."""
     own = conn is None
     if own:
         conn = get_conn()
     try:
         with conn.cursor() as cur:
-            # الباحث (طلب مسجّل)
-            cur.execute("""SELECT phone, name, city, district, rooms, budget_annual,
-                                  property_type, for_family
-                           FROM sanad.masaed_registrations
-                           WHERE phone=%s AND type='wanted' AND status<>'abandoned'
-                           ORDER BY created_at DESC LIMIT 1""", (seeker_phone,))
-            sc = [d[0] for d in cur.description]; sr = cur.fetchone()
-            seeker = dict(zip(sc, sr)) if sr else {"phone": seeker_phone}
-
-            # العرض (إعلان)
-            offer = None
-            if listing_id or listing_phone:
-                where = "id=%s" if listing_id else "phone=%s AND status<>'declined'"
-                cur.execute(f"""SELECT id, title, body, city, rooms, property_type,
-                                       price, phone, url, photos
-                                FROM sanad.masaed_listings WHERE {where}
-                                ORDER BY id DESC LIMIT 1""",
-                            (listing_id or listing_phone,))
-                oc = [d[0] for d in cur.description]; orow = cur.fetchone()
-                offer = dict(zip(oc, orow)) if orow else None
-        if offer and offer.get("photos") is None:
-            offer["photos"] = []
-        return {
-            "ok": bool(offer),
-            "seeker": seeker,
-            "offer": offer,
-            "ready": bool(offer and seeker.get("phone")),
-        }
+            cur.execute("""UPDATE sanad.masaed_deals SET status=%s, updated_at=NOW()
+                           WHERE seeker_phone=%s AND listing_phone=%s""",
+                        (status, seeker_phone, listing_phone))
+            conn.commit()
+    except Exception as e:
+        print(f"[DEAL] فشل تحديث الحالة: {e}", flush=True)
     finally:
         if own:
             conn.close()
@@ -48,3 +89,4 @@ def prepare(seeker_phone: str, listing_id: int = None, listing_phone: str = None
 
 class DealPreparer:
     prepare = staticmethod(prepare)
+    mark    = staticmethod(mark)
