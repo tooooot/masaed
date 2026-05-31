@@ -1305,6 +1305,28 @@ def bot_test():
         _wa_test_local.log    = []
 
 
+@app.route("/contacts")
+def list_contacts():
+    """🧠 الحافظ — كل العملاء وملفاتهم (للوحة الحافظ)."""
+    from bot import get_conn
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT phone, name, last_reg_type, total_regs, notes, last_seen
+                FROM sanad.masaed_contacts
+                ORDER BY last_seen DESC NULLS LAST LIMIT 300
+            """)
+            cols = [d[0] for d in cur.description]
+            rows = []
+            for r in cur.fetchall():
+                d = dict(zip(cols, r)); d["last_seen"] = str(d["last_seen"] or "")
+                rows.append(d)
+        return jsonify({"count": len(rows), "contacts": rows})
+    finally:
+        conn.close()
+
+
 @app.route("/deals")
 def list_deals():
     """📋 الصفقات الجاهزة (مخرجات مُعِدّ الصفقة) — للوحة التحكم."""
