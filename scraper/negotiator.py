@@ -602,20 +602,10 @@ def _propose_middle(neg: dict, lead_max: int, owner_min: int, conn):
     gap   = owner_min - lead_max
     neg_id = neg["id"]
 
-    # مانع تكرار: إن سبق اقتراح نفس السعر فلا نُعيد إرساله (ولا نصفّر الموافقات) —
-    # نكتفي بتنبيه لطيف لكي لا تتكرر رسالة الاقتراح حرفياً كل جولة.
+    # إن سبق اقتراح نفس السعر: لا نُعيد إرسال أي شيء (ولا نصفّر الموافقات) — صمت
+    # تام، ويطوي المُنادي التذكيرَ في ردّه الواحد بدل رسالة تنبيه متكرّرة مستقلّة.
     if neg.get("proposed_price") == mid:
-        # لا تُرسل التنبيه إن كان آخر ما أرسلناه تنبيهاً مماثلاً (منع تكرار)
-        last_bot = next((e.get("text", "") for e in reversed(neg.get("chat_log", []))
-                         if str(e.get("role", "")).startswith("bot")), "")
-        if "بانتظار «موافق»" not in last_bot:
-            nudge = f"السعر المقترح ما زال {mid:,} ر/سنة — بانتظار «موافق» من الطرفين لإتمامها 🤝"
-            _append_log(neg_id, "bot→مستأجر", nudge, conn)
-            if neg.get("lead_phone"):
-                wa_send(neg["lead_phone"], nudge)
-            if neg.get("listing_phone"):
-                wa_send(neg["listing_phone"], nudge)
-        return
+        return False
 
     _update_neg(neg_id, conn, proposed_price=mid,
                 lead_accepted=False, owner_accepted=False)
@@ -636,6 +626,7 @@ def _propose_middle(neg: dict, lead_max: int, owner_min: int, conn):
     _append_log(neg_id, "bot→مالك",   msg_owner, conn)
     wa_send(neg["lead_phone"],    msg_lead)
     wa_send(neg["listing_phone"], msg_owner)
+    return True                                 # اقتراح جديد أُرسِل للطرفين
 
 
 def _maybe_propose(neg: dict, conn) -> bool:
@@ -651,8 +642,22 @@ def _maybe_propose(neg: dict, conn) -> bool:
     near = (lmax >= omin) or (gap <= 1500) or (ref and gap / ref <= 0.12)
     if not near:
         return False
-    _propose_middle(neg, lmax, omin, conn)
-    return True
+    return _propose_middle(neg, lmax, omin, conn)   # True فقط لو اقتراح جديد
+
+
+def _reminded_recently(neg: dict) -> bool:
+    """هل ذكّرنا بالمقترح القائم ضمن آخر ٤ رسائل بوت؟ (لكبح تكرار التذكير)."""
+    recent = [e.get("text", "") for e in neg.get("chat_log", [])
+              if str(e.get("role", "")).startswith("bot")][-4:]
+    return any(("بانتظار موافقتك" in t) or ("ما زال قائماً" in t) for t in recent)
+
+
+def _standing_tail(neg: dict) -> str:
+    """ذيل تذكير بالمقترح القائم — يُطوى داخل ردّ واحد، ومرّة كل نافذة فقط."""
+    p = neg.get("proposed_price")
+    if not p or _reminded_recently(neg):
+        return ""
+    return f"\nوالمقترح {p:,} ر ما زال بانتظار موافقتك 🤝"
 
 
 # ── جلب الناقص + الصور (Feature: relay & media) ─────────────────────────────────
@@ -795,8 +800,10 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
             if rec is not None:
                 captured = f" وسجّلت سعرك ({rec:,} ر) ✅"
         # تقاربا؟ أطلق اقتراح الوسط (يكفي إشعار قصير لأن الاقتراح يصل للطرفين)
-        if _maybe_propose(neg, conn):
+        if _maybe_propose(neg, conn):          # اقتراح جديد أُرسِل للطرفين
             ack = f"تمام، وصلني ونقلته له ✅{captured}\nوبما إننا قريبين، أرسلت لكما اقتراح السعر — ردّ «موافق» لإتمامها 🤝"
+        elif neg.get("proposed_price"):        # اقتراح قائم → تذكير مطويّ مرّة كل نافذة
+            ack = f"تمام، وصلني ونقلته له ✅{captured}{_standing_tail(neg)}"
         else:
             ack = f"تمام، وصلني ونقلته له ✅{captured} نكمّل — {_price_prompt(neg)}"
         _append_log(neg_id, f"bot→{my_role}", ack, conn)
@@ -817,15 +824,15 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         if amt and 3000 <= amt <= 999000:
             rec = _record_incidental_price(neg, is_lead, amt, conn)
         _relay_info_request(neg, my_role, text, conn)
+        _head = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
+                 + (f" وسجّلت رقمك ({rec:,} ر) ✅" if rec else ""))
         # تقاربا؟ أطلق اقتراح الوسط على الطرفين بدل مجرّد إعادة سؤال السعر
-        if _maybe_propose(neg, conn):
-            reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
-                     + (f" وسجّلت رقمك ({rec:,} ر) ✅" if rec else "")
-                     + "\nوبما إننا قريبين، أرسلت لكما اقتراح السعر — ردّ «موافق» لإتمامها 🤝")
+        if _maybe_propose(neg, conn):          # اقتراح جديد أُرسِل للطرفين
+            reply = _head + "\nوبما إننا قريبين، أرسلت لكما اقتراح السعر — ردّ «موافق» لإتمامها 🤝"
+        elif neg.get("proposed_price"):        # اقتراح قائم → تذكير مطويّ مرّة كل نافذة
+            reply = _head + _standing_tail(neg)
         else:
-            reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
-                     + (f" وسجّلت رقمك ({rec:,} ر) ✅" if rec else "")
-                     + f" وعشان نتقدّم بالتوازي — {_price_prompt(neg)}")
+            reply = _head + f" وعشان نتقدّم بالتوازي — {_price_prompt(neg)}"
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
         return True
@@ -874,8 +881,14 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
             if near:
                 # انتقال FSM: converge → closing (اقتراح وسط مباشرة)
                 print(f"[NEG #{neg_id}] FSM: {_state_before} → closing (propose_middle)", flush=True)
-                _propose_middle(neg, lmax, omin, conn)
+                made = _propose_middle(neg, lmax, omin, conn)
                 _notify_admin(neg, "near_agreement", conn)
+                if not made:                   # اقتراح قائم بالفعل → ردّ واحد للمُرسِل (بفحص نافذة)
+                    tail = _standing_tail(neg)
+                    r = (f"وصلك المقترح {neg['proposed_price']:,} ر —{tail}" if tail
+                         else "وصلني 👍 ننتظر تأكيد الطرفين على المقترح.")
+                    _append_log(neg_id, f"bot→{my_role}", r, conn)
+                    wa_send(phone, r)
                 return True
             print(f"[NEG #{neg_id}] FSM: {_state_before} → converge (gap={gap:,})", flush=True)
 
