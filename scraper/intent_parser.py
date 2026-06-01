@@ -42,18 +42,22 @@ _QUESTION_RE = re.compile(r'[؟?]|هل |في |كم |وين |فيه |يوجد |ه
 
 
 def _amount_from(text: str):
-    """مبلغ إيجار معقول من النص: رقم 4-6 خانات أو «<n> ألف» (40 ألف → 40000)."""
-    m = _PRICE_RE.search(text)
-    if m:
+    """مبلغ إيجار معقول من النص: رقم 4-6 خانات أو «<n> ألف» (40 ألف → 40000).
+    عند تعدّد المبالغ (مثل «٤٠ قريب لكن المطلوب ٤٢، نتفق على ٤١») نأخذ الأخير
+    لأن المتحدّث يذكر موقفه عادةً في نهاية الجملة — تجنّباً لالتقاط رقم الطرف الآخر."""
+    cands = []
+    for m in _PRICE_RE.finditer(text):
         a = int(m.group(1))
         if 3_000 <= a <= 999_000:
-            return a
-    m = _THOUSANDS_RE.search(text)
-    if m:
+            cands.append((m.start(), a))
+    for m in _THOUSANDS_RE.finditer(text):
         a = int(m.group(1)) * 1000
         if 3_000 <= a <= 999_000:
-            return a
-    return None
+            cands.append((m.start(), a))
+    if not cands:
+        return None
+    cands.sort()
+    return cands[-1][1]
 
 
 def _fast_parse(text: str) -> dict | None:
