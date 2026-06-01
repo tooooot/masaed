@@ -90,9 +90,9 @@ function when(t){if(!t)return'';try{const d=new Date(t);return d.toLocaleDateStr
 let SEL=null, ALL=[], FILTER='all';
 
 // تصنيف التجربة لأغراض الفلترة (غير حصري: تجربة قد تكون «تمّت» و«اختبار» معاً)
-const isTest=n=>/^🧪/.test(n.listing_title||'')||n.status==='paused_test'
-  ||/^(SIM|9665000|96655000|966548060060|966536882728)/.test(n.lead_phone||'')
-  ||/^(SIM|9665000|96655000|966548060060|966536882728)/.test(n.listing_phone||'');
+const TESTPH=/^(SIM|9665000|96655000|966548060060|966536882728|0548060060|0536882728|0500000)/;
+const isTest=n=>/🧪|اختبار/.test(n.listing_title||'')||n.status==='paused_test'
+  ||TESTPH.test(n.lead_phone||'')||TESTPH.test(n.listing_phone||'');
 const FDEFS=[
   ['all','الكل', ()=>true],
   ['agreed','✅ تمّت', n=>n.status==='agreed'],

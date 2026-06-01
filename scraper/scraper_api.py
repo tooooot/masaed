@@ -749,20 +749,38 @@ def negotiate_log(neg_id):
     return jsonify(d)
 
 
+def _phone_variants(phones):
+    """وسّع أرقام الساندبوكس لتشمل الصيغتين السعوديتين: 966XXXXXXXXX و0XXXXXXXXX."""
+    out = set()
+    for p in phones:
+        p = p.strip()
+        if not p:
+            continue
+        out.add(p)
+        core = p[3:] if p.startswith("966") else (p[1:] if p.startswith("0") else p)
+        if core.isdigit() and len(core) == 9:       # رقم سعودي صالح
+            out.add("966" + core)
+            out.add("0" + core)
+    return list(out)
+
+
 @app.route("/negotiate/cleanup-tests", methods=["POST"])
 def negotiate_cleanup_tests():
-    """احذف التفاوضات التجريبية: 🧪-العنوان أو paused_test أو أرقام SIM/الاختبار."""
-    sandbox = [p.strip() for p in os.getenv("MASAED_SANDBOX_PHONES", "").split(",") if p.strip()]
+    """احذف التفاوضات التجريبية: عنوان فيه 🧪 أو «اختبار»، أو paused_test،
+    أو أرقام SIM، أو أرقام الساندبوكس بالصيغتين (966 و05xx)."""
+    sandbox = _phone_variants(
+        os.getenv("MASAED_SANDBOX_PHONES", "").split(","))
     conn = get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 DELETE FROM sanad.masaed_negotiations
-                WHERE listing_title LIKE %s
+                WHERE listing_title LIKE '%%🧪%%'
+                   OR listing_title LIKE '%%اختبار%%'
                    OR status = 'paused_test'
                    OR lead_phone LIKE 'SIM%%' OR listing_phone LIKE 'SIM%%'
                    OR lead_phone = ANY(%s) OR listing_phone = ANY(%s)
-            """, ('🧪%', sandbox, sandbox))
+            """, (sandbox, sandbox))
             deleted = cur.rowcount
             conn.commit()
         print(f"[CLEANUP] حُذِف {deleted} تفاوضاً تجريبياً", flush=True)
