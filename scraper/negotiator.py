@@ -139,6 +139,24 @@ def _price_prompt(neg: dict) -> str:
     return _PRICE_PROMPTS[n % len(_PRICE_PROMPTS)]
 
 
+# علامات القبول الناعم: موافقة على السعر ولو أُلحقت بشرط/سؤال
+_SOFT_ACCEPT_MARKERS = ("موافق", "أوافق", "اوافق", "مقبول", "تمام", "ماشي", "نقفل",
+                        "نقفلها", "تمت", "تمّت", "نتفق", "اتفقنا", "أقبل", "اقبل",
+                        "زي ما قلت", "زي ماقلت", "زي ما اقترح", "نمشيها", "نمشّيها",
+                        "خلاص", "اوكي", "أوكي", "نعتبرها تمت", "نختمها")
+
+
+def _is_soft_accept(text: str, proposed_price: int) -> bool:
+    """قبول ناعم: ذكر السعر المقترح نفسه مع علامة موافقة، ولو ألحق شرطاً/سؤالاً.
+    لا يُعدّ قبولاً إن ذكر مبلغاً مختلفاً (فذاك تفاوض/عرض مضاد لا قبول)."""
+    if not proposed_price or not any(m in text for m in _SOFT_ACCEPT_MARKERS):
+        return False
+    amts = amounts_in(text)
+    if amts:                                   # ذكر مبلغاً → يجب أن يكون المقترح وحده
+        return proposed_price in amts and all(a == proposed_price for a in amts)
+    return True                                # علامة موافقة بلا رقم → قبول للمقترح
+
+
 # أسئلة يطرحها المالك عن الباحث/المستأجر (عن الشخص لا العقار)
 _SEEKER_ATTR = ("وظيف", "شغل", "عمل", "راتب", "دخل", "كفيل", "كفال",
                 "عدد", "أفراد", "افراد", "اطفال", "أطفال", "عائلت", "عيال",
@@ -686,18 +704,27 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         neg["owner_accepted"]  = row[2]
         neg["needs_admin"]     = row[3]
 
-    # ── تتبع الموافقة على سعر مقترح ──────────────────────────────────────────
+    # ── تتبع الموافقة على سعر مقترح (قبول صريح أو ناعم) ───────────────────────
     if neg.get("proposed_price"):
         intent_q = parse_intent(text)
-        if intent_q["intent"] == "accept":
+        soft = _is_soft_accept(text, neg["proposed_price"])
+        if intent_q["intent"] == "accept" or soft:
             field  = "lead_accepted" if is_lead else "owner_accepted"
             _update_neg(neg_id, conn, **{field: True})
             neg[field] = True
             _append_log(neg_id, my_role, text, conn)
+            if soft and intent_q["intent"] != "accept":
+                print(f"[NEG #{neg_id}] قبول ناعم من {my_role} على {neg['proposed_price']:,}", flush=True)
 
             lead_ok  = neg.get("lead_accepted")  or is_lead
             owner_ok = neg.get("owner_accepted") or (not is_lead)
             p_str    = f"{neg['proposed_price']:,}"
+
+            # شرط/سؤال ملحق بالقبول الناعم → نُحيله لاحقاً كي لا يضيع
+            _facts = " ".join(str(neg.get(k) or "") for k in
+                              ("listing_facts", "listing_title", "listing_city"))
+            has_followup = (_asks_unknown_attr(text, _facts)
+                            or any(w in text for w in _SEEKER_ATTR))
 
             if lead_ok and owner_ok:
                 # انتقال FSM: closing → agreed (إتمام تلقائي عند اتفاق الطرفين)
@@ -707,11 +734,16 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
                        f"مبروك! سيتم التواصل لإكمال إجراءات العقد.")
                 wa_send(phone, msg)
                 wa_send(other, msg)
+                if has_followup:               # ثبّتنا السعر، ثم نوضّح الشرط/السؤال الملحق
+                    _relay_info_request(neg, my_role, text, conn)
+                    wa_send(phone, "وبخصوص ملاحظتك الأخيرة، أستوضحها من الطرف الآخر وأوافيك بها ضمن العقد 👌")
                 _notify_admin(neg, "ready_to_close", conn)  # إشعار للعلم فقط
             else:
                 wa_send(phone,
                     f"تم تسجيل موافقتك على {p_str} ر/سنة ✅\n"
                     f"ننتظر رد الطرف الآخر.")
+                if has_followup:               # أحِل الشرط/السؤال للطرف الآخر بالتوازي
+                    _relay_info_request(neg, my_role, text, conn)
             return True
 
     # ── parse intent + سجّل حالة الـFSM الحالية ───────────────────────────────
