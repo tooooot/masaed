@@ -48,6 +48,13 @@ nav a.active{background:var(--blu);border-color:var(--blu);color:#001}
 .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:.7rem;color:var(--mut);padding:8px 14px;border-top:1px solid var(--bd)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:4px;vertical-align:middle}
 .refresh{background:var(--blu);color:#001;border:0;border-radius:7px;padding:4px 12px;font-size:.74rem;cursor:pointer;font-weight:700}
+.bar{display:flex;gap:6px;flex-wrap:wrap}
+.del{background:#2a1416;color:var(--red);border:1px solid var(--red);border-radius:7px;padding:4px 10px;font-size:.72rem;cursor:pointer;font-weight:700}
+.del:hover{background:var(--red);color:#fff}
+.filters{display:flex;gap:5px;flex-wrap:wrap;margin:2px 0}
+.fchip{background:var(--card);border:1px solid var(--bd);color:var(--mut);border-radius:20px;padding:3px 11px;font-size:.72rem;cursor:pointer}
+.fchip.on{background:var(--blu);border-color:var(--blu);color:#001;font-weight:700}
+.fchip .n{opacity:.7;font-size:.66rem}
 </style></head><body>
 <header>
   <h1>💬 المحادثات (التجارب)</h1>
@@ -61,7 +68,11 @@ nav a.active{background:var(--blu);border-color:var(--blu);color:#001}
 </header>
 <div class="wrap">
   <div class="col-list">
-    <button class="refresh" onclick="loadList()">↻ تحديث القائمة</button>
+    <div class="bar">
+      <button class="refresh" onclick="loadList()">↻ تحديث</button>
+      <button class="del" onclick="cleanupTests()">🗑️ حذف التجارب التجريبية</button>
+    </div>
+    <div class="filters" id="filters"></div>
     <div id="list"><div class="empty">…تحميل</div></div>
   </div>
   <div class="panel" id="panel">
@@ -76,26 +87,67 @@ const STAT={agreed:['g','✅ تمّت'],active:['b','⏳ جارية'],cancelled:
 function statPill(s){const m=STAT[s]||['y',s||'—'];return `<span class="pill ${m[0]}">${m[1]}</span>`;}
 function money(v){return v?Number(v).toLocaleString():'—';}
 function when(t){if(!t)return'';try{const d=new Date(t);return d.toLocaleDateString('ar',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('ar',{hour:'2-digit',minute:'2-digit'});}catch(e){return''}}
-let SEL=null;
+let SEL=null, ALL=[], FILTER='all';
+
+// تصنيف التجربة لأغراض الفلترة (غير حصري: تجربة قد تكون «تمّت» و«اختبار» معاً)
+const isTest=n=>/^🧪/.test(n.listing_title||'')||n.status==='paused_test'
+  ||/^(SIM|9665000|96655000|966548060060|966536882728)/.test(n.lead_phone||'')
+  ||/^(SIM|9665000|96655000|966548060060|966536882728)/.test(n.listing_phone||'');
+const FDEFS=[
+  ['all','الكل', ()=>true],
+  ['agreed','✅ تمّت', n=>n.status==='agreed'],
+  ['test','🧪 اختبار', isTest],
+  ['cancelled','✖ ملغاة', n=>['cancelled','declined'].includes(n.status)],
+  ['active','⏳ جارية', n=>['active','negotiating'].includes(n.status)],
+];
+const pred=k=>(FDEFS.find(f=>f[0]===k)||FDEFS[0])[2];
+
+function renderFilters(){
+  document.getElementById('filters').innerHTML=FDEFS.map(([k,label,fn])=>{
+    const cnt=ALL.filter(fn).length;
+    return `<span class="fchip ${FILTER===k?'on':''}" onclick="setFilter('${k}')">${label} <span class="n">${cnt}</span></span>`;
+  }).join('');
+}
+function setFilter(k){FILTER=k;renderFilters();renderList();}
+
+function renderList(){
+  const el=document.getElementById('list');
+  const arr=ALL.filter(pred(FILTER));
+  if(!arr.length){el.innerHTML='<div class="empty">لا تفاوضات بهذا التصنيف</div>';return;}
+  el.innerHTML=arr.map(n=>{
+    const c=n.status==='agreed'?'var(--grn)':n.status==='cancelled'||n.status==='declined'?'var(--red)':n.status==='paused_test'?'var(--yel)':'var(--blu)';
+    const price=n.agreed_price?`✅ ${money(n.agreed_price)}`:(n.proposed_price?`📊 ${money(n.proposed_price)}`:money(n.listing_price));
+    return `<div class="exp" id="exp-${n.id}" style="--c:${c}" onclick="openLog(${n.id})">
+      <div class="top"><span class="id">#${n.id}</span>${statPill(n.status)}</div>
+      <div class="meta">${(n.listing_title||'عقار').slice(0,30)} · ${n.listing_city||''} · ${price} ر</div>
+      <div class="ph" dir="ltr">🧑 ${n.lead_phone||'—'} ↔ 🏠 ${n.listing_phone||'—'}</div>
+      <div class="ph">${when(n.created_at)}</div>
+    </div>`;}).join('');
+  if(SEL){const e=document.getElementById('exp-'+SEL); if(e)e.classList.add('sel');}
+}
 
 async function loadList(){
   const el=document.getElementById('list');
   el.innerHTML='<div class="empty">…تحميل</div>';
   try{
     const r=await (await fetch(`${API}/negotiate/active`)).json();
-    const arr=r.negotiations||[];
-    if(!arr.length){el.innerHTML='<div class="empty">لا توجد تفاوضات بعد</div>';return;}
-    el.innerHTML=arr.map(n=>{
-      const c=n.status==='agreed'?'var(--grn)':n.status==='cancelled'||n.status==='declined'?'var(--red)':n.status==='paused_test'?'var(--yel)':'var(--blu)';
-      const price=n.agreed_price?`✅ ${money(n.agreed_price)}`:(n.proposed_price?`📊 ${money(n.proposed_price)}`:money(n.listing_price));
-      return `<div class="exp" id="exp-${n.id}" style="--c:${c}" onclick="openLog(${n.id})">
-        <div class="top"><span class="id">#${n.id}</span>${statPill(n.status)}</div>
-        <div class="meta">${(n.listing_title||'عقار').slice(0,30)} · ${n.listing_city||''} · ${price} ر</div>
-        <div class="ph" dir="ltr">🧑 ${n.lead_phone||'—'} ↔ 🏠 ${n.listing_phone||'—'}</div>
-        <div class="ph">${when(n.created_at)}</div>
-      </div>`;}).join('');
-    if(SEL) {const e=document.getElementById('exp-'+SEL); if(e)e.classList.add('sel');}
+    ALL=r.negotiations||[];
+    if(!ALL.length){document.getElementById('filters').innerHTML='';el.innerHTML='<div class="empty">لا توجد تفاوضات بعد</div>';return;}
+    renderFilters(); renderList();
   }catch(e){el.innerHTML='<div class="empty">⚠️ تعذّر التحميل</div>';}
+}
+
+async function cleanupTests(){
+  const cnt=ALL.filter(isTest).length;
+  if(!confirm(`سيُحذف نحو ${cnt} تفاوضاً تجريبياً (التجارب 🧪 + أرقام الاختبار + paused_test + SIM).\nالتفاوضات الحقيقية لن تُمَس. متابعة؟`))return;
+  try{
+    const r=await (await fetch(`${API}/negotiate/cleanup-tests`,{method:'POST'})).json();
+    if(r.ok){
+      if(SEL && !ALL.some(n=>n.id===SEL&&!isTest(n))){SEL=null;document.getElementById('panel').innerHTML='<div class="empty">اختر تجربة من القائمة 👉</div>';}
+      alert(`تم حذف ${r.deleted} تفاوضاً تجريبياً ✅`);
+      loadList();
+    } else alert('تعذّر الحذف: '+(r.error||''));
+  }catch(e){alert('تعذّر الاتصال بالخادم');}
 }
 
 // صنّف عنصر السجل إلى ممر/نوع

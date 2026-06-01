@@ -749,6 +749,31 @@ def negotiate_log(neg_id):
     return jsonify(d)
 
 
+@app.route("/negotiate/cleanup-tests", methods=["POST"])
+def negotiate_cleanup_tests():
+    """احذف التفاوضات التجريبية: 🧪-العنوان أو paused_test أو أرقام SIM/الاختبار."""
+    sandbox = [p.strip() for p in os.getenv("MASAED_SANDBOX_PHONES", "").split(",") if p.strip()]
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM sanad.masaed_negotiations
+                WHERE listing_title LIKE %s
+                   OR status = 'paused_test'
+                   OR lead_phone LIKE 'SIM%%' OR listing_phone LIKE 'SIM%%'
+                   OR lead_phone = ANY(%s) OR listing_phone = ANY(%s)
+            """, ('🧪%', sandbox, sandbox))
+            deleted = cur.rowcount
+            conn.commit()
+        print(f"[CLEANUP] حُذِف {deleted} تفاوضاً تجريبياً", flush=True)
+        return jsonify({"ok": True, "deleted": deleted})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/negotiate/<int:neg_id>/propose", methods=["POST"])
 def negotiate_propose(neg_id):
     """Admin proposes a middle price to both parties. Body: {proposed_price}"""
