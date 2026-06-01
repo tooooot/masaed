@@ -638,6 +638,23 @@ def _propose_middle(neg: dict, lead_max: int, owner_min: int, conn):
     wa_send(neg["listing_phone"], msg_owner)
 
 
+def _maybe_propose(neg: dict, conn) -> bool:
+    """إن توفّر سعرا الطرفين وتقاربا → أطلق اقتراح الوسط (يُستدعى بعد أي التقاط
+    سعر عَرَضي حتى لا يتعطّل الاقتراح حين يُلحق الطرفان أسئلة بكل رسالة).
+    يُرجع True إن حصل اقتراح/تنبيه."""
+    lmax = neg.get("lead_max_price")
+    omin = neg.get("owner_min_price")
+    if not (lmax and omin):
+        return False
+    gap  = omin - lmax
+    ref  = neg.get("listing_price") or omin
+    near = (lmax >= omin) or (gap <= 1500) or (ref and gap / ref <= 0.12)
+    if not near:
+        return False
+    _propose_middle(neg, lmax, omin, conn)
+    return True
+
+
 # ── جلب الناقص + الصور (Feature: relay & media) ─────────────────────────────────
 
 def _listing_photos(neg: dict, conn) -> list:
@@ -777,7 +794,11 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
             rec = _record_incidental_price(neg, is_lead, amt, conn)
             if rec is not None:
                 captured = f" وسجّلت سعرك ({rec:,} ر) ✅"
-        ack = f"تمام، وصلني ونقلته له ✅{captured} نكمّل — {_price_prompt(neg)}"
+        # تقاربا؟ أطلق اقتراح الوسط (يكفي إشعار قصير لأن الاقتراح يصل للطرفين)
+        if _maybe_propose(neg, conn):
+            ack = f"تمام، وصلني ونقلته له ✅{captured}\nوبما إننا قريبين، أرسلت لكما اقتراح السعر — ردّ «موافق» لإتمامها 🤝"
+        else:
+            ack = f"تمام، وصلني ونقلته له ✅{captured} نكمّل — {_price_prompt(neg)}"
         _append_log(neg_id, f"bot→{my_role}", ack, conn)
         wa_send(phone, ack)
         return True
@@ -796,9 +817,15 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         if amt and 3000 <= amt <= 999000:
             rec = _record_incidental_price(neg, is_lead, amt, conn)
         _relay_info_request(neg, my_role, text, conn)
-        reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
-                 + (f" وسجّلت رقمك ({rec:,} ر) ✅" if rec else "")
-                 + f" وعشان نتقدّم بالتوازي — {_price_prompt(neg)}")
+        # تقاربا؟ أطلق اقتراح الوسط على الطرفين بدل مجرّد إعادة سؤال السعر
+        if _maybe_propose(neg, conn):
+            reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
+                     + (f" وسجّلت رقمك ({rec:,} ر) ✅" if rec else "")
+                     + "\nوبما إننا قريبين، أرسلت لكما اقتراح السعر — ردّ «موافق» لإتمامها 🤝")
+        else:
+            reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
+                     + (f" وسجّلت رقمك ({rec:,} ر) ✅" if rec else "")
+                     + f" وعشان نتقدّم بالتوازي — {_price_prompt(neg)}")
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
         return True
