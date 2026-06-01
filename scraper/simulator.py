@@ -233,6 +233,84 @@ class NegotiationSimulator:
         }
 
 
+# ── محلّل JSON مرن للناقد (لا يفشل التقييم) ──────────────────────────────────────
+
+def _try_json(s: str):
+    try:
+        return json.loads(s)
+    except Exception:
+        return None
+
+
+def _balance_close(s: str) -> str:
+    """يردّ JSON مقطوعاً: يغلق أي سلسلة/قوس مفتوح ويحذف فاصلة زائدة."""
+    out, stack, in_str, esc = [], [], False, False
+    for ch in s:
+        out.append(ch)
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if stack:
+                stack.pop()
+    if in_str:                                  # سلسلة غير منتهية → أغلقها
+        out.append('"')
+    res = re.sub(r",\s*$", "", "".join(out).rstrip())
+    closer = {"{": "}", "[": "]"}
+    res += "".join(closer[c] for c in reversed(stack))
+    return res
+
+
+def _robust_json(raw: str):
+    """استخراج JSON بثلاث طبقات: مباشر → إصلاح فواصل → موازنة أقواس مقطوعة."""
+    if not raw:
+        return None
+    s = raw.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s).strip()
+    a = s.find("{")
+    if a == -1:
+        return None
+    s = s[a:]
+    b = s.rfind("}")
+    if b != -1:
+        d = _try_json(s[: b + 1])
+        if d is not None:
+            return d
+    cand = re.sub(r",(\s*[}\]])", r"\1", s)      # احذف الفواصل الزائدة
+    b = cand.rfind("}")
+    if b != -1:
+        d = _try_json(cand[: b + 1])
+        if d is not None:
+            return d
+    return _try_json(_balance_close(cand))       # ردّ مقطوع → وازن وأغلق
+
+
+def _salvage_findings(raw: str):
+    """آخر ملاذ: التقاط النقاط والمشاكل بـregex حتى لو JSON معطوب كلياً."""
+    out = {}
+    for key in ("conversation_quality", "mediator_performance",
+                "code_errors", "linguistic_quality"):
+        seg = re.search(key + r'"\s*:\s*\{(.*?)(?:\}\s*,\s*"|\}\s*\})', raw, re.DOTALL)
+        chunk = seg.group(1) if seg else ""
+        sc = re.search(r'"score"\s*:\s*(\d+)', chunk)
+        blk = re.search(r'"(?:issues|critical)"\s*:\s*\[(.*?)\]', chunk, re.DOTALL)
+        issues = re.findall(r'"([^"]{3,})"', blk.group(1)) if blk else []
+        if sc or issues:
+            out[key] = {"score": int(sc.group(1)) if sc else None, "issues": issues}
+    return out or None
+
+
 # ── Critic Engine ────────────────────────────────────────────────────────────
 
 class CriticAssistant:
@@ -256,29 +334,31 @@ class CriticAssistant:
 قيّم هذه المحادثة وأعد JSON بالمعايير المطلوبة.
 """
 
-        # max_tokens كبير: JSON التقييم طويل ويُقطع عند 500 → فشل التحليل
-        # timeout أطول: 2500 token تحتاج وقتاً أكثر من 20s فلا نهدر retry
-        result = call_llm(_SYS_CRITIC, prompt, model="anthropic", max_tokens=2500, timeout=75)
+        # max_tokens أوسع + تعليمة صرامة JSON لتقليل القطع/التشويه
+        prompt += ("\n\nمهم: أعد JSON صالحاً فقط بلا أي نص خارجه، واجعل كل بند في "
+                   "issues جملة قصيرة جداً (≤ 12 كلمة) كي لا يُقطع الرد.")
+        result = call_llm(_SYS_CRITIC, prompt, model="anthropic", max_tokens=3000, timeout=80)
 
-        if result:
-            try:
-                # أزل أسوار ```json إن وُجدت ثم استخرج كائن JSON
-                cleaned = result.strip()
-                if cleaned.startswith("```"):
-                    cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
-                    cleaned = re.sub(r"\n?```$", "", cleaned).strip()
-                start = cleaned.find('{')
-                end = cleaned.rfind('}') + 1
-                if start != -1 and end > start:
-                    self.findings = json.loads(cleaned[start:end])
-                    return self.findings
-                print(f"[CRITIC] لا يوجد JSON في الرد: {result[:200]}", flush=True)
-            except Exception as e:
-                print(f"[CRITIC] فشل تحليل JSON: {e} | الرد: {result[:200]}", flush=True)
-        else:
+        if not result:
             print("[CRITIC] لا يوجد رد من Anthropic", flush=True)
+            return {"error": "فشل التقييم", "_reason": "no_response"}
 
-        return {"error": "فشل التقييم"}
+        # طبقة 1+2+3: محلّل مرن (مباشر/إصلاح فواصل/موازنة أقواس مقطوعة)
+        parsed = _robust_json(result)
+        if parsed is not None:
+            self.findings = parsed
+            return self.findings
+
+        # طبقة 4: إنقاذ بـregex (تقييم منقوص لكنه مفيد ولا يفشل)
+        salvaged = _salvage_findings(result)
+        if salvaged:
+            salvaged["_degraded"] = "تم إنقاذ التقييم جزئياً (JSON معطوب)"
+            print(f"[CRITIC] JSON معطوب — أُنقِذ جزئياً ({len(salvaged)} أقسام)", flush=True)
+            self.findings = salvaged
+            return self.findings
+
+        print(f"[CRITIC] تعذّر التحليل والإنقاذ | الرد: {result[:200]}", flush=True)
+        return {"error": "فشل التقييم", "_raw": result[:1000]}
 
     def get_recommendations(self) -> list:
         """احصل على توصيات التحسين"""
