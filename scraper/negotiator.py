@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from bot import (get_conn, wa_send as _wa_send_raw, _phone_lock, ANTHROPIC_KEY,
                   USE_ANTHROPIC, get_contact, get_contact_registrations, build_memory_context,
                   build_party_profile, wa_send_media, BASE_URL as _BASE_URL)
-from intent_parser import parse_intent
+from intent_parser import parse_intent, amounts_in
 
 DEEPSEEK_KEY    = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
 ADMIN_WA_PHONE  = os.getenv("MASAED_WA_PHONE", "")     # رقم الإدارة يتلقى إشعارات
@@ -108,6 +108,35 @@ def _asks_unknown_attr(text: str, facts: str) -> bool:
     facts = facts or ""
     hits = [w for w in _ATTR_WORDS if w in text]
     return bool(hits) and any(w not in facts for w in hits)
+
+
+def _record_incidental_price(neg: dict, is_lead: bool, amount: int, conn):
+    """يسجّل سعراً ذُكر ضمن رسالة (لا في فرع عرض صريح) مع حارس اتجاهي:
+    سقف المستأجر لا يرتفع وأرضية المالك لا تنخفض ضمنياً — تفادياً للعروض
+    المشروطة («٤٠٥٠٠ أو ٤٠ نقداً») التي تزيّف التقارب. يُرجع المبلغ المسجَّل أو None."""
+    field = "lead_max_price" if is_lead else "owner_min_price"
+    cur = neg.get(field)
+    if cur is not None:
+        if (is_lead and amount > cur) or ((not is_lead) and amount < cur):
+            return None                        # حركة عكسية ضمنية → تجاهل
+    if cur != amount:
+        _update_neg(neg["id"], conn, **{field: amount}); neg[field] = amount
+    return amount
+
+
+# صيغ متنوّعة لسؤال السعر — نُدوّرها كي لا تتكرر الرسالة نفسها حرفياً
+_PRICE_PROMPTS = (
+    "وش السعر اللي يناسبك للإيجار السنوي؟",
+    "وش آخر رقم تقبل تقفل عليه؟",
+    "كم الرقم اللي ترتاح له ونمشّيها؟",
+    "على أي مبلغ نتفق نهائياً؟",
+)
+
+
+def _price_prompt(neg: dict) -> str:
+    """صيغة سؤال سعر تختلف عن سابقتها (مانع تكرار)."""
+    n = sum(1 for e in neg.get("chat_log", []) if str(e.get("role", "")).startswith("bot"))
+    return _PRICE_PROMPTS[n % len(_PRICE_PROMPTS)]
 
 
 # أسئلة يطرحها المالك عن الباحث/المستأجر (عن الشخص لا العقار)
@@ -555,6 +584,21 @@ def _propose_middle(neg: dict, lead_max: int, owner_min: int, conn):
     gap   = owner_min - lead_max
     neg_id = neg["id"]
 
+    # مانع تكرار: إن سبق اقتراح نفس السعر فلا نُعيد إرساله (ولا نصفّر الموافقات) —
+    # نكتفي بتنبيه لطيف لكي لا تتكرر رسالة الاقتراح حرفياً كل جولة.
+    if neg.get("proposed_price") == mid:
+        # لا تُرسل التنبيه إن كان آخر ما أرسلناه تنبيهاً مماثلاً (منع تكرار)
+        last_bot = next((e.get("text", "") for e in reversed(neg.get("chat_log", []))
+                         if str(e.get("role", "")).startswith("bot")), "")
+        if "بانتظار «موافق»" not in last_bot:
+            nudge = f"السعر المقترح ما زال {mid:,} ر/سنة — بانتظار «موافق» من الطرفين لإتمامها 🤝"
+            _append_log(neg_id, "bot→مستأجر", nudge, conn)
+            if neg.get("lead_phone"):
+                wa_send(neg["lead_phone"], nudge)
+            if neg.get("listing_phone"):
+                wa_send(neg["listing_phone"], nudge)
+        return
+
     _update_neg(neg_id, conn, proposed_price=mid,
                 lead_accepted=False, owner_accepted=False)
     neg["proposed_price"] = mid
@@ -694,15 +738,14 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         if media_url:                       # مرّر أي صورة/ملف أرفقه الطرف المسؤول
             wa_send_media(asker_phone, media_url, caption="من الطرف الآخر")
         _update_neg(neg_id, conn, pending_req=None)
-        # التقط أي سعر ورد ضمن الرد لمواصلة التقارب
+        # التقط أي سعر ورد ضمن الرد لمواصلة التقارب (بحارس اتجاهي)
         amt = intent.get("amount")
         captured = ""
         if amt and 3000 <= amt <= 999000:
-            field = "lead_max_price" if is_lead else "owner_min_price"
-            if neg.get(field) != amt:
-                _update_neg(neg_id, conn, **{field: amt}); neg[field] = amt
-            captured = f" وسجّلت سعرك ({amt:,} ر) ✅"
-        ack = f"تمام، وصلني ونقلته له ✅{captured} نكمّل — وش آخر سعر تقبله؟"
+            rec = _record_incidental_price(neg, is_lead, amt, conn)
+            if rec is not None:
+                captured = f" وسجّلت سعرك ({rec:,} ر) ✅"
+        ack = f"تمام، وصلني ونقلته له ✅{captured} نكمّل — {_price_prompt(neg)}"
         _append_log(neg_id, f"bot→{my_role}", ack, conn)
         wa_send(phone, ack)
         return True
@@ -717,14 +760,13 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
                     or (my_role == "مالك" and any(w in text for w in _SEEKER_ATTR)))
     if asks_unknown and not _wants_viewing(text) and not _wants_phone(text):
         amt = intent.get("amount")
+        rec = None
         if amt and 3000 <= amt <= 999000:
-            field = "lead_max_price" if is_lead else "owner_min_price"
-            if neg.get(field) != amt:
-                _update_neg(neg_id, conn, **{field: amt}); neg[field] = amt
+            rec = _record_incidental_price(neg, is_lead, amt, conn)
         _relay_info_request(neg, my_role, text, conn)
         reply = (f"سؤال وجيه 👍 أستوضحه من {other_role} وأوافيك فوراً."
-                 + (f" وسجّلت رقمك ({amt:,} ر) ✅" if amt else "")
-                 + " وعشان نتقدّم بالتوازي — وش السعر اللي يناسبك للإيجار السنوي؟")
+                 + (f" وسجّلت رقمك ({rec:,} ر) ✅" if rec else "")
+                 + f" وعشان نتقدّم بالتوازي — {_price_prompt(neg)}")
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
         return True
@@ -745,6 +787,20 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
     if intent["intent"] == "price_offer" and intent.get("amount"):
         amount = intent["amount"]
         field  = "lead_max_price" if is_lead else "owner_min_price"
+        cur    = neg.get(field)
+
+        # حارس العروض المشروطة: رسالة فيها أكثر من رقم («٤٠٥٠٠ أو ٤٠ نقداً») وغير
+        # حازمة وتحرّكها عكسي (يرفع سقف المستأجر/يُسقط أرضية المالك) → اطلب توضيحاً
+        # بدل اعتماد رقم ملتبس قد يزيّف التقارب.
+        adverse = (cur is not None and
+                   ((is_lead and amount > cur) or ((not is_lead) and amount < cur)))
+        if adverse and not intent.get("is_firm") and len(amounts_in(text)) > 1:
+            reply = (f"وضّح لي من فضلك السعر النهائي اللي تثبت عليه (رقم واحد) "
+                     f"وأبني عليه مباشرة 👍")
+            _append_log(neg_id, f"bot→{my_role}", reply, conn)
+            wa_send(phone, reply)
+            return True
+
         _update_neg(neg_id, conn, **{field: amount})
         neg[field] = amount
 

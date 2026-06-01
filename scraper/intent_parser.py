@@ -60,6 +60,20 @@ def _amount_from(text: str):
     return cands[-1][1]
 
 
+def amounts_in(text: str) -> list:
+    """كل المبالغ المعقولة المميّزة في النص — لكشف العروض المشروطة متعدّدة الأرقام."""
+    seen = []
+    for m in _PRICE_RE.finditer(text):
+        a = int(m.group(1))
+        if 3_000 <= a <= 999_000 and a not in seen:
+            seen.append(a)
+    for m in _THOUSANDS_RE.finditer(text):
+        a = int(m.group(1)) * 1000
+        if 3_000 <= a <= 999_000 and a not in seen:
+            seen.append(a)
+    return seen
+
+
 def _fast_parse(text: str) -> dict | None:
     """
     كشف سريع بدون LLM.
