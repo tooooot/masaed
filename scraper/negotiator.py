@@ -569,6 +569,12 @@ def _generate_reply(neg: dict, my_role: str, text: str, intent: dict) -> str:
     # ── حقن هدف الحالة الحالية: الـLLM يصوغ ضمن هدف الـFSM لا أكثر ──────────────
     _state = fsm_state(neg)
     context += f"\n\n🎯 حالة التفاوض الآن: [{_state}] — هدفك في هذا الرد: {fsm_goal(_state, neg, my_role)}"
+    # ── 🎭 حقن نبرة المزاج (المرحلة ١): يصوغ النموذج بالنبرة المناسبة لا ببرود ──
+    try:
+        from strategy import mood_guidance
+        context += "\n\n" + mood_guidance(text, intent)
+    except Exception:
+        pass
     role_ctx    = _role_ctx(my_role)
     other_party = "المستأجر" if my_role == "مالك" else "المالك"
     intent_type = intent.get("intent", "other")
@@ -800,6 +806,25 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
 
     _append_log(neg_id, my_role, text, conn)
 
+    # ── 🎭 طبقة المشاعر (المرحلة ١): مزاج غاضب/محبط → احتواء دافئ، لا برود ولا سعر ──
+    #    تُقدَّم على منطق التفاوض، إلا إن كان قبولاً/عرض سعر صريحاً (نية إيجابية واضحة).
+    try:
+        from strategy import detect_mood, warm_reply
+        _mood = detect_mood(text, intent)
+    except Exception:
+        _mood = "neutral"
+    if (_mood in ("angry", "frustrated")
+            and intent["intent"] not in ("accept", "price_offer")
+            and not _has_cancel(text)):
+        n = sum(1 for e in neg.get("chat_log", []) if str(e.get("role", "")).startswith("bot"))
+        reply = warm_reply(_mood, n)
+        print(f"[NEG #{neg_id}] 🎭 احتواء ({_mood}) — بلا دفع للسعر", flush=True)
+        _append_log(neg_id, f"bot→{my_role}", reply, conn)
+        wa_send(phone, reply)
+        if _mood == "angry":                       # غضب شديد → أبلغ المسؤول بهدوء
+            _notify_admin(neg, "party_upset", conn)
+        return True
+
     # ── إغلاق الحلقة: ردّ الطرف الذي سألناه عن معلومة معلّقة → أوصِله للسائل ────
     #    يُسلَّم الرد حتى لو تضمّن سعراً (نلتقط السعر أيضاً لمواصلة التقارب).
     pending = neg.get("pending_req")
@@ -977,10 +1002,10 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         wa_send(phone, reply)
         return True
 
-    # ── إحباط/شكوى موجّهة للبوت → إعادة تفاعل لطيفة نحو الهدف (لا تصعيد) ────────
+    # ── إحباط/شكوى موجّهة للبوت → احتواء دافئ بلا دفعٍ للسعر (المرحلة ١) ────────
     if _is_meta_complaint(text):
-        reply = ("آسف إذا ضايقتك 🙏 خلّنا نركّز على المهم: "
-                 "وش السعر اللي تشوفه مناسب للإيجار السنوي ونتفاهم عليه؟")
+        reply = ("آسف منك بصدق إذا ضايقتك 🙏 ما كان قصدي. "
+                 "راحتك أهم — تحب نكمّل بهدوء، أو أتوقّف؟ أنا تحت أمرك.")
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
         return True
