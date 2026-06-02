@@ -255,6 +255,15 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):
         evaluation = critic.evaluate(transcript, seeker_data, owner_data)
 
         progress("اكتملت")
+        # كاشف أخطاء الحقائق: يقارن مجرى الحوار بحقائق الإعلان (موقع/غرف/سعر/تأليف)
+        try:
+            import fact_check
+            fact_errors = fact_check.analyze(
+                transcript, owner_data, seeker_data,
+                {"agreed_price": agreed_price, "proposed_price": mediator_state.get("proposed_price")})
+        except Exception as _e:
+            print(f"[FACTCHECK] تعذّر: {_e}", flush=True)
+            fact_errors = []
         return {
             "ok": True,
             "reg_id": reg_id,
@@ -266,6 +275,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):
                 "mediator_state": mediator_state,
             },
             "evaluation": evaluation,
+            "fact_errors": fact_errors,
             "recommendations": critic.get_recommendations(),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

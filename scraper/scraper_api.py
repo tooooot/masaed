@@ -764,6 +764,56 @@ def _phone_variants(phones):
     return list(out)
 
 
+@app.route("/lab/simulate-deal", methods=["POST"])
+def lab_simulate_deal():
+    """محاكاة صفقة قبل بدئها: يحمّل حقائق الإعلان+الطلب، يشغّل الوكلاء الثلاثة
+    (مالك يعرف الإعلان / مستأجر / وسيط)، ويكشف أخطاء الحقائق. async عبر job_id."""
+    from sim_engine import start_job, RateLimited
+    from deal_preparer import _assemble
+    from bot import get_conn
+    data = request.get_json() or {}
+    seeker_phone = (data.get("seeker_phone") or "").strip()
+    listing_id = data.get("listing_id")
+    listing_phone = (data.get("listing_phone") or "").strip() or None
+    if not seeker_phone:
+        return jsonify({"ok": False, "error": "seeker_phone مطلوب"}), 400
+
+    conn = get_conn()
+    try:
+        deal = _assemble(seeker_phone, listing_id, listing_phone, conn)
+    finally:
+        conn.close()
+    offer = deal.get("offer") or {}
+    seeker = deal.get("seeker") or {}
+    if not offer:
+        return jsonify({"ok": False, "error": "لا يوجد عرض مرتبط بهذه الصفقة"}), 404
+
+    # وكيل المالك يعرف كل حقائق الإعلان؛ وكيل المستأجر يعرف طلبه
+    owner_data = {
+        "phone": offer.get("phone"), "title": offer.get("title"),
+        "city": offer.get("city"), "rooms": offer.get("rooms"),
+        "price": offer.get("price"), "property_type": offer.get("property_type"),
+        "specs": offer.get("body") or "مواصفات عادية", "url": offer.get("url"),
+    }
+    seeker_data = {
+        "name": seeker.get("name"), "type": "wanted",
+        "city": seeker.get("city"), "rooms": seeker.get("rooms"),
+        "budget_annual": seeker.get("budget_annual"),
+        "for_family": seeker.get("for_family"),
+        "special_notes": f"يبحث في {seeker.get('city') or '—'}",
+    }
+    reg_id = data.get("reg_id") or 41
+    try:
+        job_id = start_job(reg_id, seeker_data, owner_data)
+        print(f"[DEAL-SIM] محاكاة صفقة {seeker_phone}↔{offer.get('phone')} (job={job_id})", flush=True)
+        return jsonify({"ok": True, "job_id": job_id, "status": "running",
+                        "deal": {"offer": offer, "seeker": seeker}}), 202
+    except RateLimited as e:
+        return jsonify({"ok": False, "error": str(e)}), 429
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/route/trace")
 def route_trace_feed():
     """آخر الرسائل مُفكّكة إلى طبقات (الاتجاه/السياق/النية/الموظف)."""

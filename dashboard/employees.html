@@ -31,6 +31,28 @@ th{color:var(--mut);font-weight:600;font-size:.72rem}
 a.lnk{color:var(--blu)}
 .empty{color:var(--mut);text-align:center;padding:14px}
 .refresh{background:var(--blu);color:#001;border:0;border-radius:7px;padding:4px 10px;font-size:.72rem;cursor:pointer;font-weight:700}
+.simbtn{background:#2a1f0e;color:var(--org);border:1px solid var(--org);border-radius:7px;padding:3px 9px;font-size:.72rem;cursor:pointer;font-weight:700}
+.simbtn:hover{background:var(--org);color:#001}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;z-index:20;padding:18px;overflow:auto}
+.modal.open{display:block}
+.mbox{max-width:760px;margin:20px auto;background:var(--card);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.mhead{padding:12px 16px;border-bottom:1px solid var(--bd);background:#0b0f14;display:flex;justify-content:space-between;align-items:center}
+.mhead h3{margin:0;font-size:1rem}
+.mclose{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:7px;padding:3px 10px;cursor:pointer}
+.mbody{padding:14px;max-height:70vh;overflow:auto}
+.errbar{border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:.84rem}
+.errbar.ok{background:#0f2a18;border:1px solid #1f5c33;color:#7ee2a0}
+.errbar.bad{background:#2a1416;border:1px solid var(--red);color:#ffb3b0}
+.erritem{font-size:.8rem;margin-top:5px}
+.erritem .sev{font-size:.64rem;border-radius:5px;padding:1px 6px;border:1px solid;margin-left:5px}
+.sev.high{color:var(--red);border-color:var(--red)} .sev.med{color:var(--yel);border-color:var(--yel)} .sev.low{color:var(--mut);border-color:var(--mut)}
+.crow{display:flex;flex-direction:column;max-width:80%;margin-bottom:9px}
+.crow.s{align-self:flex-start}.crow.o{align-self:flex-end}.crow.m{align-self:center;max-width:92%}
+.cwho{font-size:.66rem;color:var(--mut);margin-bottom:2px}
+.cbub{padding:7px 10px;border-radius:11px;font-size:.83rem;white-space:pre-wrap}
+.crow.s .cbub{background:#10243b;border:1px solid #1d4e7a}
+.crow.o .cbub{background:#0f2a18;border:1px solid #1f5c33}
+.crow.m .cbub{background:#1c1630;border:1px solid #4a3a73;color:#d9ccf5}
 </style></head><body>
 <header>
   <h1>👔 لوحة الموظفين</h1>
@@ -58,9 +80,9 @@ const EMP=[
  {id:'sourcing', icon:'🔍', name:'مساعد الطلبات والمطابقة', c:'var(--blu)', role:'العروض المسحوبة من حراج',
   url:'/listings?limit=50', key:'listings', render:l=>`<tr><td>${(l.title||'').slice(0,45)}</td><td>${l.city||'—'}</td><td>${l.price?Number(l.price).toLocaleString():'—'}</td><td><span class="pill ${l.status==='active'?'g':l.status==='contacted'?'y':'b'}">${l.status}</span></td><td>${l.url?`<a class=lnk href="${l.url}" target=_blank>🔗</a>`:''}</td></tr>`,
   head:'<tr><th>العنوان</th><th>المدينة</th><th>السعر</th><th>الحالة</th><th>إعلان</th></tr>'},
- {id:'deals', icon:'📋', name:'مساعد مُعِدّ الصفقة', c:'var(--org)', role:'الصفقات الجاهزة المتكاملة',
-  url:'/deals', key:'deals', render:d=>{const o=(d.deal_file||{}).offer||{};return `<tr><td dir=ltr>${d.seeker_phone}</td><td dir=ltr>${d.listing_phone||'—'}</td><td>${(o.title||'').slice(0,35)}</td><td><span class="pill ${d.status==='agreed'?'g':d.status==='negotiating'?'b':d.status==='failed'?'r':'y'}">${d.status}</span></td><td>${o.url?`<a class=lnk href="${o.url}" target=_blank>🔗</a>`:''}</td></tr>`},
-  head:'<tr><th>الباحث</th><th>المالك</th><th>العرض</th><th>الحالة</th><th>إعلان</th></tr>'},
+ {id:'deals', icon:'📋', name:'مساعد مُعِدّ الصفقة', c:'var(--org)', role:'الصفقات الجاهزة — جرّب «محاكاة الصفقة» قبل بدء التفاوض الحقيقي',
+  url:'/deals', key:'deals', render:d=>{const o=(d.deal_file||{}).offer||{};return `<tr><td dir=ltr>${d.seeker_phone}</td><td dir=ltr>${d.listing_phone||'—'}</td><td>${(o.title||'').slice(0,30)}</td><td><span class="pill ${d.status==='agreed'?'g':d.status==='negotiating'?'b':d.status==='failed'?'r':'y'}">${d.status}</span></td><td><button class="simbtn" onclick="simDeal('${d.seeker_phone}','${d.listing_phone||''}')">🧪 محاكاة</button></td></tr>`},
+  head:'<tr><th>الباحث</th><th>المالك</th><th>العرض</th><th>الحالة</th><th>محاكاة قبل البدء</th></tr>'},
  {id:'negotiator', icon:'💬', name:'مساعد المفاوض', c:'var(--grn)', role:'التفاوضات الجارية وحالة آلة الحالات',
   url:'/negotiate/active', key:'negotiations', render:n=>`<tr><td dir=ltr>${n.lead_phone||'—'}</td><td dir=ltr>${n.listing_phone||'—'}</td><td>${(n.listing_title||'').slice(0,30)}</td><td><span class="pill b">${n.status||'active'}</span></td></tr>`,
   head:'<tr><th>المستأجر</th><th>المالك</th><th>العقار</th><th>الحالة</th></tr>'},
@@ -106,6 +128,49 @@ async function load(id){
                              : '<div class="empty">لا بيانات</div>';
   }catch(err){ t.innerHTML='<div class="empty">⚠️ تعذّر التحميل</div>'; }
 }
+// ── محاكاة الصفقة قبل البدء (المرحلة ٣) ──────────────────────────────────
+function mclose(){document.getElementById('simModal').classList.remove('open');}
+function cls(role){const r=role||'';return r.indexOf('مالك')>-1?'o':(r.indexOf('مستأجر')>-1?'s':'m');}
+function who(role){const r=role||'';return r.indexOf('مالك')>-1?'🏠 المالك':(r.indexOf('مستأجر')>-1?'🧑 المستأجر':'🤝 الوسيط');}
+
+async function simDeal(seeker, listing){
+  let modal=document.getElementById('simModal');
+  if(!modal){modal=document.createElement('div');modal.id='simModal';modal.className='modal';
+    modal.innerHTML='<div class="mbox"><div class="mhead"><h3>🧪 محاكاة الصفقة</h3><button class="mclose" onclick="mclose()">إغلاق ✕</button></div><div class="mbody" id="simBody"></div></div>';
+    document.body.appendChild(modal);}
+  const body=document.getElementById('simBody');
+  modal.classList.add('open');
+  body.innerHTML='<div class="empty">⏳ يجري تحضير الوكلاء وتشغيل المحاكاة… (دقيقة–دقيقتان)</div>';
+  try{
+    const start=await (await fetch(`${API}/lab/simulate-deal`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seeker_phone:seeker,listing_phone:listing})})).json();
+    if(!start.ok){body.innerHTML='<div class="errbar bad">تعذّر البدء: '+(start.error||'')+'</div>';return;}
+    const job=start.job_id;
+    let res=null;
+    for(let i=0;i<40;i++){
+      await new Promise(r=>setTimeout(r,4000));
+      const s=await (await fetch(`${API}/lab/simulate-status?job_id=${job}`)).json();
+      body.innerHTML=`<div class="empty">⏳ ${s.stage||'يعمل'}… (${i*4}ث)</div>`;
+      if(s.status==='done'){res=s.result;break;}
+      if(s.status==='error'){body.innerHTML='<div class="errbar bad">خطأ: '+(s.error||'')+'</div>';return;}
+    }
+    if(!res){body.innerHTML='<div class="errbar bad">انتهت المهلة</div>';return;}
+    renderSim(body,res);
+  }catch(e){body.innerHTML='<div class="errbar bad">⚠️ تعذّر الاتصال</div>';}
+}
+
+function renderSim(body,res){
+  const sim=res.simulation||{}, fe=res.fact_errors||[], msgs=sim.messages||[];
+  const head=`<div style="font-size:.82rem;color:var(--mut);margin-bottom:10px">
+    الحالة: <b>${sim.final_status||'—'}</b> · السعر المتّفق: <b>${sim.agreed_price?Number(sim.agreed_price).toLocaleString():'—'}</b> · جولات: ${sim.rounds||'—'}</div>`;
+  let err;
+  if(!fe.length){err='<div class="errbar ok">✅ لا أخطاء حقائق مرصودة — الصفقة متّسقة.</div>';}
+  else{err='<div class="errbar bad">🔍 رُصد '+fe.length+' خلل في اتساق الصفقة:'+
+    fe.map(i=>`<div class="erritem"><span class="sev ${i.sev}">${i.sev==='high'?'حرج':i.sev==='med'?'متوسط':'بسيط'}</span><b>${i.type}:</b> ${i.detail}</div>`).join('')+'</div>';}
+  const chat=msgs.map(m=>`<div class="crow ${cls(m.from)}"><div class="cwho">${who(m.from)}</div><div class="cbub">${(m.text||'').replace(/</g,'&lt;')}</div></div>`).join('');
+  body.innerHTML=head+err+'<div style="border-top:1px solid var(--bd);margin:8px 0;padding-top:8px;font-size:.78rem;color:var(--mut)">مجرى الحوار:</div>'+chat;
+}
+
 // افتح الحافظ افتراضياً
 toggle('memory');
 </script>
