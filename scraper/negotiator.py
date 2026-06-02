@@ -25,11 +25,35 @@ BASE_URL        = os.getenv("MASAED_BASE_URL", "https://masaed.wardyat.net")
 
 # ── Retry wa_send ──────────────────────────────────────────────────────────────
 
+def _classify_outbound(text: str) -> str:
+    """يصنّف نيّة ردّ الوسيط الصادر (للطبقة الثالثة الصادرة في صفحة خلف الكواليس)."""
+    t = text or ""
+    if "تم إتمام الصفقة" in t:                       return "إتمام"
+    if "اقتراح الوسط" in t:                          return "اقتراح وسط"
+    if ("بانتظار «موافق»" in t or "ما زال بانتظار" in t
+            or "ما زال قائم" in t):                  return "تذكير"
+    if "🔔" in t and "يطلب" in t:                    return "ترحيل"
+    if "بخصوص استفسارك" in t:                        return "ردّ معلومة"
+    if "أنا الوسيط بين" in t:                        return "شرح وساطة"
+    if "وصل عرضك" in t:                              return "تأكيد عرض"
+    if "تم تسجيل موافقتك" in t or "وصلت موافقتك" in t: return "تأكيد قبول"
+    if "سؤال وجيه" in t and "أستوضح" in t:           return "ترحيل سؤال"
+    if "أُنهي التفاوض" in t or "تم إنهاء التفاوض" in t: return "إنهاء"
+    if "وضّح لي" in t and "السعر النهائي" in t:       return "طلب توضيح"
+    return "ردّ وسيط"
+
+
 def wa_send(phone: str, text: str, retries: int = 3) -> bool:
-    """wa_send مع 3 محاولات وتراجع أسي."""
+    """wa_send مع 3 محاولات وتراجع أسي. (في المحاكاة يُستبدَل بـ_routed_wa_send فلا يُتتبَّع)."""
     for attempt in range(retries):
         try:
             _wa_send_raw(phone, text)
+            try:                                    # الطبقة الثالثة الصادرة: سجّل نيّة الوسيط
+                import route_trace
+                route_trace.add("صادر", phone, "negotiate",
+                                _classify_outbound(text), "💬 المفاوض", text)
+            except Exception:
+                pass
             return True
         except Exception as e:
             print(f"[WA RETRY {attempt+1}/{retries}] {phone}: {e}", flush=True)
