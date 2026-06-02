@@ -235,6 +235,11 @@ def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
                                                 "orig_owner": owner, "score": m["score"], "sent": bool(sent)})
                     print(f"[OUTBOUND-TEST] بادرت رقم الاختبار {test_owner} بدل {owner} (درجة {m['score']})", flush=True)
                     print(f"[ROUTE] {test_owner} → goal=outbound → 📤 المبادرة الباردة (الصادر، اختبار)", flush=True)
+                    try:
+                        import route_trace
+                        route_trace.add("صادر", test_owner, "outbound", "مبادرة باردة", "📤 المبادرة الباردة", msg)
+                    except Exception:
+                        pass
                     break    # عرض واحد يكفي في الاختبار
                 # وضع الإنتاج: المالك الحقيقي (محكوم بحارس wa_send)
                 sent = wa_send(owner, msg)
@@ -254,6 +259,11 @@ def run_outbound_for_seeker(seeker: dict, do_scrape: bool = True,
                                             "score": m["score"], "sent": bool(sent)})
                 print(f"[OUTBOUND] بادرت المالك {owner} (عرض #{m['id']}, درجة {m['score']})", flush=True)
                 print(f"[ROUTE] {owner} → goal=outbound → 📤 المبادرة الباردة (الصادر)", flush=True)
+                try:
+                    import route_trace
+                    route_trace.add("صادر", owner, "outbound", "مبادرة باردة", "📤 المبادرة الباردة", msg)
+                except Exception:
+                    pass
         return summary
     finally:
         if own:

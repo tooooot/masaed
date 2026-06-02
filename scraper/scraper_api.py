@@ -764,6 +764,13 @@ def _phone_variants(phones):
     return list(out)
 
 
+@app.route("/route/trace")
+def route_trace_feed():
+    """آخر الرسائل مُفكّكة إلى طبقات (الاتجاه/السياق/النية/الموظف)."""
+    import route_trace
+    return jsonify({"trace": route_trace.recent(60)})
+
+
 @app.route("/negotiate/cleanup-tests", methods=["POST"])
 def negotiate_cleanup_tests():
     """احذف التفاوضات التجريبية: عنوان فيه 🧪 أو «اختبار»، أو paused_test،
@@ -1264,6 +1271,13 @@ def _route_message(phone: str, text: str, media_url: str = None):
     # سطر تتبّع دائم: مَن تعامل مع هذه الرسالة؟ (الرقم ← الهدف ← الموظف)
     def _route(emp):
         print(f"[ROUTE] {phone} → goal={goal} → {emp}", flush=True)
+        try:
+            import route_trace
+            from intent_parser import parse_intent
+            it = parse_intent(text).get("intent", "-") if text else "-"
+            route_trace.add("وارد", phone, goal, it, emp, text)
+        except Exception as _e:
+            print(f"[TRACE] تعذّر: {_e}", flush=True)
 
     # 💬 المفاوض: تفاوض نشط (نص و/أو وسائط)
     if (text or media_url) and handle_negotiation_message(phone, text, media_url):
