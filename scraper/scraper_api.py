@@ -1261,12 +1261,18 @@ def _route_message(phone: str, text: str, media_url: str = None):
     goal = session_goal(phone)
     print(f"[GOAL] {phone} → {goal} ({GOAL_LABELS.get(goal, goal)})", flush=True)
 
+    # سطر تتبّع دائم: مَن تعامل مع هذه الرسالة؟ (الرقم ← الهدف ← الموظف)
+    def _route(emp):
+        print(f"[ROUTE] {phone} → goal={goal} → {emp}", flush=True)
+
     # 💬 المفاوض: تفاوض نشط (نص و/أو وسائط)
     if (text or media_url) and handle_negotiation_message(phone, text, media_url):
+        _route("💬 المفاوض")
         return
 
     # 📞 ردّ على مبادرة باردة (مالك معلِن في حراج)
     if goal == "cold_reply" and text and handle_cold_reply(phone, text):
+        _route("📞 المبادرة cold_reply")
         return
 
     # 📝 المسجّل والمعدّل: جلسة تعديل جارية أو طلب تعديل صريح
@@ -1274,13 +1280,17 @@ def _route_message(phone: str, text: str, media_url: str = None):
                  (not Registrar.in_registration(phone) and Registrar.wants_edit(text))):
         reply = Registrar.edit(phone, text)
         if reply:
+            _route("📝 المسجّل/المعدّل (تعديل)")
             bot_wa(phone, reply)
             return
 
     # 📝 المسجّل: كل ما تبقى (جمع البيانات)
     reply = Registrar.handle(phone, text, media_url)
     if reply:
+        _route("📝 المسجّل (جمع/تسجيل)")
         bot_wa(phone, reply)
+    else:
+        _route("🧠 الحافظ فقط (بلا ردّ)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
