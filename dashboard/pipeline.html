@@ -33,6 +33,9 @@ h2{font-size:1.02rem;margin:20px 0 8px;border-right:3px solid var(--blu);padding
 .arrow{color:var(--mut);font-size:.7rem}
 .msg .txt{color:var(--mut);font-size:.76rem;margin-top:4px;white-space:pre-wrap}
 .msg .ph{color:#5a6672;font-size:.66rem}
+.shadow{margin-top:6px}
+.shadow summary{cursor:pointer;color:var(--blu);font-size:.72rem;user-select:none}
+.shadow .step{font-size:.76rem;color:var(--tx);background:#0b0f14;border:1px solid var(--bd);border-radius:6px;padding:4px 8px;margin-top:4px}
 .empty{color:var(--mut);text-align:center;padding:24px}
 .refresh{background:var(--blu);color:#001;border:0;border-radius:7px;padding:4px 12px;font-size:.74rem;cursor:pointer;font-weight:700}
 .auto{font-size:.72rem;color:var(--mut)}
@@ -143,12 +146,16 @@ async function loadFeed(){
       const out=m.direction==='صادر';
       const dir=out?'<span class="chip dir-out">📤 صادرة</span>':'<span class="chip dir-in">📥 واردة</span>';
       const who=out?'نيّتنا':'نيّته';
+      const moodChip=m.mood&&m.mood!=='neutral'?`<span class="chip" style="color:var(--red);border-color:var(--red)">🎭 ${m.mood}</span>`:'';
+      const shadow=(m.analysis&&m.analysis.length)
+        ? `<details class="shadow"><summary>🔬 الظلّ — كيف عالجناها</summary>${m.analysis.map(a=>`<div class="step">${a.replace(/</g,'&lt;')}</div>`).join('')}</details>` : '';
       return `<div class="msg" style="--c:${out?'var(--org)':'var(--blu)'}">
         <div class="row1">${dir}<span class="arrow">←</span>${ctxChip(m.context)}<span class="arrow">←</span>
           <span class="chip intent">${who}: ${(INT[m.intent]||['·',m.intent||'—'])[1]}</span>
-          <span class="chip emp">${m.employee||'—'}</span>
+          ${moodChip}<span class="chip emp">${m.employee||'—'}</span>
           <span class="ph" dir="ltr">${m.phone}</span><span class="ph">${when(m.ts)}</span></div>
         ${m.text?`<div class="txt">${m.text.replace(/</g,'&lt;')}</div>`:''}
+        ${shadow}
       </div>`;}).join('');
   }catch(e){el.innerHTML='<div class="empty">⚠️ تعذّر تحميل البثّ</div>';}
 }

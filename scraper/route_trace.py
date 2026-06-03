@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 _TRACE = deque(maxlen=80)
 
 
-def add(direction, phone, context="", intent="", employee="", text=""):
+def add(direction, phone, context="", intent="", employee="", text="",
+        mood="", analysis=None):
     _TRACE.appendleft({
         "ts": datetime.now(timezone.utc).isoformat(),
         "direction": direction,                 # وارد | صادر
@@ -14,7 +15,9 @@ def add(direction, phone, context="", intent="", employee="", text=""):
         "context": context or "",               # L2: goal/سياق
         "intent": intent or "",                 # L3: النية
         "employee": employee or "",             # الموظف المتعامل
-        "text": (text or "")[:90],
+        "text": (text or "")[:120],
+        "mood": mood or "",                     # المزاج (طبقة المشاعر)
+        "analysis": analysis or [],             # سلسلة استدلال «الظلّ»
     })
 
 

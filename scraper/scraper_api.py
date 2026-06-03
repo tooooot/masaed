@@ -1318,14 +1318,33 @@ def _route_message(phone: str, text: str, media_url: str = None):
     goal = session_goal(phone)
     print(f"[GOAL] {phone} → {goal} ({GOAL_LABELS.get(goal, goal)})", flush=True)
 
-    # سطر تتبّع دائم: مَن تعامل مع هذه الرسالة؟ (الرقم ← الهدف ← الموظف)
+    # سطر تتبّع دائم + سلسلة استدلال «الظلّ»: ماذا فهمنا وكيف توجّهنا ولماذا؟
+    _EXPECT = {"cold_reply": "📞 المبادرة", "negotiate": "💬 المفاوض",
+               "new_inbound": "📝 المسجّل", "complete_registration": "📝 المسجّل",
+               "returning": "📝 المسجّل"}
     def _route(emp):
         print(f"[ROUTE] {phone} → goal={goal} → {emp}", flush=True)
         try:
             import route_trace
             from intent_parser import parse_intent
-            it = parse_intent(text).get("intent", "-") if text else "-"
-            route_trace.add("وارد", phone, goal, it, emp, text)
+            from strategy import detect_mood, strategy_for
+            parsed = parse_intent(text) if text else {"intent": "-"}
+            it = parsed.get("intent", "-")
+            mood = detect_mood(text, parsed) if text else "neutral"
+            st = strategy_for(mood)
+            known = "نعرفه (سياق سابق)" if goal != "new_inbound" else "جديد لا نعرفه"
+            exp = _EXPECT.get(goal, "")
+            align = ("✅ الإجراء ضمن أهدافنا" if (exp and exp in emp) or not exp
+                     else f"⚠️ خرجنا عن المتوقّع (المنتظر: {exp})")
+            analysis = [
+                f"📩 الرسالة قالت: {(text or '')[:70]}",
+                f"🧠 السياق: {GOAL_LABELS.get(goal, goal)} — {known}",
+                f"🎯 فهمتُ نيّته: {it} · مزاجه: {mood}",
+                f"🧭 استراتيجيتي: {st['tone']} — " + ("أتقدّم نحو السعر" if st['push_price'] else "احتواء بلا إلحاح على السعر"),
+                f"👤 وجّهتُها إلى: {emp}",
+                align,
+            ]
+            route_trace.add("وارد", phone, goal, it, emp, text, mood, analysis)
         except Exception as _e:
             print(f"[TRACE] تعذّر: {_e}", flush=True)
 
