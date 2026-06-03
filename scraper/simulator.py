@@ -337,7 +337,8 @@ class CriticAssistant:
         # max_tokens أوسع + تعليمة صرامة JSON لتقليل القطع/التشويه
         prompt += ("\n\nمهم: أعد JSON صالحاً فقط بلا أي نص خارجه، واجعل كل بند في "
                    "issues جملة قصيرة جداً (≤ 12 كلمة) كي لا يُقطع الرد.")
-        result = call_llm(_SYS_CRITIC, prompt, model="anthropic", max_tokens=3000, timeout=80)
+        # DeepSeek فقط (لا Anthropic) — بقرار المستخدم: مزوّد واحد
+        result = call_llm(_SYS_CRITIC, prompt, model="deepseek", max_tokens=3000, timeout=80)
 
         if not result:
             print("[CRITIC] لا يوجد رد من Anthropic", flush=True)
