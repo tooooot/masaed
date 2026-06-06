@@ -458,7 +458,7 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
           <button class="btn btn-blue btn-sm" id="btnAutoMatch" onclick="runAutoMatch(this)">🔗 مطابقة جديدة</button>
-          <button class="btn btn-primary btn-sm" id="btnAutoSim" onclick="runAutoSimulate(this)">🤖 حاكِ أفضل ٣ توفيقات</button>
+          <button class="btn btn-primary btn-sm" id="btnAutoSim" onclick="runAutoSimulate(this)">🤖 حاكِ أفضل ٥ توفيقات</button>
           <span id="autoSimNote" style="font-size:.72rem;color:var(--muted);align-self:center"></span>
         </div>
         <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px">يدوي بالكامل: «مطابقة» تحدّث التوفيقات، و«حاكِ» يملأ الصفقات (بلا أي إرسال). البوّابة تبقى باعتمادك.</div>
@@ -1136,8 +1136,8 @@ async function runAutoMatch(btn){
 let _autoSimPoll=null;
 async function runAutoSimulate(btn){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span> بدء…';
-  const d=await sfetch('/cron/auto-simulate?async=1&batch=3',{method:'POST'});
-  if(!d||d.ok===false){toast('⚠️ '+((d&&d.error)||'تعذّر البدء'),4000);btn.disabled=false;btn.innerHTML='🤖 حاكِ أفضل ٣ توفيقات';return;}
+  const d=await sfetch('/cron/auto-simulate?async=1&batch=5',{method:'POST'});
+  if(!d||d.ok===false){toast('⚠️ '+((d&&d.error)||'تعذّر البدء'),4000);btn.disabled=false;btn.innerHTML='🤖 حاكِ أفضل ٥ توفيقات';return;}
   toast('🤖 بدأت المحاكاة في الخلفية (بلا إرسال) — ستظهر الصفقات تباعاً',5000);
   pollAutoSim(btn);
 }
@@ -1151,7 +1151,7 @@ async function pollAutoSim(btn){
     else{
       clearInterval(_autoSimPoll);_autoSimPoll=null;
       if(note)note.textContent=`✅ تمّت: ${st.done||0} صفقة`;
-      if(btn){btn.disabled=false;btn.innerHTML='🤖 حاكِ أفضل ٣ توفيقات';}
+      if(btn){btn.disabled=false;btn.innerHTML='🤖 حاكِ أفضل ٥ توفيقات';}
       loadDeals();
     }
   },5000);

@@ -1128,10 +1128,19 @@ def _build_deal_sim(seeker_phone, listing_id, listing_phone):
         with conn_p.cursor() as cur:
             cur.execute("SELECT photos FROM sanad.masaed_listings WHERE id=%s", (listing_id,))
             rr = cur.fetchone()
+            # بدائل: أفضل عروض أخرى مطابقة لنفس الباحث (إن لم يرغب بهذا العرض)
+            cur.execute("""SELECT l.title, l.price, l.city FROM sanad.masaed_matches m
+                           JOIN sanad.masaed_listings l ON l.id=m.listing_id
+                           WHERE m.req_phone=%s AND m.listing_id<>%s AND m.status='pending'
+                           ORDER BY m.score DESC NULLS LAST LIMIT 2""",
+                        (seeker_phone, listing_id))
+            alts = [{"title": a[0], "price": a[1], "city": a[2]} for a in cur.fetchall()]
         conn_p.close()
         extras["owner_has_photos"] = bool(rr and rr[0])
+        extras["alternatives"] = alts
     except Exception:
         extras["owner_has_photos"] = False
+        extras["alternatives"] = []
     return {"reg_id": 41, "seeker_data": seeker_data, "owner_data": owner_data,
             "extras": extras, "offer": offer, "seeker": seeker}
 
@@ -2306,14 +2315,18 @@ def _run_auto_simulate(batch):
         conn = get_conn()
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT m.id, m.req_phone, m.lst_phone, m.listing_id, m.score
-                FROM sanad.masaed_matches m
-                WHERE m.status='pending'
-                  AND m.req_phone IS NOT NULL AND m.lst_phone IS NOT NULL
-                  AND m.listing_id IN (SELECT id FROM sanad.masaed_listings)
-                  AND NOT EXISTS (SELECT 1 FROM sanad.masaed_deal_gate g
-                                  WHERE g.seeker_phone=m.req_phone AND g.owner_phone=m.lst_phone)
-                ORDER BY m.score DESC NULLS LAST, m.matched_at DESC
+                SELECT id, req_phone, lst_phone, listing_id, score FROM (
+                  SELECT DISTINCT ON (m.req_phone)
+                         m.id, m.req_phone, m.lst_phone, m.listing_id, m.score
+                  FROM sanad.masaed_matches m
+                  WHERE m.status='pending'
+                    AND m.req_phone IS NOT NULL AND m.lst_phone IS NOT NULL
+                    AND m.listing_id IN (SELECT id FROM sanad.masaed_listings)
+                    AND NOT EXISTS (SELECT 1 FROM sanad.masaed_deal_gate g
+                                    WHERE g.seeker_phone=m.req_phone AND g.owner_phone=m.lst_phone)
+                  ORDER BY m.req_phone, m.score DESC NULLS LAST
+                ) t
+                ORDER BY t.score DESC NULLS LAST
                 LIMIT 80
             """)
             rows = cur.fetchall()
