@@ -379,6 +379,19 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
         except Exception as _e:
             print(f"[FACTCHECK] تعذّر: {_e}", flush=True)
             fact_errors = []
+
+        # 🧠 مساعد الحافظ: حوّل المحادثة إلى حقائق منظّمة لكل طرف (ما تعلّمناه من الحوار)
+        progress("الحافظ: استخلاص حقائق المحادثة")
+        party_facts = None
+        try:
+            import comprehension
+            party_facts = {
+                "seeker": comprehension.extract_conversation_facts(transcript, "seeker"),
+                "owner":  comprehension.extract_conversation_facts(transcript, "owner"),
+            }
+        except Exception as _e:
+            print(f"[KEEPER] تعذّر استخلاص حقائق المحادثة: {_e}", flush=True)
+
         return {
             "ok": True,
             "reg_id": reg_id,
@@ -390,6 +403,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
                 "mediator_state": mediator_state,
             },
             "understanding": understanding,
+            "party_facts": party_facts,
             "evaluation": evaluation,
             "fact_errors": fact_errors,
             "recommendations": critic.get_recommendations(),

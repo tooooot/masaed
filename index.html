@@ -1132,13 +1132,14 @@ function renderTimeline(t){
   const off=t.offer||{}, ou=off.understanding||{};
   const sim=t.simulation, dec=t.decision||{}, exe=t.execution;
   _tlSim=(sim&&sim.result)||null;
+  window._tlData=t;
   const step=(n,icon,title,inner,done)=>`
     <div style="display:flex;gap:10px;margin-bottom:12px">
       <div style="flex:0 0 28px"><div style="width:28px;height:28px;border-radius:50%;background:${done?'#2ea04330':'var(--card)'};border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.8rem">${icon}</div></div>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:.8rem;margin-bottom:4px">${n}. ${title}</div><div style="font-size:.77rem;color:var(--muted);line-height:1.6">${inner}</div></div>
     </div>`;
-  const reqInner=`${req.title?`<div style="color:var(--text)">${esc(req.title)}</div>`:''}${req.url?`<a href="${esc(req.url)}" target="_blank" style="color:var(--blue)">🔗 إعلان الطلب</a>`:''}${req.body?`<div style="margin-top:3px">${esc(req.body)}</div>`:''}${(ru.intent||ru.summary)?`<div style="color:var(--green-light);margin-top:3px">🧠 ${esc(ru.intent||ru.summary)}</div>`:''}${(ru.deal_breakers&&ru.deal_breakers.length)?`<div style="color:var(--red);margin-top:2px">🚫 ${ru.deal_breakers.map(esc).join('، ')}</div>`:''}`||'—';
-  const offInner=`${off.title?`<div style="color:var(--text)">${esc(off.title)}${off.price?` — 💰 ${Number(off.price).toLocaleString('ar')} ر`:''}</div>`:''}${off.url?`<a href="${esc(off.url)}" target="_blank" style="color:var(--blue)">🔗 الإعلان</a>`:''}${(ou.intent||ou.summary)?`<div style="color:var(--blue);margin-top:3px">🧠 نية المالك: ${esc(ou.intent||ou.summary)}</div>`:''}`||'—';
+  const reqInner=`${req.title?`<div style="color:var(--text)">${esc(req.title)}</div>`:''}${req.url?`<a href="${esc(req.url)}" target="_blank" style="color:var(--blue)">🔗 إعلان الطلب</a>`:''}${req.body?`<div style="margin-top:3px">${esc(req.body)}</div>`:''}${(ru.intent||ru.summary)?`<div style="color:var(--green-light);margin-top:3px">🧠 ${esc(ru.intent||ru.summary)}</div>`:''}${(ru.deal_breakers&&ru.deal_breakers.length)?`<div style="color:var(--red);margin-top:2px">🚫 ${ru.deal_breakers.map(esc).join('، ')}</div>`:''}<div style="margin-top:6px"><button class="btn btn-ghost btn-sm" onclick="openDossier('seeker')">👤 ملف الباحث (إعلان + محادثة)</button></div>`;
+  const offInner=`${off.title?`<div style="color:var(--text)">${esc(off.title)}${off.price?` — 💰 ${Number(off.price).toLocaleString('ar')} ر`:''}</div>`:''}${off.url?`<a href="${esc(off.url)}" target="_blank" style="color:var(--blue)">🔗 الإعلان</a>`:''}${(ou.intent||ou.summary)?`<div style="color:var(--blue);margin-top:3px">🧠 نية المالك: ${esc(ou.intent||ou.summary)}</div>`:''}<div style="margin-top:6px"><button class="btn btn-ghost btn-sm" onclick="openDossier('owner')">👤 ملف المالك (إعلان + محادثة)</button></div>`;
   const asmt=(_tlSim&&_tlSim.understanding&&_tlSim.understanding.assessment)||{};
   const VER={fit:'✅ متوافق',partial:'⚠️ جزئي',mismatch:'❌ غير متوافق',unknown:'—'};
   const compInner=asmt.verdict?`الحكم: ${VER[asmt.verdict]||asmt.verdict}${typeof asmt.score==='number'?` (${asmt.score}%)`:''}${(asmt.deal_breakers&&asmt.deal_breakers.length)?`<div style="color:var(--red)">🚫 ${asmt.deal_breakers.map(esc).join('، ')}</div>`:''}`:'لم يُحسب فهم عميق بعد';
@@ -1161,7 +1162,51 @@ function renderTimeline(t){
     </div>
     <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`);
 }
-function showSimFromTimeline(){ if(_tlSim) gateOverlay(simReviewInner(_tlSim)+`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`); }
+function showSimFromTimeline(){ if(_tlSim) gateOverlay(simReviewInner(_tlSim)+`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="renderTimeline(window._tlData)">← رجوع</button> <button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`); }
+
+// 👤 لوحة ملف الطرف: قسمان — المأخوذ من الإعلان، والمأخوذ من سياق المحادثة (الحافظ)
+const _LBL_AD={property_type:'نوع العقار',city:'المدينة',district:'الحي',rooms:'الغرف',bathrooms:'دورات المياه',area_sqm:'المساحة',furnished:'مفروشة',finishing:'التشطيب',price:'السعر',conditions:'الشروط',intent:'النية',special:'مزايا',deal_breakers:'نواقض',summary:'الخلاصة'};
+const _LBL_CONV={household_type:'النوع',family_size:'عدد الأسرة',occupation:'العمل/الوظيفة',viewing_requested:'طلب معاينة',asked_about:'سأل عن',preferences:'تفضيلات',constraints:'قيود/شروط',notes:'ملاحظات الحافظ'};
+function _kvList(obj,labels){
+  if(!obj||typeof obj!=='object') return '<div style="color:var(--muted)">لا بيانات</div>';
+  const rows=[];
+  for(const k in obj){
+    if(k.startsWith('_')) continue;
+    let v=obj[k];
+    if(v===null||v===''||v===undefined||(Array.isArray(v)&&!v.length)) continue;
+    if(Array.isArray(v)) v=v.map(x=>esc(String(x))).join('، ');
+    else if(v===true) v='نعم'; else if(v===false) v='لا'; else v=esc(String(v));
+    rows.push(`<div style="display:flex;gap:6px;font-size:.76rem;margin-bottom:3px"><span style="color:var(--muted);min-width:92px;flex:0 0 auto">${esc(labels[k]||k)}:</span><span>${v}</span></div>`);
+  }
+  return rows.join('')||'<div style="color:var(--muted)">لا بيانات بعد</div>';
+}
+function openDossier(role){
+  const t=window._tlData||{};
+  const party = role==='seeker'?(t.request||{}):(t.offer||{});
+  const fromAd = party.understanding||{};
+  const pf=(t.simulation&&t.simulation.result&&t.simulation.result.party_facts)||{};
+  const fromConv = pf[role]||{};
+  const who = role==='seeker'?'🔍 الباحث':'🏠 المالك';
+  gateOverlay(`
+    <div style="max-height:74vh;overflow:auto">
+      <div style="font-weight:800;margin-bottom:6px">👤 ملف ${who} — صفقة #${t.deal_no||'—'}</div>
+      <div style="font-size:.7rem;color:var(--muted);margin-bottom:8px" dir="ltr">${esc(party.phone||'')}</div>
+      ${party.url?`<a href="${esc(party.url)}" target="_blank" class="btn btn-ghost btn-sm">🔗 الإعلان الأصلي</a>`:''}
+      ${party.body?`<div style="font-size:.74rem;color:var(--muted);margin:8px 0;line-height:1.6">${esc(party.body)}</div>`:''}
+      <div style="margin-top:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px">
+        <div style="font-weight:700;font-size:.78rem;margin-bottom:6px;color:var(--green-light)">📋 المأخوذ من الإعلان</div>
+        ${_kvList(fromAd,_LBL_AD)}
+      </div>
+      <div style="margin-top:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px">
+        <div style="font-weight:700;font-size:.78rem;margin-bottom:6px;color:var(--blue)">💬 المأخوذ من سياق المحادثة (مساعد الحافظ)</div>
+        ${_kvList(fromConv,_LBL_CONV)}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary btn-sm" onclick="renderTimeline(window._tlData)">← رجوع للسلسلة</button>
+      <button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button>
+    </div>`);
+}
 
 function openNegFromMatch(negId) {
   if(!negId) return;

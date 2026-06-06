@@ -143,6 +143,35 @@ def assess(seeker_profile, offer_profile):
     return res
 
 
+_SYS_CONV = """أنت «مساعد الحافظ» في منصّة عقارية. اقرأ محادثة تفاوض واستخرج الحقائق الجديدة
+التي ظهرت في الحوار عن الطرف ({role_label}) — التي لم تكن في إعلانه أصلاً (مثل عدد أفراد الأسرة،
+عزّاب/عائلة، جهة عمله، ما طلب معاينته، تفضيلاته، شروطه). أعد JSON صالحاً فقط:
+{
+  "household_type": "عائلة|عزّاب|null",
+  "family_size": عدد أفراد الأسرة رقماً أو null,
+  "occupation": "عمل/جهة عمل الطرف إن ذُكر أو null",
+  "viewing_requested": true إن طلب معاينة/موعد وإلا false,
+  "asked_about": ["ما سأل عنه فعلاً: صور، فيديو، موقع، موعد معاينة، مفتاح، عامل عمارة، مصعد، موقف، فواتير..."],
+  "preferences": ["تفضيلات/اهتمامات ظهرت في الحوار"],
+  "constraints": ["شروط/قيود ذكرها (مدة، دفعات، عوائل فقط...)"],
+  "notes": "سطر يلخّص ما تعلّمناه عنه من المحادثة"
+}
+لا تخترع ما لم يُذكر. اترك ما لا تجده null أو []."""
+
+
+def extract_conversation_facts(conversation, role="seeker"):
+    """🧠 الحافظ: يحوّل المحادثة إلى حقائق منظّمة عن الطرف (ما تعلّمناه من سياق الحوار)."""
+    if not conversation:
+        return {}
+    role_label = "المستأجر/الباحث" if role == "seeker" else "المالك"
+    convo = "\n".join(f"{m.get('from','')}: {m.get('text','')}"
+                      for m in conversation if m.get("text"))[:4000]
+    raw = call_llm(_SYS_CONV.replace("{role_label}", role_label), convo,
+                   model=MODEL, max_tokens=500, timeout=40)
+    res = _robust_json(raw) if raw else None
+    return res if isinstance(res, dict) else {"_degraded": True}
+
+
 def enrich_specs(offer_profile, base="مواصفات عادية"):
     """يبني وصف مواصفات غنيّاً من الفهم لتغذية وكيل المالك في المحاكاة."""
     if not offer_profile:
