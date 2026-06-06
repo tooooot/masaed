@@ -1076,20 +1076,10 @@ def _phone_variants(phones):
     return list(out)
 
 
-@app.route("/lab/simulate-deal", methods=["POST"])
-def lab_simulate_deal():
-    """محاكاة صفقة قبل بدئها: يحمّل حقائق الإعلان+الطلب، يشغّل الوكلاء الثلاثة
-    (مالك يعرف الإعلان / مستأجر / وسيط)، ويكشف أخطاء الحقائق. async عبر job_id."""
-    from sim_engine import start_job, RateLimited
+def _build_deal_sim(seeker_phone, listing_id, listing_phone):
+    """يبني مدخلات محاكاة الصفقة (مشترك بين /lab/simulate-deal و /cron/auto-simulate).
+    يُرجع dict فيه seeker_data/owner_data/extras/offer/seeker، أو None إن لا عرض."""
     from deal_preparer import _assemble
-    from bot import get_conn
-    data = request.get_json() or {}
-    seeker_phone = (data.get("seeker_phone") or "").strip()
-    listing_id = data.get("listing_id")
-    listing_phone = (data.get("listing_phone") or "").strip() or None
-    if not seeker_phone:
-        return jsonify({"ok": False, "error": "seeker_phone مطلوب"}), 400
-
     conn = get_conn()
     try:
         deal = _assemble(seeker_phone, listing_id, listing_phone, conn)
@@ -1098,9 +1088,7 @@ def lab_simulate_deal():
     offer = deal.get("offer") or {}
     seeker = deal.get("seeker") or {}
     if not offer:
-        return jsonify({"ok": False, "error": "لا يوجد عرض مرتبط بهذه الصفقة"}), 404
-
-    # وكيل المالك يعرف كل حقائق الإعلان؛ وكيل المستأجر يعرف طلبه
+        return None
     owner_data = {
         "phone": offer.get("phone"), "title": offer.get("title"),
         "city": offer.get("city"), "rooms": offer.get("rooms"),
@@ -1113,11 +1101,8 @@ def lab_simulate_deal():
         "budget_annual": seeker.get("budget_annual"),
         "for_family": seeker.get("for_family"),
         "special_notes": f"يبحث في {seeker.get('city') or '—'}",
-        "url": seeker.get("url"),   # رابط طلب الباحث في حراج (لإثبات إعلانه عند المبادرة)
+        "url": seeker.get("url"),
     }
-    reg_id = data.get("reg_id") or 41
-
-    # 🧠 الفهم العميق (هجين): مرّر النص الكامل للعرض ليفهمه LLM داخل عامل المحاكاة
     offer_text = " ".join(str(offer.get(k) or "") for k in ("title", "body")).strip()
     if offer.get("advertiser"):
         offer_text += f"\nاسم المعلن/صاحب الترخيص: {offer.get('advertiser')}"
@@ -1126,9 +1111,7 @@ def lab_simulate_deal():
         "seeker_phone": seeker_phone,
         "owner_phone": offer.get("phone") or listing_phone,
         "listing_id": listing_id,
-        "offer_text": offer_text,
-        "offer_source": "listing",
-        "offer_id": offer.get("id"),
+        "offer_text": offer_text, "offer_source": "listing", "offer_id": offer.get("id"),
         "seeker_profile": {
             "city": seeker.get("city"), "rooms": seeker.get("rooms"),
             "budget": seeker.get("budget_annual"), "for_family": seeker.get("for_family"),
@@ -1139,8 +1122,6 @@ def lab_simulate_deal():
         "seeker_source": "lead" if seeker.get("lead_id") else "registration",
         "seeker_id": seeker.get("lead_id") or seeker.get("phone"),
     }
-
-    # هل للعقار صور مخزّنة؟ (إن لا → مساعد المسجل يطلبها من المالك في المحاكاة)
     try:
         conn_p = get_conn()
         _ensure_listing_photos_col(conn_p)
@@ -1151,6 +1132,28 @@ def lab_simulate_deal():
         extras["owner_has_photos"] = bool(rr and rr[0])
     except Exception:
         extras["owner_has_photos"] = False
+    return {"reg_id": 41, "seeker_data": seeker_data, "owner_data": owner_data,
+            "extras": extras, "offer": offer, "seeker": seeker}
+
+
+@app.route("/lab/simulate-deal", methods=["POST"])
+def lab_simulate_deal():
+    """محاكاة صفقة قبل بدئها: يحمّل حقائق الإعلان+الطلب، يشغّل الوكلاء الثلاثة
+    (مالك يعرف الإعلان / مستأجر / وسيط)، ويكشف أخطاء الحقائق. async عبر job_id."""
+    from sim_engine import start_job, RateLimited
+    data = request.get_json() or {}
+    seeker_phone = (data.get("seeker_phone") or "").strip()
+    listing_id = data.get("listing_id")
+    listing_phone = (data.get("listing_phone") or "").strip() or None
+    if not seeker_phone:
+        return jsonify({"ok": False, "error": "seeker_phone مطلوب"}), 400
+
+    inp = _build_deal_sim(seeker_phone, listing_id, listing_phone)
+    if not inp:
+        return jsonify({"ok": False, "error": "لا يوجد عرض مرتبط بهذه الصفقة"}), 404
+    seeker_data = inp["seeker_data"]; owner_data = inp["owner_data"]
+    extras = inp["extras"]; offer = inp["offer"]; seeker = inp["seeker"]
+    reg_id = data.get("reg_id") or inp["reg_id"]
 
     try:
         job_id = start_job(reg_id, seeker_data, owner_data, extras=extras)
@@ -2285,6 +2288,67 @@ def cron_auto_match():
         print(f"[CRON] expire cleanup: {e}", flush=True)
 
     return jsonify({"ok": True, "matches": match_result, "expired_closed": expired})
+
+
+@app.route("/cron/auto-simulate", methods=["POST"])
+def cron_auto_simulate():
+    """🤖 يحاكي أفضل التوفيقات المعلّقة تلقائياً (بلا أي إرسال واتساب) ويسجّلها
+    pending_review لتظهر في «الشفافية» جاهزةً لمراجعتك. آمن تماماً: لا تواصل، لا اعتماد.
+    البوّابة تبقى يدوية. Query/Body: batch (افتراضي 3، أقصى 6)."""
+    import deal_gate
+    from sim_engine import start_job, get_status, RateLimited
+    import time as _t
+    body = request.get_json(silent=True) or {}
+    batch = min(int(request.args.get("batch", body.get("batch", 3))), 6)
+    ensure_matches_table()
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT m.id, m.req_phone, m.lst_phone, m.listing_id, m.score
+            FROM sanad.masaed_matches m
+            WHERE m.status='pending'
+              AND m.req_phone IS NOT NULL AND m.lst_phone IS NOT NULL
+              AND m.listing_id IN (SELECT id FROM sanad.masaed_listings)
+              AND NOT EXISTS (SELECT 1 FROM sanad.masaed_deal_gate g
+                              WHERE g.seeker_phone=m.req_phone AND g.owner_phone=m.lst_phone)
+            ORDER BY m.score DESC NULLS LAST, m.matched_at DESC
+            LIMIT 80
+        """)
+        rows = cur.fetchall()
+    conn.close()
+
+    done, skipped, results = 0, 0, []
+    for mid, req_phone, lst_phone, listing_id, score in rows:
+        if done >= batch:
+            break
+        if _is_test_phone(req_phone) or _is_test_phone(lst_phone) or req_phone == lst_phone:
+            skipped += 1; continue
+        try:
+            inp = _build_deal_sim(req_phone, listing_id, lst_phone)
+            if not inp or not (inp["offer"] or {}).get("phone"):
+                skipped += 1; continue
+            job = start_job(inp["reg_id"], inp["seeker_data"], inp["owner_data"], extras=inp["extras"])
+            st = None
+            for _ in range(50):
+                _t.sleep(3)
+                st = get_status(job)
+                if st and st.get("status") in ("done", "error"):
+                    break
+            res = (st or {}).get("result") or {}
+            if not res.get("ok"):
+                skipped += 1; continue
+            ev = res.get("evaluation") or {}; sm = res.get("simulation") or {}
+            deal_gate.record(req_phone, lst_phone, listing_id, job,
+                             {"score": ev.get("overall_score"), "final_status": sm.get("final_status"),
+                              "fact_errors": len(res.get("fact_errors") or [])},
+                             gate_status="pending_review", by="auto-sim")
+            done += 1
+            results.append({"match": mid, "score": ev.get("overall_score")})
+        except RateLimited:
+            break
+        except Exception as e:
+            print(f"[AUTO-SIM] {e}", flush=True); skipped += 1
+    return jsonify({"ok": True, "simulated": done, "skipped": skipped, "results": results})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
