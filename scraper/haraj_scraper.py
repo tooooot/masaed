@@ -148,6 +148,17 @@ async def scrape_single_url(url: str) -> dict:
                 if nb: location["neighborhood"] = nb.group(1)
                 if ct: location["city"] = ct.group(1)
 
+            # اسم المعلن: صاحب الترخيص في النص (مكاتب/مؤسسات)، أو اسم الناشر من بيانات الصفحة
+            advertiser = None
+            mlic = re.search(r'صاحب الترخيص\s*[:：]\s*([^\n\r\\]{2,60})', body)
+            if mlic:
+                advertiser = mlic.group(1).strip()
+            else:
+                for nm in re.findall(r'"name"\s*:\s*"([^"]{2,50})"', html):
+                    if nm.lower() not in ('haraj',) and 'haraj' not in nm.lower() and nm not in (title or ''):
+                        advertiser = nm.strip()
+                        break
+
             # الـphone من الـtext
             full_text = title + ' ' + body
             phone = None
@@ -181,6 +192,7 @@ async def scrape_single_url(url: str) -> dict:
                 'images': images[:10],  # أول 10 صور
                 'video': video,
                 'location': location,
+                'advertiser': advertiser,
                 'user_name': "",
                 'user_verified': False,
                 'post_date': None,

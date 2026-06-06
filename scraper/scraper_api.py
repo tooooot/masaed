@@ -807,16 +807,16 @@ def deal_timeline():
 
         # 2) العرض — بـ listing_id أولاً (أوثق)، وإلا برقم المالك
         if lid:
-            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms,photos,location
+            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms,photos,location,advertiser
                            FROM sanad.masaed_listings WHERE id=%s""", (lid,))
         else:
-            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms,photos,location
+            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms,photos,location,advertiser
                            FROM sanad.masaed_listings WHERE phone=%s ORDER BY id DESC LIMIT 1""", (o,))
         r = cur.fetchone()
         if r:
             tl["offer"] = {"listing_id": r[0], "url": r[1], "title": r[2], "body": r[3],
                            "city": r[4], "price": r[5], "phone": r[6], "property_type": r[7],
-                           "photos": r[9] or [], "location": r[10],
+                           "photos": r[9] or [], "location": r[10], "advertiser": r[11],
                            "rooms": r[8], "understanding": _comp(cur, "listing", r[0])}
         else:
             tl["offer"] = {"phone": o}
@@ -836,6 +836,7 @@ def _ensure_listing_photos_col(conn):
     with conn.cursor() as cur:
         cur.execute("ALTER TABLE sanad.masaed_listings ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'")
         cur.execute("ALTER TABLE sanad.masaed_listings ADD COLUMN IF NOT EXISTS location JSONB")
+        cur.execute("ALTER TABLE sanad.masaed_listings ADD COLUMN IF NOT EXISTS advertiser TEXT")
         conn.commit()
 
 
@@ -846,12 +847,12 @@ def listing_photos(lst_id):
     conn = get_conn()
     _ensure_listing_photos_col(conn)
     with conn.cursor() as cur:
-        cur.execute("SELECT url, photos, location FROM sanad.masaed_listings WHERE id=%s", (lst_id,))
+        cur.execute("SELECT url, photos, location, advertiser FROM sanad.masaed_listings WHERE id=%s", (lst_id,))
         row = cur.fetchone()
     if not row:
         conn.close()
         return jsonify({"ok": False, "error": "العرض غير موجود"}), 404
-    url, photos, location = row[0], (row[1] or []), row[2]
+    url, photos, location, advertiser = row[0], (row[1] or []), row[2], row[3]
     force = request.method == "POST"
     if url and (force or not photos):
         try:
@@ -859,19 +860,22 @@ def listing_photos(lst_id):
             data = scrape_single_url_sync(url) or {}
             imgs = [i.get("url") for i in (data.get("images") or []) if isinstance(i, dict) and i.get("url")]
             loc = data.get("location")
-            if imgs or loc:
+            adv = data.get("advertiser")
+            if imgs or loc or adv:
                 photos = imgs or photos
                 location = loc or location
+                advertiser = adv or advertiser
                 with conn.cursor() as cur:
-                    cur.execute("UPDATE sanad.masaed_listings SET photos=%s, location=%s WHERE id=%s",
+                    cur.execute("UPDATE sanad.masaed_listings SET photos=%s, location=%s, advertiser=%s WHERE id=%s",
                                 (json.dumps(photos, ensure_ascii=False),
-                                 json.dumps(location, ensure_ascii=False) if location else None, lst_id))
+                                 json.dumps(location, ensure_ascii=False) if location else None,
+                                 advertiser, lst_id))
                     conn.commit()
         except Exception as e:
             print(f"[PHOTOS] تعذّر سحب صور/موقع العرض {lst_id}: {e}", flush=True)
     conn.close()
     return jsonify({"ok": True, "photos": photos, "count": len(photos),
-                    "location": location, "source": url})
+                    "location": location, "advertiser": advertiser, "source": url})
 
 
 @app.route("/negotiate/start", methods=["POST"])
@@ -1115,6 +1119,8 @@ def lab_simulate_deal():
 
     # 🧠 الفهم العميق (هجين): مرّر النص الكامل للعرض ليفهمه LLM داخل عامل المحاكاة
     offer_text = " ".join(str(offer.get(k) or "") for k in ("title", "body")).strip()
+    if offer.get("advertiser"):
+        offer_text += f"\nاسم المعلن/صاحب الترخيص: {offer.get('advertiser')}"
     extras = {
         "comprehend": bool(offer_text),
         "seeker_phone": seeker_phone,

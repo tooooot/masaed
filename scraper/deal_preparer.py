@@ -43,13 +43,14 @@ def _assemble(seeker_phone, listing_id, listing_phone, conn):
             where, val = ("id=%s", listing_id) if listing_id else \
                          ("phone=%s AND status<>'declined'", listing_phone)
             cur.execute(f"""SELECT id, title, body, city, rooms, property_type,
-                                   price, phone, url
+                                   price, phone, url,
+                                   COALESCE(photos,'[]'::jsonb) AS photos, location, advertiser
                             FROM sanad.masaed_listings WHERE {where}
                             ORDER BY id DESC LIMIT 1""", (val,))
             oc = [d[0] for d in cur.description]; orow = cur.fetchone()
             offer = dict(zip(oc, orow)) if orow else None
-    if offer:
-        offer["photos"] = []   # العروض المسحوبة بلا صور مخزّنة (الصور في رابط الإعلان)
+    if offer and not offer.get("photos"):
+        offer["photos"] = []
     return {"seeker": seeker, "offer": offer,
             "ready": bool(offer and seeker.get("phone"))}
 

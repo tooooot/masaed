@@ -1166,7 +1166,7 @@ function renderTimeline(t){
 function showSimFromTimeline(){ if(_tlSim) gateOverlay(simReviewInner(_tlSim)+`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="renderTimeline(window._tlData)">← رجوع</button> <button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`); }
 
 // 👤 لوحة ملف الطرف: قسمان — المأخوذ من الإعلان، والمأخوذ من سياق المحادثة (الحافظ)
-const _LBL_AD={property_type:'نوع العقار',city:'المدينة',district:'الحي',rooms:'الغرف',bathrooms:'دورات المياه',area_sqm:'المساحة',furnished:'مفروشة',finishing:'التشطيب',price:'السعر',conditions:'الشروط',intent:'النية',special:'مزايا',deal_breakers:'نواقض',summary:'الخلاصة'};
+const _LBL_AD={property_type:'نوع العقار',city:'المدينة',district:'الحي',rooms:'الغرف',bathrooms:'دورات المياه',area_sqm:'المساحة',furnished:'مفروشة',finishing:'التشطيب',price:'السعر',conditions:'الشروط',intent:'النية',advertiser_name:'اسم المعلن',advertiser_type:'نوع المعلن',special:'مزايا',deal_breakers:'نواقض',summary:'الخلاصة'};
 const _LBL_CONV={household_type:'النوع',family_size:'عدد الأسرة',occupation:'العمل/الوظيفة',viewing_requested:'طلب معاينة',asked_about:'سأل عن',preferences:'تفضيلات',constraints:'قيود/شروط',notes:'ملاحظات الحافظ'};
 function _kvList(obj,labels){
   if(!obj||typeof obj!=='object') return '<div style="color:var(--muted)">لا بيانات</div>';
@@ -1281,13 +1281,22 @@ function _dealTabContent(t){
   }
   if(_dealTab==='landing') return _landingHtml(t);
   if(_dealTab==='photos') return card(head('🖼️ الصور المسحوبة من الإعلان')+`<div id="dealPhotoArea">${_photosHtml(off.photos,off.listing_id)}</div><div style="font-size:.72rem;color:var(--muted);margin-top:8px">تُسحب من إعلان حراج وتُخزَّن في صفحة المستخدم وتظهر في صفحة الهبوط.</div>`);
-  if(_dealTab==='ad') return card(head('🏷️ إعلان حراج (المسحوب الخام)')+
-      `${off.url?`<a href="${esc(off.url)}" target="_blank" class="btn btn-ghost btn-sm">🔗 الإعلان على حراج</a>`:''}
-       <div style="font-size:.8rem;margin-top:6px"><b>${esc(off.title||'—')}</b></div>
-       ${off.body?`<div style="font-size:.76rem;color:var(--muted);line-height:1.7;margin-top:4px">${esc(off.body)}</div>`:''}
-       <div style="margin-top:8px">${_kvList({city:off.city,price:off.price,rooms:off.rooms,property_type:off.property_type},_LBL_AD)}</div>`)+
-      card(head('🧠 المستخرَج من الإعلان (فهم عميق)')+_kvList(ou,_LBL_AD))+
+  if(_dealTab==='ad'){
+    const adv=(ou.advertiser_name||off.advertiser);
+    const advT=ou.advertiser_type;
+    return `<div style="font-size:.78rem;font-weight:800;margin:4px 0 8px">🔍 إعلان الطلب (الباحث)</div>`+
+      card((req.url?`<a href="${esc(req.url)}" target="_blank" class="btn btn-ghost btn-sm">🔗 طلب الباحث على حراج</a>`:'<div style="color:var(--yellow);font-size:.76rem">لا رابط حراج لهذا الطلب (قد يكون مسجّلاً يدوياً)</div>')+
+        `<div style="font-size:.8rem;margin-top:6px"><b>${esc(req.title||'—')}</b></div>
+         ${req.body?`<div style="font-size:.76rem;color:var(--muted);line-height:1.7;margin-top:4px">${esc(req.body)}</div>`:''}`)+
+      card(head('🧠 المستخرَج من طلب الباحث')+_kvList(ru,_LBL_AD))+
+      `<div style="font-size:.78rem;font-weight:800;margin:14px 0 8px">🏠 إعلان العرض (المالك)</div>`+
+      card((off.url?`<a href="${esc(off.url)}" target="_blank" class="btn btn-ghost btn-sm">🔗 إعلان العقار على حراج</a>`:'')+
+        `<div style="font-size:.8rem;margin-top:6px"><b>${esc(off.title||'—')}</b></div>
+         ${adv?`<div style="font-size:.77rem;margin-top:4px">👤 المعلن: <b>${esc(adv)}</b> ${advT?`<span class="badge ${advT==='مؤسسة'?'badge-pending':'badge-approved'}">${esc(advT)}</span>`:''}</div>`:''}
+         ${off.body?`<div style="font-size:.76rem;color:var(--muted);line-height:1.7;margin-top:4px">${esc(off.body)}</div>`:''}`)+
+      card(head('🧠 المستخرَج من إعلان العقار (فهم عميق)')+_kvList(ou,_LBL_AD))+
       card(head('🗄️ المسجّل عندنا (قاعدة بياناتنا)')+(off.registration?_kvList(off.registration,_LBL_AD):'<div style="color:var(--yellow);font-size:.78rem">لم يُسجَّل بعد — البيانات مبدئية من الإعلان فقط.</div>'));
+  }
   if(_dealTab==='prelim') return `<div style="font-size:.74rem;color:var(--muted);margin-bottom:10px">التسجيل المبدئي يُبنى من فهم الإعلان قبل تأكيد العميل. عند تأكيده في المحادثة يصبح مسجّلاً في قاعدتنا.</div>`+
       card(head('🔍 الباحث '+regBadge(req.registration))+_kvList(ru,_LBL_AD))+
       card(head('🏠 المالك '+regBadge(off.registration))+_kvList(ou,_LBL_AD));
@@ -1308,7 +1317,7 @@ function _dealTabContent(t){
 }
 function _landingHtml(t){
   const off=t.offer||{},u=off.understanding||{};
-  const oName=off.name||'صاحب العقار',photos=off.photos||[];
+  const oName=off.name||u.advertiser_name||off.advertiser||'صاحب العقار',photos=off.photos||[];
   const hero=photos.length?`<img src="${esc(photos[0])}" style="width:100%;height:230px;object-fit:cover">`:`<div style="height:230px;background:linear-gradient(135deg,#1f6feb33,#2ea04333);display:flex;align-items:center;justify-content:center;font-size:3rem">🏠</div>`;
   const spec=(ic,lb,v)=>v?`<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px;text-align:center"><div style="font-size:1.1rem">${ic}</div><div style="font-size:.64rem;color:var(--muted)">${lb}</div><div style="font-size:.78rem;font-weight:700">${esc(String(v))}</div></div>`:'';
   const fur=u.furnished===true?'مفروش':u.furnished===false?'بدون أثاث':'';
