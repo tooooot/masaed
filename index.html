@@ -1323,6 +1323,7 @@ function _landingHtml(t){
          ${spec('📐','م²',u.area_sqm)}${spec('🏷️','النوع',off.property_type||u.property_type)}${spec('✨','التشطيب',u.finishing)}${spec('🛋️','الأثاث',fur)}
        </div>
        ${(u.special&&u.special.length)?`<div style="font-size:.78rem;margin-bottom:8px">⭐ ${u.special.map(esc).join(' · ')}</div>`:''}
+       ${off.location&&off.location.map?`<a href="${esc(off.location.map)}" target="_blank" class="btn btn-ghost btn-sm" style="margin-bottom:8px">📍 الموقع على الخريطة${off.location.neighborhood?' — '+esc(off.location.neighborhood):''}</a>`:''}
        ${off.body?`<div style="font-size:.77rem;color:var(--muted);line-height:1.8">${esc(off.body)}</div>`:''}
        ${photos.length>1?`<div style="display:flex;gap:6px;overflow-x:auto;margin-top:12px">${photos.slice(1,12).map(p=>`<img src="${esc(p)}" loading="lazy" style="height:74px;border-radius:8px">`).join('')}</div>`:(photos.length?'':`<div id="dealPhotoArea" style="margin-top:12px">${_photosHtml(off.photos,off.listing_id)}</div>`)}
        ${off.url?`<a href="${esc(off.url)}" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:12px">🔗 المصدر (حراج)</a>`:''}

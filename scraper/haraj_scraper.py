@@ -136,6 +136,18 @@ async def scrape_single_url(url: str) -> dict:
                 if video_src:
                     video = {"url": video_src, "thumbnail": None}
 
+            # الموقع: إحداثيات من رابط خرائط جوجل المضمّن في الصفحة
+            location = None
+            geo = re.search(r'maps\.google\.com/\?q=(-?\d+\.\d+),(-?\d+\.\d+)', html)
+            if geo:
+                lat, lng = geo.group(1), geo.group(2)
+                location = {"lat": float(lat), "lng": float(lng),
+                            "map": f"https://maps.google.com/?q={lat},{lng}"}
+                nb = re.search(r'geoNeighborhood\\?"\s*:\s*\\?"([^"\\]{1,40})', html)
+                ct = re.search(r'geoCity\\?"\s*:\s*\\?"([^"\\]{1,40})', html)
+                if nb: location["neighborhood"] = nb.group(1)
+                if ct: location["city"] = ct.group(1)
+
             # الـphone من الـtext
             full_text = title + ' ' + body
             phone = None
@@ -168,6 +180,7 @@ async def scrape_single_url(url: str) -> dict:
                 'property_type': extract_type(full_text),
                 'images': images[:10],  # أول 10 صور
                 'video': video,
+                'location': location,
                 'user_name': "",
                 'user_verified': False,
                 'post_date': None,
