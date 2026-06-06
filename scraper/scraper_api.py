@@ -566,6 +566,224 @@ def match_lead(lead_id):
     return jsonify({"lead": lead, "matches": scored[:5], "total_searched": len(listings)})
 
 
+@app.route("/deal/candidates/<int:lead_id>")
+def deal_candidates(lead_id):
+    """🧠 الصفقة الكاملة: طلب الباحث (رابط+نص+نية) + أفضل 5 عروض، كلٌّ مفهوم بعمق
+    ومُقيَّم توافقه الحقيقي عبر LLM. ?deep=0 يرجع regex فقط فوراً (بلا LLM)."""
+    deep = request.args.get("deep", "1") == "1"
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT id, url, title, body, city, phone, phone_hidden, listing_type, status
+                       FROM sanad.masaed_leads WHERE id=%s""", (lead_id,))
+        cols = [d[0] for d in cur.description]; row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"ok": False, "error": "الطلب غير موجود"}), 404
+        lead = dict(zip(cols, row))
+
+        cur.execute("""SELECT id, title, body, city, property_type, rooms, price,
+                              phone, phone_hidden, url, status
+                       FROM sanad.masaed_listings WHERE status='active'
+                       ORDER BY CASE WHEN city=%s THEN 0 ELSE 1 END, scraped_at DESC LIMIT 200""",
+                    (lead.get('city') or '',))
+        lcols = [d[0] for d in cur.description]
+        listings = [dict(zip(lcols, r)) for r in cur.fetchall()]
+    conn.close()
+
+    scored = []
+    for lst in listings:
+        sc, reason, missing = score_match(lead, lst)
+        scored.append({**lst, "score": sc, "reason": reason, "missing": missing})
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    top = scored[:5]
+
+    request_understanding = None
+    if deep and top:
+        import comprehension
+        from concurrent.futures import ThreadPoolExecutor
+        lead_text = " ".join(str(lead.get(k) or "") for k in ("title", "body")).strip()
+        try:
+            request_understanding = comprehension.extract_profile(
+                lead_text, role="seeker", source="lead", ext_id=lead_id)
+        except Exception as e:
+            print(f"[DEAL] فهم الطلب فشل: {e}", flush=True)
+
+        def _work(lst):
+            try:
+                otext = " ".join(str(lst.get(k) or "") for k in ("title", "body")).strip()
+                prof = comprehension.extract_profile(otext, role="listing",
+                                                     source="listing", ext_id=lst["id"])
+                asmt = comprehension.assess(request_understanding or {}, prof)
+                return lst["id"], prof, asmt
+            except Exception as e:
+                print(f"[DEAL] فهم عرض {lst.get('id')} فشل: {e}", flush=True)
+                return lst["id"], None, None
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for lid, prof, asmt in ex.map(_work, top):
+                for t in top:
+                    if t["id"] == lid:
+                        t["understanding"] = prof
+                        t["assessment"] = asmt
+        # رتّب نهائياً بحكم الفهم العميق إن توفّر (وإلا regex)
+        def _rank(t):
+            a = t.get("assessment") or {}
+            return a.get("score") if isinstance(a.get("score"), (int, float)) else t.get("score", 0)
+        top.sort(key=_rank, reverse=True)
+
+    return jsonify({"ok": True, "lead": {**lead, "understanding": request_understanding},
+                    "candidates": top, "deep": deep})
+
+
+def _deal_stage(gate_status, neg_status):
+    """يحسب مرحلة الصفقة في خط الأنابيب من حالة البوّابة + التفاوض."""
+    if neg_status == "agreed":
+        return "agreed", "✅ اتفاق"
+    if neg_status in ("cancelled", "failed"):
+        return "failed", "✋ متعثّرة"
+    if neg_status == "active":
+        return "negotiating", "💬 تفاوض جارٍ"
+    if gate_status == "rejected":
+        return "rejected", "❌ مرفوضة"
+    if gate_status in ("approved", "consumed"):
+        return "approved", "✅ معتمدة (لم يبدأ التنفيذ)"
+    if gate_status == "pending_review":
+        return "review", "🧪 محاكاة بانتظار المراجعة"
+    return "candidate", "🔎 مرشّحة"
+
+
+@app.route("/deals/list")
+def deals_list():
+    """قائمة الصفقات (كل زوج باحث↔مالك مرّ بالبوّابة أو التفاوض) + مرحلتها الحالية."""
+    deals = {}
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT seeker_phone, owner_phone, listing_id, gate_status,
+                              sim_score, sim_status, created_at, decided_at
+                       FROM sanad.masaed_deal_gate ORDER BY created_at DESC LIMIT 300""")
+        for r in cur.fetchall():
+            deals[(r[0], r[1])] = {
+                "seeker_phone": r[0], "owner_phone": r[1], "listing_id": r[2],
+                "gate_status": r[3], "sim_score": r[4], "sim_status": r[5],
+                "ts": (r[7] or r[6]), "neg_status": None, "neg_id": None,
+                "title": None, "agreed_price": None,
+            }
+        cur.execute("""SELECT lead_phone, listing_phone, listing_id, status, agreed_price,
+                              listing_title, id, created_at, updated_at
+                       FROM sanad.masaed_negotiations ORDER BY created_at DESC LIMIT 300""")
+        for r in cur.fetchall():
+            key = (r[0], r[1])
+            d = deals.setdefault(key, {
+                "seeker_phone": r[0], "owner_phone": r[1], "listing_id": r[2],
+                "gate_status": None, "sim_score": None, "sim_status": None, "ts": None,
+            })
+            d["neg_status"] = r[3]; d["agreed_price"] = r[4]
+            d["title"] = d.get("title") or r[5]; d["neg_id"] = r[6]
+            d["ts"] = d.get("ts") or r[8] or r[7]
+    conn.close()
+
+    out = []
+    for d in deals.values():
+        stage, label = _deal_stage(d.get("gate_status"), d.get("neg_status"))
+        ts = d.get("ts")
+        out.append({**d, "stage": stage, "stage_label": label,
+                    "ts": ts.isoformat() if ts else None})
+    out.sort(key=lambda x: x.get("ts") or "", reverse=True)
+    return jsonify({"ok": True, "deals": out})
+
+
+@app.route("/deal/timeline")
+def deal_timeline():
+    """🔭 السلسلة الكاملة لصفقة: طلب → عرض → فهم → محاكاة → قرار → تنفيذ."""
+    import deal_gate, comprehension  # noqa
+    s = deal_gate.norm(request.args.get("seeker_phone", ""))
+    o = deal_gate.norm(request.args.get("owner_phone", ""))
+    if not s or not o:
+        return jsonify({"ok": False, "error": "seeker_phone و owner_phone مطلوبان"}), 400
+
+    conn = get_conn()
+    tl = {"seeker_phone": s, "owner_phone": o}
+
+    def _comp(cur, source, ext_id):
+        if ext_id is None:
+            return None
+        cur.execute("SELECT profile FROM sanad.masaed_comprehension WHERE source=%s AND ext_id=%s",
+                    (source, str(ext_id)))
+        r = cur.fetchone()
+        return r[0] if r else None
+
+    with conn.cursor() as cur:
+        # 4) القرار (البوّابة) — أول ما نجلبه لأنه يحمل listing_id
+        cur.execute("""SELECT gate_status,sim_score,sim_status,fact_errors,decided_at,decided_by,created_at,listing_id
+                       FROM sanad.masaed_deal_gate WHERE seeker_phone=%s AND owner_phone=%s""", (s, o))
+        r = cur.fetchone()
+        lid = None
+        if r:
+            lid = r[7]
+            tl["decision"] = {"gate_status": r[0], "sim_score": r[1], "sim_status": r[2],
+                              "fact_errors": r[3], "decided_at": r[4].isoformat() if r[4] else None,
+                              "decided_by": r[5], "created_at": r[6].isoformat() if r[6] else None}
+        else:
+            tl["decision"] = None
+
+        # 5) التنفيذ (التفاوض) — مصدر إضافي لـ listing_id
+        cur.execute("""SELECT id,status,agreed_price,listing_title,chat_log,created_at,updated_at,listing_id
+                       FROM sanad.masaed_negotiations WHERE lead_phone=%s AND listing_phone=%s
+                       ORDER BY created_at DESC LIMIT 1""", (s, o))
+        r = cur.fetchone()
+        if r:
+            lid = lid or r[7]
+            chat = r[4] if isinstance(r[4], list) else []
+            tl["execution"] = {"neg_id": r[0], "status": r[1], "agreed_price": r[2],
+                               "title": r[3], "messages": chat[-12:] if chat else [],
+                               "created_at": r[5].isoformat() if r[5] else None,
+                               "updated_at": r[6].isoformat() if r[6] else None}
+        else:
+            tl["execution"] = None
+
+        # 3) المحاكاة (آخر تشغيل محفوظ) — بالزوج أو بـ listing_id (أوثق عند اختلاف الأرقام)
+        cur.execute("""SELECT result, created_at, listing_id FROM sanad.masaed_sim_runs
+                       WHERE seeker_phone=%s AND (owner_phone=%s OR (listing_id IS NOT NULL AND listing_id=%s))
+                       ORDER BY created_at DESC LIMIT 1""", (s, o, lid))
+        r = cur.fetchone()
+        if r:
+            lid = lid or r[2]
+            tl["simulation"] = {"result": r[0], "at": r[1].isoformat() if r[1] else None}
+        else:
+            tl["simulation"] = None
+
+        # 1) الطلب
+        cur.execute("""SELECT id,url,title,body,city,phone FROM sanad.masaed_leads
+                       WHERE phone=%s AND listing_type='wanted' ORDER BY scraped_at DESC LIMIT 1""", (s,))
+        r = cur.fetchone()
+        if r:
+            tl["request"] = {"lead_id": r[0], "url": r[1], "title": r[2], "body": r[3],
+                             "city": r[4], "phone": r[5], "understanding": _comp(cur, "lead", r[0])}
+        else:
+            tl["request"] = {"phone": s}
+
+        # 2) العرض — بـ listing_id أولاً (أوثق)، وإلا برقم المالك
+        if lid:
+            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms
+                           FROM sanad.masaed_listings WHERE id=%s""", (lid,))
+        else:
+            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms
+                           FROM sanad.masaed_listings WHERE phone=%s ORDER BY id DESC LIMIT 1""", (o,))
+        r = cur.fetchone()
+        if r:
+            tl["offer"] = {"listing_id": r[0], "url": r[1], "title": r[2], "body": r[3],
+                           "city": r[4], "price": r[5], "phone": r[6], "property_type": r[7],
+                           "rooms": r[8], "understanding": _comp(cur, "listing", r[0])}
+        else:
+            tl["offer"] = {"phone": o}
+    conn.close()
+
+    stage, label = _deal_stage((tl.get("decision") or {}).get("gate_status"),
+                               (tl.get("execution") or {}).get("status"))
+    tl["stage"] = stage; tl["stage_label"] = label
+    return jsonify({"ok": True, "timeline": tl})
+
+
 @app.route("/negotiate/start", methods=["POST"])
 def negotiate_start():
     """Start negotiation between a lead and a listing."""
@@ -803,8 +1021,29 @@ def lab_simulate_deal():
         "special_notes": f"يبحث في {seeker.get('city') or '—'}",
     }
     reg_id = data.get("reg_id") or 41
+
+    # 🧠 الفهم العميق (هجين): مرّر النص الكامل للعرض ليفهمه LLM داخل عامل المحاكاة
+    offer_text = " ".join(str(offer.get(k) or "") for k in ("title", "body")).strip()
+    extras = {
+        "comprehend": bool(offer_text),
+        "seeker_phone": seeker_phone,
+        "owner_phone": offer.get("phone") or listing_phone,
+        "listing_id": listing_id,
+        "offer_text": offer_text,
+        "offer_source": "listing",
+        "offer_id": offer.get("id"),
+        "seeker_profile": {
+            "city": seeker.get("city"), "rooms": seeker.get("rooms"),
+            "budget": seeker.get("budget_annual"), "for_family": seeker.get("for_family"),
+            "property_type": seeker.get("property_type"),
+        },
+        "seeker_text": (" ".join(str(seeker.get(k) or "") for k in ("title", "body")).strip()
+                        or (seeker.get("special_notes") or "").strip() or None),
+        "seeker_source": "lead" if seeker.get("lead_id") else "registration",
+        "seeker_id": seeker.get("lead_id") or seeker.get("phone"),
+    }
     try:
-        job_id = start_job(reg_id, seeker_data, owner_data)
+        job_id = start_job(reg_id, seeker_data, owner_data, extras=extras)
         print(f"[DEAL-SIM] محاكاة صفقة {seeker_phone}↔{offer.get('phone')} (job={job_id})", flush=True)
         return jsonify({"ok": True, "job_id": job_id, "status": "running",
                         "deal": {"offer": offer, "seeker": seeker}}), 202
@@ -1107,6 +1346,20 @@ def approve_match(match_id):
         conn.close()
         return jsonify({"ok": False, "error": "match not found"}), 404
     m = dict(zip(cols, row))
+
+    # 🚦 البوّابة الإلزامية: لا موافقة (ولا حتى رسالة تعريف) قبل محاكاة معتمدة لهذا الزوج.
+    import deal_gate
+    if not deal_gate.check(m.get("req_phone"), m.get("lst_phone"), conn):
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "gate": "blocked",
+            "error": ("⛔ لم تُحاكَ هذه الصفقة وتُعتمَد بعد. شغّل «🧪 محاكاة الصفقة»، "
+                      "راجِع النتيجة، ثم اعتمدها قبل بدء التواصل."),
+            "seeker_phone": m.get("req_phone"),
+            "owner_phone": m.get("lst_phone"),
+            "listing_id": m.get("listing_id"),
+        }), 403
 
     with conn.cursor() as cur:
         cur.execute("SELECT title FROM sanad.masaed_listings WHERE id=%s", (m['listing_id'],))
@@ -1628,6 +1881,69 @@ def lab_simulate_status():
         resp["error"] = job.get("error")
         resp["result"] = job.get("result")
     return jsonify(resp)
+
+
+@app.route("/gate/status", methods=["GET"])
+def gate_status():
+    """حالة بوّابة الصفقة لزوج (seeker, owner) — للواجهة لتعرف هل تُظهر «ابدأ التفاوض»."""
+    import deal_gate
+    seeker = request.args.get("seeker_phone", "")
+    owner  = request.args.get("owner_phone", "")
+    if not seeker or not owner:
+        return jsonify({"ok": False, "error": "seeker_phone و owner_phone مطلوبان"}), 400
+    return jsonify({"ok": True, "gate": deal_gate.status(seeker, owner)})
+
+
+@app.route("/gate/decision", methods=["POST"])
+def gate_decision():
+    """
+    قرار المستخدم على محاكاة صفقة: approve يفتح التواصل الحقيقي، reject يغلقه.
+    الاعتماد لا يُقبل إلا بوجود محاكاة مكتملة ناجحة (job_id منتهٍ بنجاح).
+    Body: {seeker_phone, owner_phone, decision: approve|reject, job_id?, listing_id?}
+    """
+    import deal_gate
+    from sim_engine import get_status
+    data = request.get_json() or {}
+    seeker   = (data.get("seeker_phone") or "").strip()
+    owner    = (data.get("owner_phone") or "").strip()
+    decision = (data.get("decision") or "").strip()
+    job_id   = data.get("job_id")
+    listing_id = data.get("listing_id")
+
+    if not seeker or not owner or decision not in ("approve", "reject"):
+        return jsonify({"ok": False,
+                        "error": "seeker_phone و owner_phone و decision(approve|reject) مطلوبة"}), 400
+
+    # استخرج ملخّص المحاكاة من الـjob (إن وُجد ومكتمل)
+    summary = {}
+    if job_id:
+        job = get_status(job_id)
+        if job and job.get("status") == "done":
+            res = job.get("result") or {}
+            ev  = res.get("evaluation") or {}
+            sim = res.get("simulation") or {}
+            summary = {
+                "score": ev.get("overall_score") or ev.get("score"),
+                "final_status": sim.get("final_status"),
+                "agreed_price": sim.get("agreed_price"),
+                "fact_errors": len(res.get("fact_errors") or []),
+                "rounds": sim.get("rounds"),
+            }
+
+    if decision == "approve":
+        # لا اعتماد دون محاكاة مكتملة فعلية
+        if not job_id or not summary:
+            return jsonify({"ok": False,
+                            "error": "لا يمكن الاعتماد دون محاكاة مكتملة — شغّل المحاكاة أولاً"}), 400
+        deal_gate.record(seeker, owner, listing_id, job_id, summary,
+                         gate_status="approved", by="dashboard")
+        print(f"[GATE] ✅ اعتُمدت صفقة {deal_gate.norm(seeker)}↔{deal_gate.norm(owner)} "
+              f"(score={summary.get('score')})", flush=True)
+        return jsonify({"ok": True, "gate_status": "approved", "summary": summary})
+
+    deal_gate.record(seeker, owner, listing_id, job_id, summary,
+                     gate_status="rejected", by="dashboard")
+    return jsonify({"ok": True, "gate_status": "rejected"})
 
 
 @app.route("/bot/reset", methods=["POST"])

@@ -228,6 +228,7 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
 .badge-closed{background:#f8514920;color:var(--red);}
 .badge-pending{background:#e3b34120;color:var(--yellow);}
 .badge-approved{background:#2ea04320;color:var(--green-light);}
+.badge-rejected{background:#f8514920;color:#f85149;}
 
 /* Desktop sidebar */
 @media(min-width:768px){
@@ -449,6 +450,17 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
       </div>
     </div>
 
+    <div class="page" id="page-deals">
+      <div class="page-body">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <div style="font-weight:800;font-size:1rem">🔭 شفافية الصفقات</div>
+          <button class="btn btn-ghost btn-sm" onclick="loadDeals()" style="margin-right:auto">🔄 تحديث</button>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px">كل صفقة كسلسلة كاملة: طلب → مرشحون → فهم → محاكاة → قرار → تنفيذ.</div>
+        <div id="deals-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
   </div><!-- /pages -->
   </div>
 
@@ -472,6 +484,9 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
     <div class="bn" id="bn-matches" onclick="nav('matches',this)">
       <div class="bn-icon">🎯</div><div class="bn-label">توفيق</div>
       <div class="bn-dot" id="bnd-matches"></div>
+    </div>
+    <div class="bn" id="bn-deals" onclick="nav('deals',this)">
+      <div class="bn-icon">🔭</div><div class="bn-label">الشفافية</div>
     </div>
     <div class="bn" id="bn-registrar" onclick="nav('registrar',this)">
       <div class="bn-icon">📋</div><div class="bn-label">مسجّل</div>
@@ -537,7 +552,7 @@ async function n8n(action, params={}) {
 }
 
 // ── Navigation ──
-const PAGES = ['home','leads','fill','sessions','matches','registrar','logs'];
+const PAGES = ['home','leads','fill','sessions','matches','registrar','logs','deals'];
 
 // ── Registrar ──
 async function searchRegistration() {
@@ -571,7 +586,7 @@ function nav(id, el) {
   if(el?.classList.contains('sb-item')) el.classList.add('active');
   document.querySelector('.pages').scrollTop = 0;
   document.getElementById('page-'+id).scrollTop = 0;
-  ({home:loadHome,leads:loadLeads,fill:loadFill,sessions:loadSessions,matches:loadMatches,logs:loadLogs})[id]?.();
+  ({home:loadHome,leads:loadLeads,fill:loadFill,sessions:loadSessions,matches:loadMatches,logs:loadLogs,deals:loadDeals})[id]?.();
 }
 
 // ── Toast ──
@@ -899,7 +914,7 @@ function renderMatches(data){
   </div>
   ${isPending?`<div class="match-actions">
     <button class="btn btn-red btn-sm" onclick="matchAct('${m.id}','reject',this)">✕ رفض</button>
-    <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;font-weight:700" onclick="matchAct('${m.id}','approve',this)">🤝 ابدأ التفاوض</button>
+    <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;font-weight:700" onclick="matchSimulate('${m.id}',this)">🧪 حاكِ ثم ابدأ</button>
   </div>`:''}
   ${isAwaiting?`<div class="match-actions">
     <div style="font-size:.72rem;color:var(--yellow);padding:6px 8px;background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;flex:1">
@@ -927,6 +942,224 @@ async function matchAct(id,action,btn){
   toast(msg, 4500);
   if(d.ok){loadMatches();loadHome();}else{btn.disabled=false;btn.innerHTML=action==='approve'?'✓ موافق':'✕ رفض';}
 }
+
+// ── 🚦 بوّابة الصفقة: محاكاة → مراجعة → اعتماد → بدء ──
+function findMatch(id){
+  for(const k in matchCache){const f=(matchCache[k]||[]).find(x=>String(x.id)===String(id));if(f)return f;}
+  return null;
+}
+async function matchSimulate(id,btn){
+  const m=findMatch(id);
+  if(!m){toast('❌ تعذّر إيجاد التوفيق');return;}
+  if(!m.req_phone||!m.lst_phone){toast('❌ رقم أحد الطرفين غير متاح للمحاكاة');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> محاكاة...';
+  gateOverlay(`<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:.85rem;color:var(--muted)" id="gov-stage">جارٍ تجهيز المحاكاة…</div></div>`);
+  try{
+    const s=await sfetch('/lab/simulate-deal',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seeker_phone:m.req_phone,listing_id:m.listing_id,listing_phone:m.lst_phone})});
+    if(!s.ok||!s.job_id){gateOverlay(govErr(s.error||'تعذّر بدء المحاكاة'));resetSimBtn(btn);return;}
+    const res=await gatePoll(s.job_id);
+    if(!res){gateOverlay(govErr('انتهت مهلة المحاكاة'));resetSimBtn(btn);return;}
+    if(!res.ok){gateOverlay(govErr(res.error||'فشلت المحاكاة'));resetSimBtn(btn);return;}
+    showGateReview(m,s.job_id,res);
+  }catch(e){gateOverlay(govErr(e.message));}
+  resetSimBtn(btn);
+}
+function resetSimBtn(btn){if(btn){btn.disabled=false;btn.innerHTML='🧪 حاكِ ثم ابدأ';}}
+async function gatePoll(jobId,maxMs=240000){
+  const dl=Date.now()+maxMs;
+  while(Date.now()<dl){
+    await new Promise(r=>setTimeout(r,2500));
+    let s;try{const r=await fetch(`${SCRAPER}/lab/simulate-status?job_id=${encodeURIComponent(jobId)}`);s=await r.json();}catch(e){continue;}
+    const st=document.getElementById('gov-stage');if(st&&s.stage)st.textContent=`جارٍ: ${s.stage}…`;
+    if(s.status==='done')return s.result;
+    if(s.status==='error')return s.result||{ok:false,error:s.error};
+  }
+  return null;
+}
+// محتوى مراجعة المحاكاة (مشترك بين مسار التوفيقات ومسار «الصفقة الكاملة»)
+function simReviewInner(res){
+  const sim=res.simulation||{},ev=res.evaluation||{};
+  const STA={agreed:'✅ تم الاتفاق',cancelled:'❌ أُلغي',active:'⏳ لم يُحسم',expired:'انتهت'};
+  const facts=(res.fact_errors||[]).length;
+  let conv='';
+  for(const msg of (sim.messages||[])){
+    const who=msg.from==='الوسيط'&&msg.to?`الوسيط → ${msg.to}`:msg.from;
+    const col=msg.from==='المالك'?'var(--blue)':msg.from==='الوسيط'?'var(--yellow)':'var(--green-light)';
+    conv+=`<div style="margin-bottom:8px;padding:8px;background:var(--card);border-right:3px solid ${col};border-radius:6px"><div style="font-size:.68rem;color:var(--muted);margin-bottom:3px">${esc(who)}</div><div style="font-size:.8rem;line-height:1.5">${esc(msg.text)}</div></div>`;
+  }
+  const lowWarn=(typeof ev.overall_score==='number'&&ev.overall_score<5)?`<div style="font-size:.75rem;color:var(--red);margin:6px 0">⚠️ تقييم منخفض (${ev.overall_score}/10) — راجِع جيداً.</div>`:'';
+  const factWarn=facts?`<div style="font-size:.75rem;color:var(--yellow);margin:6px 0">⚠️ ${facts} تضارب في الحقائق.</div>`:'';
+  const un=res.understanding||{},asmt=un.assessment||{};
+  const VER={fit:['badge-approved','✅ متوافقة'],partial:['badge-pending','⚠️ توافق جزئي'],mismatch:['badge-rejected','❌ غير متوافقة'],unknown:['badge-pending','— غير محدد']};
+  const vb=VER[asmt.verdict]||VER.unknown;
+  const li=a=>(a||[]).map(x=>`<li>${esc(x)}</li>`).join('');
+  let compHtml='';
+  if(un.assessment){
+    compHtml=`<div style="padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-weight:700;font-size:.8rem">🧠 الفهم العميق</span>
+        <span class="badge ${vb[0]}">${vb[1]}${typeof asmt.score==='number'?' · '+asmt.score+'%':''}</span>
+      </div>
+      ${un.offer&&un.offer.summary?`<div style="font-size:.75rem;color:var(--muted);margin-bottom:6px">العرض: ${esc(un.offer.summary)}</div>`:''}
+      ${asmt.deal_breakers&&asmt.deal_breakers.length?`<div style="font-size:.74rem;color:var(--red);margin-bottom:4px">🚫 نواقض:<ul style="margin:2px 18px 0">${li(asmt.deal_breakers)}</ul></div>`:''}
+      ${asmt.concerns&&asmt.concerns.length?`<div style="font-size:.74rem;color:var(--yellow);margin-bottom:4px">تحفّظات:<ul style="margin:2px 18px 0">${li(asmt.concerns)}</ul></div>`:''}
+      ${asmt.reasons&&asmt.reasons.length?`<div style="font-size:.74rem;color:var(--green-light)">نقاط قوة:<ul style="margin:2px 18px 0">${li(asmt.reasons)}</ul></div>`:''}
+    </div>`;
+  }
+  return `<div style="max-height:62vh;overflow:auto">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:.75rem">
+        <span class="badge badge-approved">التقييم العام ${ev.overall_score??'—'}/10</span>
+        <span class="badge badge-pending">${STA[sim.final_status]||sim.final_status||'—'}</span>
+        ${sim.agreed_price?`<span class="badge badge-approved">السعر ${Number(sim.agreed_price).toLocaleString('ar')} ر</span>`:''}
+      </div>
+      ${lowWarn}${factWarn}
+      ${compHtml}
+      <div style="font-weight:700;font-size:.8rem;margin:8px 0 6px">💬 المحادثة المُحاكاة</div>
+      ${conv||'<div style="color:var(--muted)">لا رسائل</div>'}
+    </div>
+    <div id="gov-msg" style="margin-top:10px"></div>`;
+}
+function showGateReview(m,jobId,res){
+  gateOverlay(simReviewInner(res)+`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+      <button class="btn btn-primary btn-sm" style="font-weight:700" onclick="gateApproveStart('${m.id}','${m.req_phone}','${m.lst_phone}','${m.listing_id||''}','${jobId}',this)">✅ اعتمد وابدأ التفاوض</button>
+      <button class="btn btn-ghost btn-sm" onclick="gateClose()">✕ أغلق دون اعتماد</button>
+    </div>`);
+}
+async function gateApproveStart(matchId,seeker,owner,listingId,jobId,btn){
+  const msg=document.getElementById('gov-msg');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> اعتماد…';
+  // 1) اعتمد البوّابة
+  const g=await sfetch('/gate/decision',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({seeker_phone:seeker,owner_phone:owner,decision:'approve',job_id:jobId,listing_id:listingId||null})});
+  if(!g.ok){if(msg)msg.innerHTML=`<div style="color:var(--red);font-size:.8rem">❌ ${esc(g.error||'فشل الاعتماد')}</div>`;btn.disabled=false;btn.innerHTML='✅ اعتمد وابدأ التفاوض';return;}
+  // 2) ابدأ التفاوض الحقيقي
+  btn.innerHTML='<span class="spinner"></span> بدء التفاوض…';
+  const d=await sfetch(`/matches/${matchId}/approve`,{method:'POST'});
+  if(d.ok){
+    gateClose();
+    toast(d.status==='awaiting_registration'?('⏳ '+(d.message||'رسائل تسجيل أُرسلت')):'🤝 بدأ التفاوض — أُرسلت الرسائل للطرفين',4500);
+    loadMatches();loadHome();
+  }else{
+    if(msg)msg.innerHTML=`<div style="color:var(--red);font-size:.8rem">❌ ${esc(d.error||'فشل بدء التفاوض')}</div>`;
+    btn.disabled=false;btn.innerHTML='✅ اعتمد وابدأ التفاوض';
+  }
+}
+// ── مسار «الصفقة الكاملة»: محاكاة عرض مرشّح → مراجعة → اعتماد → بدء عبر /negotiate/start ──
+async function dealSimulate(leadId, leadPhone, listingId, listingPhone, btn){
+  if(!leadPhone||!listingPhone){toast('❌ رقم أحد الطرفين غير متاح');return;}
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';}
+  gateOverlay(`<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:.85rem;color:var(--muted)" id="gov-stage">جارٍ تجهيز المحاكاة…</div></div>`);
+  try{
+    const s=await sfetch('/lab/simulate-deal',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seeker_phone:leadPhone,listing_id:listingId,listing_phone:listingPhone})});
+    if(!s.ok||!s.job_id){gateOverlay(govErr(s.error||'تعذّر بدء المحاكاة'));dealResetBtn(btn);return;}
+    const res=await gatePoll(s.job_id);
+    if(!res){gateOverlay(govErr('انتهت مهلة المحاكاة'));dealResetBtn(btn);return;}
+    if(!res.ok){gateOverlay(govErr(res.error||'فشلت المحاكاة'));dealResetBtn(btn);return;}
+    const ctx={leadId,listingId,seeker:leadPhone,owner:listingPhone};
+    gateOverlay(simReviewInner(res)+`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+        <button class="btn btn-primary btn-sm" style="font-weight:700" onclick='dealApproveStart(${JSON.stringify(ctx)},"${s.job_id}",this)'>✅ اعتمد وابدأ التفاوض</button>
+        <button class="btn btn-ghost btn-sm" onclick="gateClose()">✕ أغلق دون اعتماد</button>
+      </div>`);
+  }catch(e){gateOverlay(govErr(e.message));}
+  dealResetBtn(btn);
+}
+function dealResetBtn(btn){if(btn){btn.disabled=false;btn.innerHTML='🧪 حاكِ ثم ابدأ';}}
+async function dealApproveStart(ctx,jobId,btn){
+  const msg=document.getElementById('gov-msg');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> اعتماد…';
+  const g=await sfetch('/gate/decision',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({seeker_phone:ctx.seeker,owner_phone:ctx.owner,decision:'approve',job_id:jobId,listing_id:ctx.listingId||null})});
+  if(!g.ok){if(msg)msg.innerHTML=`<div style="color:var(--red);font-size:.8rem">❌ ${esc(g.error||'فشل الاعتماد')}</div>`;btn.disabled=false;btn.innerHTML='✅ اعتمد وابدأ التفاوض';return;}
+  btn.innerHTML='<span class="spinner"></span> بدء التفاوض…';
+  const d=await sfetch('/negotiate/start',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({lead_id:ctx.leadId,listing_id:ctx.listingId})});
+  if(d.ok){
+    gateClose();
+    toast('🤝 بدأ التفاوض — بادر مساعد بالتواصل مع الطرفين',4500);
+    loadHome();
+  }else{
+    if(msg)msg.innerHTML=`<div style="color:var(--red);font-size:.8rem">❌ ${esc(d.error||'فشل بدء التفاوض')}</div>`;
+    btn.disabled=false;btn.innerHTML='✅ اعتمد وابدأ التفاوض';
+  }
+}
+function gateOverlay(inner){
+  let o=document.getElementById('gateOv');
+  if(!o){o=document.createElement('div');o.id='gateOv';o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';o.onclick=e=>{if(e.target===o)gateClose();};document.body.appendChild(o);}
+  o.innerHTML=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:520px;width:100%;direction:rtl">${inner}</div>`;
+}
+function gateClose(){document.getElementById('gateOv')?.remove();}
+function govErr(t){return `<div style="text-align:center;padding:16px"><div style="font-size:1.6rem;margin-bottom:6px">⚠️</div><div style="font-size:.85rem;color:var(--red)">${esc(t)}</div><button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="gateClose()">إغلاق</button></div>`;}
+
+// ── 🔭 لوحة الشفافية: قائمة الصفقات + السلسلة الكاملة ──
+let _tlSim = null;
+async function loadDeals(){
+  const el=document.getElementById('deals-list');
+  if(!el) return;
+  el.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  const d=await sfetch('/deals/list');
+  if(!d||d.ok===false){el.innerHTML=empty('⚠️','خطأ',(d&&d.error)||'تعذّر التحميل');return;}
+  const deals=d.deals||[];
+  if(!deals.length){el.innerHTML=empty('🔭','لا توجد صفقات بعد','شغّل محاكاة من «طلبات» لتظهر سلسلتها هنا');return;}
+  const SC={agreed:'badge-approved',negotiating:'badge-pending',approved:'badge-approved',review:'badge-pending',rejected:'badge-rejected',failed:'badge-rejected',candidate:'badge-pending'};
+  el.innerHTML=deals.map(x=>`
+   <div class="match-card" style="cursor:pointer" onclick="openTimeline('${x.seeker_phone}','${x.owner_phone}')">
+     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+       <span class="badge ${SC[x.stage]||'badge-pending'}">${esc(x.stage_label||'')}</span>
+       ${typeof x.sim_score==='number'?`<span class="badge badge-approved">محاكاة ${x.sim_score}/10</span>`:''}
+       ${x.agreed_price?`<span class="badge badge-approved">💰 ${Number(x.agreed_price).toLocaleString('ar')} ر</span>`:''}
+       <span style="margin-right:auto;font-size:.66rem;color:var(--muted)">${x.ts?new Date(x.ts).toLocaleDateString('ar'):''}</span>
+     </div>
+     <div style="font-size:.82rem;margin-top:6px">${esc(x.title||'صفقة عقارية')}</div>
+     <div style="font-size:.72rem;color:var(--muted);margin-top:3px" dir="ltr">🔍 ${esc(x.seeker_phone)} ↔ 🏠 ${esc(x.owner_phone)}</div>
+     <div style="font-size:.7rem;color:var(--blue);margin-top:6px">عرض السلسلة الكاملة ←</div>
+   </div>`).join('');
+}
+async function openTimeline(s,o){
+  gateOverlay('<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></div>');
+  const d=await sfetch(`/deal/timeline?seeker_phone=${encodeURIComponent(s)}&owner_phone=${encodeURIComponent(o)}`);
+  if(!d||d.ok===false){gateOverlay(govErr((d&&d.error)||'تعذّر التحميل'));return;}
+  renderTimeline(d.timeline);
+}
+function renderTimeline(t){
+  t=t||{};
+  const req=t.request||{}, ru=req.understanding||{};
+  const off=t.offer||{}, ou=off.understanding||{};
+  const sim=t.simulation, dec=t.decision||{}, exe=t.execution;
+  _tlSim=(sim&&sim.result)||null;
+  const step=(n,icon,title,inner,done)=>`
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <div style="flex:0 0 28px"><div style="width:28px;height:28px;border-radius:50%;background:${done?'#2ea04330':'var(--card)'};border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.8rem">${icon}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:.8rem;margin-bottom:4px">${n}. ${title}</div><div style="font-size:.77rem;color:var(--muted);line-height:1.6">${inner}</div></div>
+    </div>`;
+  const reqInner=`${req.title?`<div style="color:var(--text)">${esc(req.title)}</div>`:''}${req.url?`<a href="${esc(req.url)}" target="_blank" style="color:var(--blue)">🔗 إعلان الطلب</a>`:''}${req.body?`<div style="margin-top:3px">${esc(req.body)}</div>`:''}${(ru.intent||ru.summary)?`<div style="color:var(--green-light);margin-top:3px">🧠 ${esc(ru.intent||ru.summary)}</div>`:''}${(ru.deal_breakers&&ru.deal_breakers.length)?`<div style="color:var(--red);margin-top:2px">🚫 ${ru.deal_breakers.map(esc).join('، ')}</div>`:''}`||'—';
+  const offInner=`${off.title?`<div style="color:var(--text)">${esc(off.title)}${off.price?` — 💰 ${Number(off.price).toLocaleString('ar')} ر`:''}</div>`:''}${off.url?`<a href="${esc(off.url)}" target="_blank" style="color:var(--blue)">🔗 الإعلان</a>`:''}${(ou.intent||ou.summary)?`<div style="color:var(--blue);margin-top:3px">🧠 نية المالك: ${esc(ou.intent||ou.summary)}</div>`:''}`||'—';
+  const asmt=(_tlSim&&_tlSim.understanding&&_tlSim.understanding.assessment)||{};
+  const VER={fit:'✅ متوافق',partial:'⚠️ جزئي',mismatch:'❌ غير متوافق',unknown:'—'};
+  const compInner=asmt.verdict?`الحكم: ${VER[asmt.verdict]||asmt.verdict}${typeof asmt.score==='number'?` (${asmt.score}%)`:''}${(asmt.deal_breakers&&asmt.deal_breakers.length)?`<div style="color:var(--red)">🚫 ${asmt.deal_breakers.map(esc).join('، ')}</div>`:''}`:'لم يُحسب فهم عميق بعد';
+  let simInner='لم تُشغّل محاكاة محفوظة';
+  if(_tlSim){const ev=_tlSim.evaluation||{};const s2=_tlSim.simulation||{};simInner=`التقييم ${ev.overall_score??'—'}/10 · ${esc(s2.final_status||'—')} · ${(s2.messages||[]).length} رسالة <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="showSimFromTimeline()">👁 اعرض المحادثة</button>`;}
+  const GST={approved:'✅ معتمدة',consumed:'✅ معتمدة ونُفّذت',rejected:'❌ مرفوضة',pending_review:'🧪 بانتظار المراجعة'};
+  const decInner=dec.gate_status?`${GST[dec.gate_status]||dec.gate_status}${dec.decided_at?` · ${new Date(dec.decided_at).toLocaleString('ar')}`:''}`:'لا قرار بعد';
+  let exeInner='لم يبدأ التنفيذ';
+  if(exe){const ES={agreed:'✅ اتفاق',active:'💬 جارٍ',cancelled:'✋ ملغى',failed:'✋ متعثّر'};exeInner=`${ES[exe.status]||esc(exe.status||'')}${exe.agreed_price?` · 💰 ${Number(exe.agreed_price).toLocaleString('ar')} ر`:''} <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="gateClose();openNegFromMatch(${exe.neg_id||0})">💬 الجلسة الحيّة</button>`;}
+  gateOverlay(`
+    <div style="max-height:72vh;overflow:auto">
+      <div style="font-weight:800;margin-bottom:4px">🔭 سلسلة الصفقة <span class="badge badge-pending">${esc(t.stage_label||'')}</span></div>
+      <div style="font-size:.7rem;color:var(--muted);margin-bottom:12px" dir="ltr">${esc(t.seeker_phone)} ↔ ${esc(t.owner_phone)}</div>
+      ${step(1,'🔍','الطلب',reqInner,!!req.title)}
+      ${step(2,'🏠','العرض',offInner,!!off.title)}
+      ${step(3,'🧠','الفهم والحكم',compInner,!!asmt.verdict)}
+      ${step(4,'🎭','المحاكاة',simInner,!!_tlSim)}
+      ${step(5,'🚦','القرار',decInner,!!dec.gate_status)}
+      ${step(6,'🤝','التنفيذ',exeInner,!!exe)}
+    </div>
+    <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`);
+}
+function showSimFromTimeline(){ if(_tlSim) gateOverlay(simReviewInner(_tlSim)+`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`); }
 
 function openNegFromMatch(negId) {
   if(!negId) return;
@@ -987,76 +1220,97 @@ function empty(icon,t,sub){return`<div class="empty"><div class="empty-icon">${i
 // ══════════════════════════════════════════
 // MATCH MODAL — find top 5 listings for a lead
 // ══════════════════════════════════════════
+let _dealLead = null;   // الطلب الحالي المفتوح (للمحاكاة)
 async function openMatch(leadId, city, title) {
   document.getElementById('matchModal').classList.remove('hidden');
   const body = document.getElementById('matchBody');
-  body.innerHTML = `
-<div class="match-lead-box">
-  <div class="ml-city">📍 ${esc(city)||'—'}</div>
-  <div class="ml-title">${esc(title)}</div>
-</div>
+  body.innerHTML = `<div id="dealReq"></div>
 <div class="match-scrape-bar">
   <span style="font-size:.8rem;color:var(--muted);flex:1">لا توجد عروض كافية؟ اسحب عروضاً جديدة</span>
-  <button class="btn btn-ghost btn-sm" onclick="scrapeListings(this,'${esc(city)}')">⬇️ سحب عروض ${esc(city)}</button>
+  <button class="btn btn-ghost btn-sm" onclick="scrapeListings(this,'${esc(city||'')}')">⬇️ سحب عروض ${esc(city||'')}</button>
 </div>
 <div id="matchResults"><div class="loading-center"><div class="spinner"></div></div></div>`;
-  await loadMatch(leadId);
+  await loadDeal(leadId);
 }
 
-async function loadMatch(leadId) {
+async function loadDeal(leadId) {
   const el = document.getElementById('matchResults');
   if (!el) return;
   el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
-  const d = await sfetch(`/match/${leadId}`);
-  if (d.error) {
-    el.innerHTML = empty('⚠️', 'خطأ في التوفيق', d.error); return;
+  // 1) تحميل فوري بـregex (بلا LLM)
+  let d = await sfetch(`/deal/candidates/${leadId}?deep=0`);
+  if (!d || d.ok === false) { el.innerHTML = empty('⚠️','خطأ', (d&&d.error)||'تعذّر التحميل'); return; }
+  _dealLead = d.lead;
+  renderDeal(d, false);
+  // 2) فهم عميق (نية الطلب + نوايا الملاك + حكم التوافق) — قد يأخذ ~20ث أول مرة
+  const note = document.getElementById('dealDeepNote');
+  if (note) note.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span> جارٍ الفهم العميق للطلب والعروض…';
+  try {
+    const dd = await sfetch(`/deal/candidates/${leadId}?deep=1`);
+    if (dd && dd.ok !== false) { _dealLead = dd.lead; renderDeal(dd, true); }
+    else if (note) note.textContent = '⚠️ تعذّر الفهم العميق — النتائج بالترتيب الأولي.';
+  } catch(e) { if (note) note.textContent = '⚠️ تعذّر الفهم العميق.'; }
+}
+
+function renderDeal(d, deep) {
+  const lead = d.lead || {}, un = lead.understanding || {};
+  const cand = d.candidates || [];
+  // بطاقة الطلب: رابط + نص كامل + النية المفهومة
+  const reqEl = document.getElementById('dealReq');
+  if (reqEl) {
+    const bd = un.deal_breakers||[], sp = un.special||[];
+    reqEl.innerHTML = `<div class="match-lead-box" style="text-align:right">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-weight:800">🔍 طلب الباحث</span>
+        ${lead.city?`<span class="match-chip blue">📍 ${esc(lead.city)}</span>`:''}
+        ${!lead.phone_hidden&&lead.phone?`<span class="match-chip green" dir="ltr">📱 ${lead.phone}</span>`:'<span class="match-chip">🔒 رقم مخفي</span>'}
+        ${lead.url?`<a class="btn btn-ghost btn-sm" href="${esc(lead.url)}" target="_blank">🔗 إعلان الطلب</a>`:''}
+      </div>
+      <div class="ml-title">${esc(lead.title||'')}</div>
+      ${lead.body?`<div style="font-size:.78rem;color:var(--muted);margin-top:4px;line-height:1.6">${esc(lead.body)}</div>`:''}
+      ${un.summary?`<div style="font-size:.78rem;color:var(--green-light);margin-top:6px">🧠 النية: ${esc(un.intent||un.summary)}</div>`:(deep?'':'<div id="reqIntentPlaceholder" style="font-size:.72rem;color:var(--muted);margin-top:6px">🧠 سيظهر فهم النية بعد لحظات…</div>')}
+      ${bd.length?`<div style="font-size:.74rem;color:var(--red);margin-top:4px">🚫 لا يقبل: ${bd.map(esc).join('، ')}</div>`:''}
+      ${sp.length?`<div style="font-size:.74rem;color:var(--muted);margin-top:2px">⭐ يهمّه: ${sp.map(esc).join('، ')}</div>`:''}
+    </div>`;
   }
-  const matches = d.matches || [];
-  if (!matches.length) {
-    el.innerHTML = empty('🏠', 'لا توجد عروض بعد', 'اضغط "سحب عروض" لجلب إعلانات الملاك من حراج');
-    return;
-  }
-  const currentLeadId = leadId;
-  el.innerHTML = `
-<div style="font-size:.72rem;color:var(--muted);margin-bottom:10px;">
-  بحثت في ${d.total_searched} عرض — أفضل ${matches.length} نتيجة:
-</div>
-` + matches.map((m, i) => {
-    const sc  = m.score || 0;
-    const cls = sc >= 60 ? 'hi' : sc >= 35 ? 'mid' : 'lo';
-    const medal = ['🥇','🥈','🥉','4️⃣','5️⃣'][i] || '';
-    const canNeg = !m.phone_hidden && m.phone;
+  if (!cand.length) { document.getElementById('matchResults').innerHTML = empty('🏠','لا توجد عروض بعد','اضغط "سحب عروض" لجلب إعلانات الملاك من حراج'); return; }
+  const leadPhone = lead.phone, leadHidden = lead.phone_hidden;
+  const VER={fit:['badge-approved','✅ متوافق'],partial:['badge-pending','⚠️ جزئي'],mismatch:['badge-rejected','❌ غير متوافق'],unknown:['badge-pending','—']};
+  const html = `<div id="dealDeepNote" style="font-size:.72rem;color:var(--muted);margin-bottom:10px">بحثت في ${d.total_searched||''} عرض — أفضل ${cand.length}${deep?' (مرتّبة بالفهم العميق)':' (ترتيب أولي)'}:</div>`
+  + cand.map((m,i)=>{
+    const a = m.assessment||{}, mu = m.understanding||{};
+    const sc = (deep && typeof a.score==='number') ? a.score : (m.score||0);
+    const cls = sc>=60?'hi':sc>=35?'mid':'lo';
+    const medal = ['🥇','🥈','🥉','4️⃣','5️⃣'][i]||'';
+    const canNeg = !m.phone_hidden && m.phone && !leadHidden && leadPhone;
+    const vb = deep ? (VER[a.verdict]||VER.unknown) : null;
+    const li=arr=>(arr||[]).slice(0,3).map(x=>`<li>${esc(x)}</li>`).join('');
     return `<div class="match-card">
   <div class="match-top">
-    <div class="score-ring ${cls}">${sc}%</div>
+    <div class="score-ring ${cls}">${sc}${deep&&typeof a.score==='number'?'%':(m.score?'%':'')}</div>
     <div class="match-info">
-      <div class="match-title">${medal} ${esc(m.title||'—')}</div>
+      <div class="match-title">${medal} ${esc(m.title||'—')} ${vb?`<span class="badge ${vb[0]}">${vb[1]}</span>`:''}</div>
       <div class="match-meta-row">
-        ${m.city ? `<span class="match-chip blue">📍 ${esc(m.city)}</span>` : ''}
-        ${m.rooms ? `<span class="match-chip">🛏 ${m.rooms} غرف</span>` : ''}
-        ${m.price ? `<span class="match-chip yellow">💰 ${m.price.toLocaleString('ar')} ر</span>` : ''}
-        ${m.property_type ? `<span class="match-chip">${esc(m.property_type)}</span>` : ''}
-        ${m.phone_hidden ? `<span class="match-chip">🔒 رقم مخفي</span>` : `<span class="match-chip green">📱 ${m.phone||''}</span>`}
+        ${m.city?`<span class="match-chip blue">📍 ${esc(m.city)}</span>`:''}
+        ${m.rooms?`<span class="match-chip">🛏 ${m.rooms} غرف</span>`:''}
+        ${m.price?`<span class="match-chip yellow">💰 ${m.price.toLocaleString('ar')} ر</span>`:''}
+        ${m.property_type?`<span class="match-chip">${esc(m.property_type)}</span>`:''}
+        ${m.phone_hidden?`<span class="match-chip">🔒 رقم مخفي</span>`:`<span class="match-chip green" dir="ltr">📱 ${m.phone||''}</span>`}
       </div>
-      <div class="match-reason" style="color:var(--green-light);margin-top:4px;">
-        ${m.reason ? `✅ ${esc(m.reason)}` : ''}
-      </div>
-      ${m.missing ? `<div class="match-reason" style="color:var(--muted);margin-top:2px;">
-        ⚠️ ${esc(m.missing)}
-      </div>` : ''}
+      ${(deep&&(mu.intent||mu.summary))?`<div style="font-size:.74rem;color:var(--blue);margin-top:4px">🧠 نية المالك: ${esc(mu.intent||mu.summary)}</div>`:''}
+      ${m.reason?`<div class="match-reason" style="color:var(--green-light);margin-top:4px">✅ ${esc(m.reason)}</div>`:''}
+      ${deep&&a.deal_breakers&&a.deal_breakers.length?`<div style="font-size:.73rem;color:var(--red);margin-top:3px">🚫 نواقص:<ul style="margin:2px 18px 0">${li(a.deal_breakers)}</ul></div>`:''}
+      ${deep&&a.concerns&&a.concerns.length?`<div style="font-size:.73rem;color:var(--yellow);margin-top:3px">تحفّظات:<ul style="margin:2px 18px 0">${li(a.concerns)}</ul></div>`:''}
     </div>
   </div>
   <div class="match-actions" style="margin-top:10px;">
-    ${m.url ? `<a class="btn btn-ghost btn-sm" href="${esc(m.url)}" target="_blank">🔗 الإعلان</a>` : ''}
-    ${canNeg ? `
-      <button class="btn btn-primary btn-sm" id="neg-btn-${m.id}"
-        onclick="startNegotiation(${currentLeadId},${m.id},this)">
-        🤝 ابدأ التفاوض
-      </button>
-    ` : `<button class="btn btn-yellow btn-sm" onclick="window.open('${esc(m.url||'')}','_blank')">📱 استخرج الرقم</button>`}
+    ${m.url?`<a class="btn btn-ghost btn-sm" href="${esc(m.url)}" target="_blank">🔗 الإعلان</a>`:''}
+    ${canNeg?`<button class="btn btn-primary btn-sm" onclick="dealSimulate(${lead.id},'${leadPhone}',${m.id},'${m.phone}',this)">🧪 حاكِ ثم ابدأ</button>`
+      :`<button class="btn btn-yellow btn-sm" onclick="window.open('${esc(m.url||'')}','_blank')">📱 استخرج الرقم</button>`}
   </div>
 </div>`;
   }).join('');
+  document.getElementById('matchResults').innerHTML = html;
 }
 
 async function startNegotiation(leadId, listingId, btn) {

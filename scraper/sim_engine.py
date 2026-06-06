@@ -17,6 +17,7 @@
 - get_status(job_id) يُرجع الحالة/المرحلة/النتيجة عند الاكتمال.
 """
 
+import json
 import threading
 import time
 import uuid
@@ -149,11 +150,36 @@ def _owner_reply(owner_data, mediator_to_owner, is_first):
 MAX_ROUNDS = 6
 
 
-def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):
+def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=None):
     """شغّل محاكاة كاملة عبر الوسيط الحقيقي. يُرجع dict جاهز للواجهة."""
     def progress(stage):
         if progress_cb:
             progress_cb(stage)
+
+    # 🧠 الفهم العميق (هجين): يُقرأ النص الكامل للعرض/الطلب ويُقيَّم التوافق الحقيقي
+    # قبل المحاكاة، ويُغذّي وكيل المالك بمواصفات دقيقة بدل «مواصفات عادية».
+    understanding = None
+    if extras and extras.get("comprehend"):
+        progress("الفهم العميق للطلب والعرض")
+        try:
+            import comprehension
+            offer_profile = comprehension.extract_profile(
+                extras.get("offer_text", ""), role="listing",
+                source=extras.get("offer_source"), ext_id=extras.get("offer_id"))
+            seeker_profile = extras.get("seeker_profile") or {}
+            if extras.get("seeker_text"):
+                seeker_profile = comprehension.extract_profile(
+                    extras.get("seeker_text"), role="seeker",
+                    source=extras.get("seeker_source"), ext_id=extras.get("seeker_id")) or seeker_profile
+            assessment = comprehension.assess(seeker_profile, offer_profile)
+            # غذِّ وكيل المالك بالمواصفات المفهومة
+            if offer_profile:
+                owner_data = dict(owner_data or {})
+                owner_data["specs"] = comprehension.enrich_specs(offer_profile, owner_data.get("specs") or "مواصفات عادية")
+            understanding = {"offer": offer_profile, "seeker": seeker_profile, "assessment": assessment}
+        except Exception as _e:
+            print(f"[COMPREHEND] تعذّر الفهم العميق: {_e}", flush=True)
+            understanding = {"_error": str(_e)}
 
     token = uuid.uuid4().hex[:12]
     lead_phone = f"SIM{token}1"       # المستأجر (الباحث)
@@ -193,9 +219,34 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):
                     owner_inbox.append(item["text"])
             drained = len(captured)
 
-        # افتتاح: الباحث يبدأ مع الوسيط
-        progress("رسالة الباحث الأولى")
-        msg = _seeker_reply(seeker_data, seeker_inbox, is_first=True)
+        # 🤝 المبادرة من مساعد (لا من الباحث): مساعد هو من بحث ووجد الطرفين،
+        # فهو يفتح الحوار مع كليهما — تماماً كـ send_intro في التفاوض الحقيقي.
+        progress("مساعد يبادر بفتح الحوار مع الطرفين")
+        _title = owner_data.get("title") or "عقار للإيجار"
+        _city  = owner_data.get("city") or ""
+        _price = _to_int(owner_data.get("price"))
+        _price_str = f"{_price:,} ر/سنة" if _price else "قابل للتفاوض"
+        intro_seeker = (
+            "مرحباً 👋، أنا مساعد العقاري — وسيط إلكتروني. "
+            f"وجدت طلبك وربطتك بعرض يناسبه: {_title}"
+            + (f" — {_city}" if _city else "") +
+            f" 💰 {_price_str}. تحدّث معي مباشرة، أنا الوسيط بينك وبين المالك."
+        )
+        intro_owner = (
+            "مرحباً 👋، أنا مساعد العقاري — وسيط إلكتروني. "
+            "وجدت إعلانك وربطتك بمستأجر مهتم"
+            + (f" في {_city}" if _city else "") +
+            f" 💰 {_price_str}. تحدّث معي مباشرة، أنا الوسيط بينك وبين المستأجر."
+        )
+        _now = datetime.now(timezone.utc).isoformat()
+        transcript.append({"from": "الوسيط", "to": "المستأجر", "text": intro_seeker, "timestamp": _now})
+        transcript.append({"from": "الوسيط", "to": "المالك",   "text": intro_owner,  "timestamp": _now})
+        seeker_inbox.append(intro_seeker)
+        owner_inbox.append(intro_owner)
+
+        # الباحث يردّ على مبادرة مساعد (لا يفتح هو)
+        progress("ردّ الباحث على مبادرة مساعد")
+        msg = _seeker_reply(seeker_data, seeker_inbox, is_first=False)
         if msg:
             deliver(lead_phone, "المستأجر", msg)
 
@@ -274,6 +325,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None):
                 "agreed_price": agreed_price,
                 "mediator_state": mediator_state,
             },
+            "understanding": understanding,
             "evaluation": evaluation,
             "fact_errors": fact_errors,
             "recommendations": critic.get_recommendations(),
@@ -322,13 +374,48 @@ def _prune_jobs():
                 JOBS.pop(k, None)
 
 
-def _worker(job_id, reg_id, seeker_data, owner_data):
+def _persist_run(extras, result):
+    """يحفظ نتيجة المحاكاة الكاملة (للوحة الشفافية) عند توفّر أرقام الصفقة."""
+    try:
+        sp = (extras or {}).get("seeker_phone")
+        op = (extras or {}).get("owner_phone")
+        if not sp or not op:
+            return
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS sanad.masaed_sim_runs (
+                        id SERIAL PRIMARY KEY,
+                        seeker_phone TEXT, owner_phone TEXT, listing_id INTEGER,
+                        result JSONB, created_at TIMESTAMPTZ DEFAULT NOW()
+                    )""")
+                cur.execute("""INSERT INTO sanad.masaed_sim_runs
+                                 (seeker_phone, owner_phone, listing_id, result)
+                               VALUES (%s,%s,%s,%s)""",
+                            (sp, op, (extras or {}).get("listing_id"),
+                             json.dumps(result, ensure_ascii=False, default=str)))
+                # أبقِ آخر 5 لكل زوج فقط
+                cur.execute("""DELETE FROM sanad.masaed_sim_runs
+                               WHERE seeker_phone=%s AND owner_phone=%s AND id NOT IN (
+                                   SELECT id FROM sanad.masaed_sim_runs
+                                   WHERE seeker_phone=%s AND owner_phone=%s
+                                   ORDER BY created_at DESC LIMIT 5)""", (sp, op, sp, op))
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[SIM-PERSIST] {e}", flush=True)
+
+
+def _worker(job_id, reg_id, seeker_data, owner_data, extras=None):
     def cb(stage):
         _set_job(job_id, stage=stage)
     try:
-        result = _run_simulation(reg_id, seeker_data, owner_data, progress_cb=cb)
+        result = _run_simulation(reg_id, seeker_data, owner_data, progress_cb=cb, extras=extras)
         if result.get("ok"):
             _set_job(job_id, status="done", result=result)
+            _persist_run(extras, result)
         else:
             _set_job(job_id, status="error", error=result.get("error", "فشلت المحاكاة"), result=result)
     except Exception as e:
@@ -351,13 +438,13 @@ def _check_rate_limit():
         _starts.append(now)
 
 
-def start_job(reg_id, seeker_data, owner_data):
-    """ابدأ محاكاة في الخلفية وأرجع job_id فوراً."""
+def start_job(reg_id, seeker_data, owner_data, extras=None):
+    """ابدأ محاكاة في الخلفية وأرجع job_id فوراً. extras: خيارات الفهم العميق."""
     _check_rate_limit()
     job_id = uuid.uuid4().hex[:16]
     _set_job(job_id, status="running", stage="بدء", result=None, error=None, started=time.time())
     _prune_jobs()
-    t = threading.Thread(target=_worker, args=(job_id, reg_id, seeker_data, owner_data), daemon=True)
+    t = threading.Thread(target=_worker, args=(job_id, reg_id, seeker_data, owner_data, extras), daemon=True)
     t.start()
     return job_id
 

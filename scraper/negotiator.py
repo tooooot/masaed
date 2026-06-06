@@ -1069,11 +1069,28 @@ def start_negotiation(lead_id: int, listing_id: int,
                       lead_phone: str, listing_phone: str,
                       lead_name: str = None, listing_title: str = None,
                       listing_city: str = None, listing_price: int = None,
-                      send_intro: bool = True) -> dict:
+                      send_intro: bool = True, require_gate: bool = True) -> dict:
     ensure_table()
 
     if lead_phone == listing_phone:
         return {"ok": False, "error": "لا يمكن التفاوض مع نفس الرقم"}
+
+    # 🚦 البوّابة الإلزامية: لا تواصل حقيقي قبل محاكاة معتمدة (fail-closed).
+    # نقطة الاختناق الوحيدة لكل مسارات البدء (lab/start، matches/approve، negotiate/start).
+    if require_gate:
+        try:
+            import deal_gate
+            if not deal_gate.check(lead_phone, listing_phone):
+                return {
+                    "ok": False,
+                    "gate": "blocked",
+                    "error": ("⛔ هذه الصفقة لم تُحاكَ وتُعتمَد بعد. شغّل «محاكاة الأطراف»، "
+                              "راجِع النتيجة، ثم اعتمدها قبل بدء التواصل الحقيقي."),
+                }
+        except Exception as _e:
+            print(f"[GATE] تعذّر فحص البوّابة — منع احترازي: {_e}", flush=True)
+            return {"ok": False, "gate": "error",
+                    "error": "تعذّر التحقق من بوّابة الاعتماد — مُنع البدء احترازاً."}
 
     with _conn_ctx() as conn:
         # ── شرط التسجيل: كلا الطرفين يجب أن يكونا في masaed_registrations ──
@@ -1116,6 +1133,14 @@ def start_negotiation(lead_id: int, listing_id: int,
                   lead_name, listing_title, listing_city, listing_price, facts or None))
             neg_id = cur.fetchone()[0]
             conn.commit()
+
+    # استهلك الاعتماد: اعتماد واحد = بدء واحد؛ إعادة البدء تتطلّب محاكاة واعتماداً جديدين
+    if require_gate:
+        try:
+            import deal_gate
+            deal_gate.consume(lead_phone, listing_phone, neg_id)
+        except Exception as _e:
+            print(f"[GATE] فشل consume بعد البدء: {_e}", flush=True)
 
     price_str = f"{listing_price:,} ر/سنة" if listing_price else "قابل للتفاوض"
     city_str  = listing_city or ""

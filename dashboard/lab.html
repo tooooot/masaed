@@ -205,6 +205,7 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
 <script>
 const API = '/api';
 let selected = null;
+let lastSimJobId = null;   // 🚦 آخر محاكاة مكتملة — لازمة للاعتماد قبل البدء الحقيقي
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -384,8 +385,24 @@ function renderDetail(reg) {
 
 function clearResult() {
   document.getElementById('previewArea').innerHTML = '';
+  // أي تغيير في الأرقام يُبطل اعتماد البوّابة السابق (المفتاح = رقم المالك)
+  lockRealStart();
+}
+
+// 🚦 يقفل زر «ابدأ التفاوض الحقيقي» حتى تُعتمد محاكاة لهذه الأرقام
+function lockRealStart() {
   const btn = document.getElementById('btnStart');
-  if (btn) btn.disabled = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.title = 'يلزم محاكاة الأطراف واعتمادها أولاً';
+  }
+}
+function unlockRealStart() {
+  const btn = document.getElementById('btnStart');
+  if (btn) {
+    btn.disabled = false;
+    btn.title = '';
+  }
 }
 
 // ── Preview scenario ──────────────────────────────────────────────────────────
@@ -431,11 +448,14 @@ async function previewScenario() {
         <div class="msg-preview" style="border-right:3px solid var(--blue)">${esc(s.owner_msg)}</div>
 
         ${s.listing_price ? `<div style="margin-top:10px;font-size:.75rem;color:var(--muted);text-align:center">السعر المستخدم: <strong style="color:var(--text)">${priceStr}</strong></div>` : ''}
+        <div style="margin-top:12px;padding:10px;background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;font-size:.78rem;color:var(--yellow);text-align:center">
+          🚦 هذه معاينة فقط. لبدء التواصل الحقيقي: شغّل «🤖 محاكاة الأطراف» أولاً، راجِع النتيجة، ثم «✅ اعتمد».
+        </div>
       </div>
     `;
 
-    const btn = document.getElementById('btnStart');
-    if (btn) btn.disabled = false;
+    // المعاينة لا تفتح البدء الحقيقي — البوّابة الإلزامية تتطلّب محاكاة معتمدة
+    lockRealStart();
 
   } catch(e) {
     area.innerHTML = errBox(e.message);
@@ -547,6 +567,7 @@ async function startSimulation() {
       progress.innerHTML = errBox(start.error || 'تعذّر بدء المحاكاة');
       return;
     }
+    lastSimJobId = start.job_id;   // 🚦 احفظه للاعتماد لاحقاً
 
     // استطلع الحالة حتى الاكتمال (حد أقصى ~3 دقائق)
     const stageEl = document.getElementById('simStage');
@@ -688,9 +709,84 @@ function renderSimulationResults(result) {
   }
   recBox.innerHTML = recHtml || '<div style="color:var(--muted);text-align:center;padding:20px">لا توجد توصيات إضافية</div>';
 
+  // 🚦 لوحة قرار البوّابة: اعتماد المحاكاة يفتح البدء الحقيقي
+  renderGateDecision(result);
+
   // إظهار النتائج، إخفاء التحميل
   progress.style.display = 'none';
   content.style.display = 'block';
+}
+
+// 🚦 لوحة «اعتمد / ارفض» بعد مراجعة المحاكاة
+function renderGateDecision(result) {
+  let box = document.getElementById('gateDecisionBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'gateDecisionBox';
+    box.style.cssText = 'margin-top:16px';
+    document.getElementById('simulationContent').appendChild(box);
+  }
+  const score = result?.evaluation?.overall_score;
+  const facts = (result?.fact_errors || []).length;
+  const hint = (typeof score === 'number' && score < 5)
+    ? '<div style="font-size:.75rem;color:var(--red);margin-bottom:8px">⚠️ تقييم منخفض — راجِع المحادثة قبل الاعتماد.</div>'
+    : (facts ? `<div style="font-size:.75rem;color:var(--yellow);margin-bottom:8px">⚠️ ${facts} تضارب في الحقائق — راجِعها.</div>` : '');
+  box.innerHTML = `
+    <div style="padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:12px">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:8px">🚦 قرارك على هذه الصفقة</div>
+      ${hint}
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:12px">
+        إن رضيت عن المحاكاة، اعتمدها ليُفتح «🚀 ابدأ التفاوض الحقيقي» مع المالك المُدخَل.
+      </div>
+      <div id="gateDecisionMsg"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <button class="btn btn-primary btn-lg" id="btnGateApprove" onclick="gateDecide('approve')">✅ اعتمد وافتح البدء</button>
+        <button class="btn btn-ghost btn-lg" id="btnGateReject" onclick="gateDecide('reject')">✋ ارفض</button>
+      </div>
+    </div>`;
+}
+
+// 🚦 يرسل قرار الاعتماد/الرفض للخادم
+async function gateDecide(decision) {
+  const owner  = document.getElementById('ownerPhone').value.trim();
+  const seeker = document.getElementById('seekerPhone').value.trim();
+  const price  = document.getElementById('listingPrice').value.trim();
+  const msg    = document.getElementById('gateDecisionMsg');
+  if (!owner) { msg.innerHTML = errBox('أدخل رقم المالك أولاً ثم اعتمد'); return; }
+  if (!lastSimJobId) { msg.innerHTML = errBox('لا توجد محاكاة مكتملة لاعتمادها'); return; }
+
+  const aBtn = document.getElementById('btnGateApprove');
+  const rBtn = document.getElementById('btnGateReject');
+  aBtn.disabled = rBtn.disabled = true;
+
+  try {
+    const r = await fetch(`${API}/gate/decision`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        seeker_phone: seeker,
+        owner_phone: owner,
+        decision,
+        job_id: lastSimJobId,
+        listing_id: selected?.listing_id || null,
+      })
+    });
+    const d = await r.json();
+    if (!d.ok) { msg.innerHTML = errBox(d.error || 'فشل تنفيذ القرار'); aBtn.disabled = rBtn.disabled = false; return; }
+
+    if (decision === 'approve') {
+      unlockRealStart();
+      msg.innerHTML = `<div class="result success"><div class="result-icon">✅</div><div>اعتُمدت الصفقة — اضغط «🚀 ابدأ التفاوض الحقيقي» في الأعلى لإرسال الرسائل للطرفين.</div></div>`;
+      toast('✅ اعتُمدت — البدء الحقيقي مفتوح الآن', 4000);
+    } else {
+      lockRealStart();
+      msg.innerHTML = `<div class="result" style="background:#f8514915"><div class="result-icon">✋</div><div>رُفضت الصفقة — البدء الحقيقي مقفول.</div></div>`;
+      toast('✋ رُفضت الصفقة', 3000);
+    }
+  } catch(e) {
+    msg.innerHTML = errBox(e.message);
+    aBtn.disabled = rBtn.disabled = false;
+  }
 }
 
 function closeSimulation() {

@@ -10,7 +10,11 @@ from bot import get_conn
 
 
 def _assemble(seeker_phone, listing_id, listing_phone, conn):
-    """يجمع بيانات الباحث + العرض في ملف موحّد."""
+    """يجمع بيانات الباحث + العرض في ملف موحّد.
+
+    الباحث قد يكون: (أ) مسجّلاً يدوياً في masaed_registrations (حقول منظّمة)،
+    أو (ب) طلب حراج مسحوب في masaed_leads (رابط + نص كامل). نجمع الاثنين:
+    حقول التسجيل إن وُجدت + رابط/نص/عنوان الطلب من حراج إن وُجد (لفهم النية كاملةً)."""
     with conn.cursor() as cur:
         cur.execute("""SELECT phone, name, city, district, rooms, budget_annual,
                               property_type, for_family
@@ -19,6 +23,20 @@ def _assemble(seeker_phone, listing_id, listing_phone, conn):
                        ORDER BY created_at DESC LIMIT 1""", (seeker_phone,))
         sc = [d[0] for d in cur.description]; sr = cur.fetchone()
         seeker = dict(zip(sc, sr)) if sr else {"phone": seeker_phone}
+
+        # طلب حراج المسحوب (الرابط + النص الكامل) — مصدر فهم النية
+        cur.execute("""SELECT id, url, title, body, city
+                       FROM sanad.masaed_leads
+                       WHERE phone=%s AND listing_type='wanted'
+                       ORDER BY scraped_at DESC LIMIT 1""", (seeker_phone,))
+        lr = cur.fetchone()
+        if lr:
+            seeker.setdefault("phone", seeker_phone)
+            seeker["lead_id"] = lr[0]
+            seeker["url"]   = lr[1]
+            seeker["title"] = lr[2]
+            seeker["body"]  = lr[3]
+            seeker.setdefault("city", lr[4])
 
         offer = None
         if listing_id or listing_phone:
