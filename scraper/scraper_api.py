@@ -659,14 +659,14 @@ def deals_list():
     conn = get_conn()
     with conn.cursor() as cur:
         cur.execute("""SELECT seeker_phone, owner_phone, listing_id, gate_status,
-                              sim_score, sim_status, created_at, decided_at
+                              sim_score, sim_status, created_at, decided_at, id
                        FROM sanad.masaed_deal_gate ORDER BY created_at DESC LIMIT 300""")
         for r in cur.fetchall():
             deals[(r[0], r[1])] = {
                 "seeker_phone": r[0], "owner_phone": r[1], "listing_id": r[2],
                 "gate_status": r[3], "sim_score": r[4], "sim_status": r[5],
                 "ts": (r[7] or r[6]), "neg_status": None, "neg_id": None,
-                "title": None, "agreed_price": None,
+                "title": None, "agreed_price": None, "gate_id": r[8],
             }
         cur.execute("""SELECT lead_phone, listing_phone, listing_id, status, agreed_price,
                               listing_title, id, created_at, updated_at
@@ -686,8 +686,9 @@ def deals_list():
     for d in deals.values():
         stage, label = _deal_stage(d.get("gate_status"), d.get("neg_status"))
         ts = d.get("ts")
+        deal_no = d.get("gate_id") or d.get("neg_id")
         out.append({**d, "stage": stage, "stage_label": label,
-                    "ts": ts.isoformat() if ts else None})
+                    "deal_no": deal_no, "ts": ts.isoformat() if ts else None})
     out.sort(key=lambda x: x.get("ts") or "", reverse=True)
     return jsonify({"ok": True, "deals": out})
 
@@ -1019,6 +1020,7 @@ def lab_simulate_deal():
         "budget_annual": seeker.get("budget_annual"),
         "for_family": seeker.get("for_family"),
         "special_notes": f"يبحث في {seeker.get('city') or '—'}",
+        "url": seeker.get("url"),   # رابط طلب الباحث في حراج (لإثبات إعلانه عند المبادرة)
     }
     reg_id = data.get("reg_id") or 41
 
@@ -1381,26 +1383,35 @@ def approve_match(match_id):
         unregistered.append(('owner', m['lst_phone']))
 
     if unregistered:
-        # أرسل رسالة تعريف لكل غير مسجّل
+        # مبادرة المنتج: مبرر + إثبات (رابط إعلان الطرف نفسه) + طلب الرغبة، ثم التسجيل.
+        # لا نربطه بالطرف الآخر ولا نتفاوض قبل التسجيل (خط المنتج الصحيح).
         from negotiator import wa_send as neg_wa
-        city_str = m.get('lst_city') or m.get('req_city') or ''
+        conn_u = get_conn()
+        with conn_u.cursor() as cur:
+            cur.execute("SELECT url FROM sanad.masaed_listings WHERE id=%s", (m['listing_id'],))
+            r = cur.fetchone(); owner_url = r[0] if r else None
+            cur.execute("""SELECT url FROM sanad.masaed_leads
+                           WHERE phone=%s AND listing_type='wanted'
+                           ORDER BY scraped_at DESC LIMIT 1""", (m['req_phone'],))
+            r = cur.fetchone(); seeker_url = r[0] if r else None
+        conn_u.close()
 
         for role, phone in unregistered:
             if role == 'owner':
                 msg = (
-                    f"مرحباً 👋، وجدنا إعلانك في حراج"
-                    + (f" عن {listing_title}" if listing_title else "") + ".\n"
-                    f"نحن مساعد العقاري — خدمة مجانية تربطك بالمستأجر المناسب.\n"
-                    f"لدينا طالب مهتم بعقارك الآن 🏠\n"
-                    f"تحدّث معي وسنساعدك في إتمام الإيجار."
+                    "السلام عليكم 👋 أنا «مساعد» العقاري. "
+                    "لاحظنا إعلانك المنشور على حراج"
+                    + (f":\n{owner_url}" if owner_url else "") + "\n"
+                    "وقد يطابق طلب باحث لدينا في قاعدتنا — نودّ التأكد معك. "
+                    "هل العقار ما زال متاحاً؟"
                 )
             else:
                 msg = (
-                    f"مرحباً 👋، وجدنا طلبك في حراج"
-                    + (f" عن إيجار في {city_str}" if city_str else "") + ".\n"
-                    f"نحن مساعد العقاري — خدمة مجانية تساعدك في إيجاد العقار المناسب.\n"
-                    f"لدينا عقار يناسب طلبك الآن 🔍\n"
-                    f"تحدّث معي وسنساعدك في إيجاد ما تبحث عنه."
+                    "السلام عليكم 👋 أنا «مساعد» العقاري. "
+                    "لاحظنا طلبك المنشور على حراج"
+                    + (f":\n{seeker_url}" if seeker_url else "") + "\n"
+                    "وقد يطابق عرضاً متاحاً لدينا في قاعدتنا — نودّ التأكد معك. "
+                    "هل ما زلت تبحث؟"
                 )
             neg_wa(phone, msg)
 

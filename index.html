@@ -1106,8 +1106,9 @@ async function loadDeals(){
   if(!deals.length){el.innerHTML=empty('🔭','لا توجد صفقات بعد','شغّل محاكاة من «طلبات» لتظهر سلسلتها هنا');return;}
   const SC={agreed:'badge-approved',negotiating:'badge-pending',approved:'badge-approved',review:'badge-pending',rejected:'badge-rejected',failed:'badge-rejected',candidate:'badge-pending'};
   el.innerHTML=deals.map(x=>`
-   <div class="match-card" style="cursor:pointer" onclick="openTimeline('${x.seeker_phone}','${x.owner_phone}')">
+   <div class="match-card" style="cursor:pointer" onclick="openTimeline('${x.seeker_phone}','${x.owner_phone}',${x.deal_no||0})">
      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+       <span class="badge" style="background:#58a6ff20;color:#58a6ff">صفقة #${x.deal_no||'—'}</span>
        <span class="badge ${SC[x.stage]||'badge-pending'}">${esc(x.stage_label||'')}</span>
        ${typeof x.sim_score==='number'?`<span class="badge badge-approved">محاكاة ${x.sim_score}/10</span>`:''}
        ${x.agreed_price?`<span class="badge badge-approved">💰 ${Number(x.agreed_price).toLocaleString('ar')} ر</span>`:''}
@@ -1118,10 +1119,11 @@ async function loadDeals(){
      <div style="font-size:.7rem;color:var(--blue);margin-top:6px">عرض السلسلة الكاملة ←</div>
    </div>`).join('');
 }
-async function openTimeline(s,o){
+async function openTimeline(s,o,dealNo){
   gateOverlay('<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></div>');
   const d=await sfetch(`/deal/timeline?seeker_phone=${encodeURIComponent(s)}&owner_phone=${encodeURIComponent(o)}`);
   if(!d||d.ok===false){gateOverlay(govErr((d&&d.error)||'تعذّر التحميل'));return;}
+  if(d.timeline) d.timeline.deal_no=dealNo;
   renderTimeline(d.timeline);
 }
 function renderTimeline(t){
@@ -1148,7 +1150,7 @@ function renderTimeline(t){
   if(exe){const ES={agreed:'✅ اتفاق',active:'💬 جارٍ',cancelled:'✋ ملغى',failed:'✋ متعثّر'};exeInner=`${ES[exe.status]||esc(exe.status||'')}${exe.agreed_price?` · 💰 ${Number(exe.agreed_price).toLocaleString('ar')} ر`:''} <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="gateClose();openNegFromMatch(${exe.neg_id||0})">💬 الجلسة الحيّة</button>`;}
   gateOverlay(`
     <div style="max-height:72vh;overflow:auto">
-      <div style="font-weight:800;margin-bottom:4px">🔭 سلسلة الصفقة <span class="badge badge-pending">${esc(t.stage_label||'')}</span></div>
+      <div style="font-weight:800;margin-bottom:4px">🔭 صفقة #${t.deal_no||'—'} <span class="badge badge-pending">${esc(t.stage_label||'')}</span></div>
       <div style="font-size:.7rem;color:var(--muted);margin-bottom:12px" dir="ltr">${esc(t.seeker_phone)} ↔ ${esc(t.owner_phone)}</div>
       ${step(1,'🔍','الطلب',reqInner,!!req.title)}
       ${step(2,'🏠','العرض',offInner,!!off.title)}

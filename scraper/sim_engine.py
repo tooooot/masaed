@@ -55,6 +55,30 @@ def _to_int(v, default=None):
         return default
 
 
+def _reg_confirm(profile, role):
+    """يبني تسجيلاً مبدئياً من فهم الإعلان: قائمة المعروف (للتأكيد) وقائمة النواقص (لسؤالها فقط)."""
+    profile = profile or {}
+    if role == "seeker":
+        fields = [("المدينة", "city"), ("الحي", "district"), ("عدد الغرف", "rooms"),
+                  ("الميزانية السنوية", "price"), ("التأثيث", "furnished")]
+    else:
+        fields = [("نوع العقار", "property_type"), ("المدينة", "city"), ("الحي", "district"),
+                  ("عدد الغرف", "rooms"), ("السعر السنوي", "price"),
+                  ("التشطيب", "finishing"), ("التأثيث", "furnished"), ("الشروط", "conditions")]
+    known, missing = [], []
+    for label, key in fields:
+        v = profile.get(key)
+        if key == "furnished":
+            v = "مفروشة" if v is True else ("بدون أثاث" if v is False else None)
+        if isinstance(v, list):
+            v = "، ".join(str(x) for x in v) if v else None
+        if v not in (None, "", "null", "غير محدد"):
+            known.append(f"{label}: {v}")
+        else:
+            missing.append(label)
+    return known, missing
+
+
 def _insert_sandbox_neg(conn, reg_id, lead_phone, listing_phone, owner_data):
     """أدخل صف تفاوض sandbox مباشرة (نتجاوز شرط التسجيل في start_negotiation)."""
     negotiator.ensure_table(conn)
@@ -219,33 +243,73 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
                     owner_inbox.append(item["text"])
             drained = len(captured)
 
-        # 🤝 المبادرة من مساعد (لا من الباحث): مساعد هو من بحث ووجد الطرفين،
-        # فهو يفتح الحوار مع كليهما — تماماً كـ send_intro في التفاوض الحقيقي.
-        progress("مساعد يبادر بفتح الحوار مع الطرفين")
-        _title = owner_data.get("title") or "عقار للإيجار"
-        _city  = owner_data.get("city") or ""
-        _price = _to_int(owner_data.get("price"))
-        _price_str = f"{_price:,} ر/سنة" if _price else "قابل للتفاوض"
+        # 🤝 المبادرة من مساعد بمنطق المنتج الصحيح:
+        # مبرر التواصل + إثبات (رابط إعلان الطرف نفسه) + طلب الرغبة — بلا ربط بالطرف
+        # الآخر وبلا سعر في أول رسالة. (التسجيل ثم التفاوض يأتيان لاحقاً.)
+        progress("مساعد يبادر: مبرر + رابط الإعلان الذاتي")
+        _owner_url  = owner_data.get("url")
+        _seeker_url = seeker_data.get("url")
+        # الرسالة الأولى: مبرر + إثبات (رابط ذاتي) + إخباره أن إعلانه يطابق/قد يطابق
+        # طلباً/عرضاً لدينا (للتأكد) — بلا طلب تسجيل بعد (يُؤجَّل لما يردّ).
         intro_seeker = (
-            "مرحباً 👋، أنا مساعد العقاري — وسيط إلكتروني. "
-            f"وجدت طلبك وربطتك بعرض يناسبه: {_title}"
-            + (f" — {_city}" if _city else "") +
-            f" 💰 {_price_str}. تحدّث معي مباشرة، أنا الوسيط بينك وبين المالك."
+            "السلام عليكم 👋 أنا «مساعد» العقاري. "
+            "لاحظنا طلبك المنشور على حراج"
+            + (f":\n{_seeker_url}" if _seeker_url else "") +
+            "\nوقد يطابق عرضاً متاحاً لدينا في قاعدتنا — نودّ التأكد معك. هل ما زلت تبحث؟"
         )
         intro_owner = (
-            "مرحباً 👋، أنا مساعد العقاري — وسيط إلكتروني. "
-            "وجدت إعلانك وربطتك بمستأجر مهتم"
-            + (f" في {_city}" if _city else "") +
-            f" 💰 {_price_str}. تحدّث معي مباشرة، أنا الوسيط بينك وبين المستأجر."
+            "السلام عليكم 👋 أنا «مساعد» العقاري. "
+            "لاحظنا إعلانك المنشور على حراج"
+            + (f":\n{_owner_url}" if _owner_url else "") +
+            "\nوقد يطابق طلب باحث لدينا في قاعدتنا — نودّ التأكد معك. هل العقار ما زال متاحاً؟"
         )
-        _now = datetime.now(timezone.utc).isoformat()
-        transcript.append({"from": "الوسيط", "to": "المستأجر", "text": intro_seeker, "timestamp": _now})
-        transcript.append({"from": "الوسيط", "to": "المالك",   "text": intro_owner,  "timestamp": _now})
-        seeker_inbox.append(intro_seeker)
-        owner_inbox.append(intro_owner)
+        def _stamp(frm, to, txt):
+            transcript.append({"from": frm, "to": to, "text": txt,
+                               "timestamp": datetime.now(timezone.utc).isoformat()})
 
-        # الباحث يردّ على مبادرة مساعد (لا يفتح هو)
-        progress("ردّ الباحث على مبادرة مساعد")
+        # ── المرحلة ١: مبرر + إثبات + معلومة المطابقة (بلا طلب تسجيل) ──
+        _stamp("الوسيط", "المستأجر", intro_seeker)
+        _stamp("الوسيط", "المالك", intro_owner)
+
+        # ── المرحلة ٢: الموافقة/الرغبة (لا تمرّ بالمفاوض بعد) ──
+        progress("الرغبة: ردّ الطرفين على المبادرة")
+        sc = _seeker_reply(seeker_data, [intro_seeker], is_first=False)
+        if sc:
+            _stamp("المستأجر", None, sc)
+        oc = _owner_reply(owner_data, [intro_owner], is_first=False)
+        if oc:
+            _stamp("المالك", None, oc)
+
+        # ── المرحلة ٣: التسجيل = تأكيد ما استخرجناه من الإعلان + سؤال النواقص فقط ──
+        # (مساعد الحافظ: تسجيل مبدئي من فهم الإعلان، ثم تأكيد بعد المحادثة.)
+        progress("التسجيل: تأكيد البيانات وسؤال النواقص فقط")
+        _seek_prof = (understanding or {}).get("seeker") if understanding else None
+        _off_prof = (understanding or {}).get("offer") if understanding else None
+
+        sk_known, sk_missing = _reg_confirm(_seek_prof, "seeker")
+        reg_q_seeker = ("تمام 🙌 من إعلانك سجّلت مبدئياً:\n- "
+                        + "\n- ".join(sk_known or ["(لا تفاصيل كافية في الإعلان)"]) + "\nأكّد لي صحّتها"
+                        + ((" — وينقصني فقط: " + "، ".join(sk_missing) + "؟") if sk_missing else " من فضلك."))
+        _stamp("الوسيط", "المستأجر", reg_q_seeker)
+        sr = _seeker_reply(seeker_data, [reg_q_seeker], is_first=False)
+        if sr:
+            _stamp("المستأجر", None, sr)
+
+        ow_known, ow_missing = _reg_confirm(_off_prof, "owner")
+        reg_q_owner = ("تمام 🙌 من إعلانك سجّلت مبدئياً:\n- "
+                       + "\n- ".join(ow_known or ["(لا تفاصيل كافية في الإعلان)"]) + "\nأكّد لي صحّتها"
+                       + ((" — وينقصني فقط: " + "، ".join(ow_missing) + "؟") if ow_missing else " من فضلك."))
+        _stamp("الوسيط", "المالك", reg_q_owner)
+        orp = _owner_reply(owner_data, [reg_q_owner], is_first=False)
+        if orp:
+            _stamp("المالك", None, orp)
+        _stamp("الوسيط", "المستأجر", "✅ اكتمل تسجيل طلبك في قاعدتنا. الآن أبدأ التفاوض نيابةً عنك مع المالك المناسب.")
+        _stamp("الوسيط", "المالك", "✅ اكتمل تسجيل إعلانك. لديّ مستأجر مسجّل ومناسب، أبدأ التفاوض الآن.")
+
+        # ── المرحلة ٤: التفاوض (الآن فقط، عبر المفاوض الحقيقي) ──
+        progress("بدء التفاوض بعد اكتمال التسجيل")
+        seeker_inbox.append("اكتمل تسجيلك، وبدأنا التفاوض على العقار المناسب لطلبك.")
+        owner_inbox.append("اكتمل تسجيل الطرفين، وبدأنا التفاوض مع المستأجر المسجّل.")
         msg = _seeker_reply(seeker_data, seeker_inbox, is_first=False)
         if msg:
             deliver(lead_phone, "المستأجر", msg)
