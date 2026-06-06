@@ -1095,17 +1095,18 @@ function gateClose(){document.getElementById('gateOv')?.remove();}
 function govErr(t){return `<div style="text-align:center;padding:16px"><div style="font-size:1.6rem;margin-bottom:6px">⚠️</div><div style="font-size:.85rem;color:var(--red)">${esc(t)}</div><button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="gateClose()">إغلاق</button></div>`;}
 
 // ── 🔭 لوحة الشفافية: قائمة الصفقات + السلسلة الكاملة ──
-let _tlSim = null;
+let _tlSim = null, _showTest=false;
 async function loadDeals(){
   const el=document.getElementById('deals-list');
   if(!el) return;
   el.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
-  const d=await sfetch('/deals/list');
+  const d=await sfetch('/deals/list'+(_showTest?'?include_test=1':''));
   if(!d||d.ok===false){el.innerHTML=empty('⚠️','خطأ',(d&&d.error)||'تعذّر التحميل');return;}
   const deals=d.deals||[];
-  if(!deals.length){el.innerHTML=empty('🔭','لا توجد صفقات بعد','شغّل محاكاة من «طلبات» لتظهر سلسلتها هنا');return;}
+  const toggle=(d.test_hidden||_showTest)?`<div style="margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="_showTest=!_showTest;loadDeals()">${_showTest?'🙈 إخفاء التجريبية':('🧪 '+(d.test_hidden||0)+' صفقة تجريبية مخفية — إظهار')}</button></div>`:'';
+  if(!deals.length){el.innerHTML=toggle+empty('🔭','لا توجد صفقات حقيقية بعد','اسحب إعلانات حراج ثم شغّل محاكاة لتظهر سلسلتها هنا');return;}
   const SC={agreed:'badge-approved',negotiating:'badge-pending',approved:'badge-approved',review:'badge-pending',rejected:'badge-rejected',failed:'badge-rejected',candidate:'badge-pending'};
-  el.innerHTML=deals.map(x=>`
+  el.innerHTML=toggle+deals.map(x=>`
    <div class="match-card" style="cursor:pointer" onclick="openDealPage('${x.seeker_phone}','${x.owner_phone}',${x.deal_no||0})">
      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
        <span class="badge" style="background:#58a6ff20;color:#58a6ff">صفقة #${x.deal_no||'—'}</span>

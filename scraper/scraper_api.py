@@ -652,9 +652,20 @@ def _deal_stage(gate_status, neg_status):
     return "candidate", "🔎 مرشّحة"
 
 
+_TEST_PREFIXES = ("966588", "966577000", "966577123", "9665000000")
+_TEST_PHONES = {"966536882728", "966548060060", "966500000000", "966500000001"}
+
+
+def _is_test_phone(p):
+    p = (p or "").strip()
+    return p in _TEST_PHONES or any(p.startswith(x) for x in _TEST_PREFIXES)
+
+
 @app.route("/deals/list")
 def deals_list():
-    """قائمة الصفقات (كل زوج باحث↔مالك مرّ بالبوّابة أو التفاوض) + مرحلتها الحالية."""
+    """قائمة الصفقات (كل زوج باحث↔مالك مرّ بالبوّابة أو التفاوض) + مرحلتها الحالية.
+    تُخفى الصفقات التجريبية المزروعة افتراضياً (?include_test=1 لإظهارها)."""
+    include_test = request.args.get("include_test", "0") == "1"
     deals = {}
     conn = get_conn()
     with conn.cursor() as cur:
@@ -683,14 +694,19 @@ def deals_list():
     conn.close()
 
     out = []
+    test_hidden = 0
     for d in deals.values():
+        is_test = _is_test_phone(d.get("seeker_phone")) or _is_test_phone(d.get("owner_phone"))
+        if is_test and not include_test:
+            test_hidden += 1
+            continue
         stage, label = _deal_stage(d.get("gate_status"), d.get("neg_status"))
         ts = d.get("ts")
         deal_no = d.get("gate_id") or d.get("neg_id")
-        out.append({**d, "stage": stage, "stage_label": label,
+        out.append({**d, "stage": stage, "stage_label": label, "test": is_test,
                     "deal_no": deal_no, "ts": ts.isoformat() if ts else None})
     out.sort(key=lambda x: x.get("ts") or "", reverse=True)
-    return jsonify({"ok": True, "deals": out})
+    return jsonify({"ok": True, "deals": out, "test_hidden": test_hidden})
 
 
 @app.route("/deal/timeline")

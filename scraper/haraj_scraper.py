@@ -117,10 +117,15 @@ async def scrape_single_url(url: str) -> dict:
                 if not img_url or img_url.startswith('data:'):
                     continue
                 low = img_url.lower()
-                is_img = ('haraj' in low or 'cdn' in low
-                          or low.split('?')[0].endswith(('.jpg', '.jpeg', '.png', '.webp')))
-                is_icon = any(x in low for x in ('logo', 'icon', 'avatar', 'sprite', 'placeholder', 'profile'))
-                if is_img and not is_icon:
+                base = low.split('?')[0]
+                is_icon = (base.endswith('.svg') or '/flags/' in low
+                           or any(x in low for x in ('logo', 'icon', 'avatar', 'sprite',
+                                                     'placeholder', 'profile', 'flag', 'emoji')))
+                # صور العقار الحقيقية على postcdn/userfiles؛ وإلا أي صورة من CDN حراج
+                is_photo = ('userfiles' in low or 'postcdn' in low
+                            or (('haraj' in low or 'cdn' in low)
+                                and base.endswith(('.jpg', '.jpeg', '.png', '.webp'))))
+                if is_photo and not is_icon:
                     images.append({"url": img_url, "alt": img.get('alt', '')})
 
             # الـvideo
