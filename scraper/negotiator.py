@@ -729,6 +729,25 @@ def _relay_info_request(neg: dict, my_role: str, text: str, conn):
 
 # ── Main handler ───────────────────────────────────────────────────────────────
 
+def _seeker_alternatives(lead_phone: str, current_listing_id, conn, limit: int = 3) -> list:
+    """أفضل عروض أخرى مطابقة لنفس الباحث (عدا العرض الحالي) — لترشيحها عند طلب بدائل."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT l.id, l.title, l.price, l.city, l.phone
+                FROM sanad.masaed_matches m
+                JOIN sanad.masaed_listings l ON l.id = m.listing_id
+                WHERE m.req_phone = %s AND m.listing_id <> %s AND m.status = 'pending'
+                  AND l.phone IS NOT NULL
+                ORDER BY m.score DESC NULLS LAST LIMIT %s
+            """, (lead_phone, current_listing_id or 0, limit))
+            return [{"id": r[0], "title": r[1], "price": r[2], "city": r[3], "phone": r[4]}
+                    for r in cur.fetchall()]
+    except Exception as e:
+        print(f"[ALT] تعذّر جلب البدائل: {e}", flush=True)
+        return []
+
+
 def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None) -> bool:
     neg_id   = neg["id"]
     is_lead  = (phone == neg["lead_phone"])
@@ -741,6 +760,27 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         _append_log(neg_id, my_role, text, conn)
         wa_send(phone, "تم إنهاء التفاوض. شكراً 🙏")
         wa_send(other, "أُنهي التفاوض من الطرف الآخر.")
+        return True
+
+    # ── 🔁 الباحث يطلب عروضاً أخرى / لم يرغب بهذا العرض → نرشّح بدائل مطابقة ──
+    if is_lead and parse_intent(text).get("intent") == "want_alternatives":
+        _append_log(neg_id, my_role, text, conn)
+        alts = _seeker_alternatives(neg["lead_phone"], neg.get("listing_id"), conn)
+        if alts:
+            lines = "\n".join(
+                f"{i+1}) {a.get('title') or 'عرض'}"
+                + (f" — {int(a['price']):,} ر/سنة" if a.get('price') else "")
+                + (f" — {a['city']}" if a.get('city') else "")
+                for i, a in enumerate(alts))
+            wa_send(phone,
+                    "تمام، لديّ عروض أخرى تطابق طلبك:\n" + lines +
+                    "\nأيّها يهمّك لأجهّز لك تفاصيله ومعاينته؟ (أرسل رقمه)")
+            try:
+                _notify_admin(neg, "wants_alternatives", conn)
+            except Exception as _e:
+                print(f"[NEG #{neg_id}] إشعار البدائل: {_e}", flush=True)
+        else:
+            wa_send(phone, "لا أجد عروضاً أخرى مطابقة لطلبك حالياً، سأبحث لك وأوافيك فور توفّرها 👌")
         return True
 
     # ── قراءة proposed_price من DB (لتجنب race condition) ────────────────────
