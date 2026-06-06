@@ -291,6 +291,7 @@ def ensure_table(conn=None):
             ("admin_notified",  "BOOLEAN DEFAULT false"),
             ("listing_facts",   "TEXT"),
             ("pending_req",     "JSONB"),
+            ("alt_offers",      "JSONB"),
         ]:
             cur.execute(
                 f"ALTER TABLE sanad.masaed_negotiations "
@@ -729,6 +730,41 @@ def _relay_info_request(neg: dict, my_role: str, text: str, conn):
 
 # ── Main handler ───────────────────────────────────────────────────────────────
 
+def _choice_from(text: str, n: int):
+    """يستخرج اختيار الباحث (رقم 1..n) من رسالته بعد عرض البدائل. يُرجع الفهرس (0-based) أو None."""
+    t = (text or "").translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+    for m in re.finditer(r'(?<!\d)([1-9])(?!\d)', t):
+        v = int(m.group(1))
+        if 1 <= v <= n:
+            return v - 1
+    for k, v in {"الاول": 1, "الأول": 1, "اول": 1, "الثاني": 2, "ثاني": 2,
+                 "الثالث": 3, "ثالث": 3}.items():
+        if k in (text or "") and v <= n:
+            return v - 1
+    return None
+
+
+def _link_alternative(neg: dict, lead_id, chosen: dict, conn):
+    """يربط اختيار الباحث بالبديل: ينشئ توفيقاً pending جاهزاً للمحاكاة (تحت البوّابة)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO sanad.masaed_matches
+                    (lead_id, listing_id, score, reason, status,
+                     req_phone, lst_phone, lst_price, req_city, lst_city)
+                VALUES (%s,%s,%s,%s,'pending',%s,%s,%s,%s,%s)
+                ON CONFLICT (lead_id, listing_id) DO UPDATE SET
+                    status='pending', score=GREATEST(sanad.masaed_matches.score,90),
+                    reason=EXCLUDED.reason, updated_at=NOW()
+            """, (lead_id or 0, chosen.get("id"), 90, "اختاره الباحث من البدائل",
+                  neg.get("lead_phone"), chosen.get("phone"), chosen.get("price"),
+                  neg.get("listing_city"), chosen.get("city")))
+            conn.commit()
+        print(f"[ALT-LINK] الباحث {neg.get('lead_phone')} اختار العرض {chosen.get('id')} → توفيق pending", flush=True)
+    except Exception as e:
+        print(f"[ALT-LINK] {e}", flush=True)
+
+
 def _seeker_alternatives(lead_phone: str, current_listing_id, conn, limit: int = 3) -> list:
     """أفضل عروض أخرى مطابقة لنفس الباحث (عدا العرض الحالي) — لترشيحها عند طلب بدائل."""
     try:
@@ -762,6 +798,31 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         wa_send(other, "أُنهي التفاوض من الطرف الآخر.")
         return True
 
+    # ── 🔁 اختار الباحث بديلاً (رقم) بعد عرض البدائل → اربطه تلقائياً (تحت البوّابة) ──
+    if is_lead:
+        with conn.cursor() as cur:
+            cur.execute("SELECT alt_offers, lead_id FROM sanad.masaed_negotiations WHERE id=%s", (neg_id,))
+            _r = cur.fetchone()
+        _alts_saved = (_r[0] if _r else None) or []
+        _lead_id = _r[1] if _r else None
+        if _alts_saved:
+            _ci = _choice_from(text, len(_alts_saved))
+            if _ci is not None:
+                chosen = _alts_saved[_ci]
+                _append_log(neg_id, my_role, text, conn)
+                _link_alternative(neg, _lead_id, chosen, conn)
+                wa_send(phone,
+                        f"ممتاز ✅ اخترت: {chosen.get('title') or 'العرض'}.\n"
+                        "جهّزته لك وسأرتّب تفاصيله ومعاينته قريباً 👌")
+                _close(neg_id, "cancelled", conn)
+                wa_send(neg["listing_phone"],
+                        "شكراً لك 🙏 المستأجر يكمل خياراً آخر حالياً، وسنعاود التواصل عند توفّر مهتم.")
+                try:
+                    _notify_admin(neg, "chose_alternative", conn)
+                except Exception:
+                    pass
+                return True
+
     # ── 🔁 الباحث يطلب عروضاً أخرى / لم يرغب بهذا العرض → نرشّح بدائل مطابقة ──
     if is_lead and parse_intent(text).get("intent") == "want_alternatives":
         _append_log(neg_id, my_role, text, conn)
@@ -775,6 +836,7 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
             wa_send(phone,
                     "تمام، لديّ عروض أخرى تطابق طلبك:\n" + lines +
                     "\nأيّها يهمّك لأجهّز لك تفاصيله ومعاينته؟ (أرسل رقمه)")
+            _update_neg(neg_id, conn, alt_offers=json.dumps(alts, ensure_ascii=False))
             try:
                 _notify_admin(neg, "wants_alternatives", conn)
             except Exception as _e:
