@@ -703,6 +703,7 @@ def deal_timeline():
         return jsonify({"ok": False, "error": "seeker_phone و owner_phone مطلوبان"}), 400
 
     conn = get_conn()
+    _ensure_listing_photos_col(conn)
     tl = {"seeker_phone": s, "owner_phone": o}
 
     def _comp(cur, source, ext_id):
@@ -712,6 +713,27 @@ def deal_timeline():
                     (source, str(ext_id)))
         r = cur.fetchone()
         return r[0] if r else None
+
+    def _party_db(cur, phone, ptype):
+        """اسم العميل من الحافظ + تسجيله المؤكّد في قاعدتنا (إن وُجد)."""
+        cur.execute("SELECT name, profile, notes FROM sanad.masaed_contacts WHERE phone=%s", (phone,))
+        c = cur.fetchone()
+        name = c[0] if c else None
+        keeper = {"profile": (c[1] if c else None), "notes": (c[2] if c else None)}
+        pricec = "budget_annual" if ptype == "wanted" else "price_annual"
+        cur.execute(f"""SELECT id,name,city,district,property_type,rooms,{pricec},
+                               special_notes,status,slug,created_at
+                        FROM sanad.masaed_registrations
+                        WHERE phone=%s AND type=%s AND status<>'abandoned'
+                        ORDER BY created_at DESC LIMIT 1""", (phone, ptype))
+        g = cur.fetchone()
+        reg = None
+        if g:
+            reg = {"id": g[0], "name": g[1], "city": g[2], "district": g[3],
+                   "property_type": g[4], "rooms": g[5], "price": g[6],
+                   "special_notes": g[7], "status": g[8], "slug": g[9],
+                   "created_at": g[10].isoformat() if g[10] else None}
+        return name, reg, keeper
 
     with conn.cursor() as cur:
         # 4) القرار (البوّابة) — أول ما نجلبه لأنه يحمل listing_id
@@ -762,27 +784,73 @@ def deal_timeline():
                              "city": r[4], "phone": r[5], "understanding": _comp(cur, "lead", r[0])}
         else:
             tl["request"] = {"phone": s}
+        _nm, _reg, _kp = _party_db(cur, s, "wanted")
+        tl["request"]["name"] = _nm
+        tl["request"]["registration"] = _reg
+        tl["request"]["keeper"] = _kp
 
         # 2) العرض — بـ listing_id أولاً (أوثق)، وإلا برقم المالك
         if lid:
-            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms
+            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms,photos
                            FROM sanad.masaed_listings WHERE id=%s""", (lid,))
         else:
-            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms
+            cur.execute("""SELECT id,url,title,body,city,price,phone,property_type,rooms,photos
                            FROM sanad.masaed_listings WHERE phone=%s ORDER BY id DESC LIMIT 1""", (o,))
         r = cur.fetchone()
         if r:
             tl["offer"] = {"listing_id": r[0], "url": r[1], "title": r[2], "body": r[3],
                            "city": r[4], "price": r[5], "phone": r[6], "property_type": r[7],
+                           "photos": r[9] or [],
                            "rooms": r[8], "understanding": _comp(cur, "listing", r[0])}
         else:
             tl["offer"] = {"phone": o}
+        _nm, _reg, _kp = _party_db(cur, o, "listing")
+        tl["offer"]["name"] = _nm
+        tl["offer"]["registration"] = _reg
+        tl["offer"]["keeper"] = _kp
     conn.close()
 
     stage, label = _deal_stage((tl.get("decision") or {}).get("gate_status"),
                                (tl.get("execution") or {}).get("status"))
     tl["stage"] = stage; tl["stage_label"] = label
     return jsonify({"ok": True, "timeline": tl})
+
+
+def _ensure_listing_photos_col(conn):
+    with conn.cursor() as cur:
+        cur.execute("ALTER TABLE sanad.masaed_listings ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT '[]'")
+        conn.commit()
+
+
+@app.route("/listings/<int:lst_id>/photos", methods=["GET", "POST"])
+def listing_photos(lst_id):
+    """🖼️ صور العقار: تُسحب من الإعلان (Playwright) وتُخزَّن في masaed_listings.photos.
+    GET يرجع المخزّن (ويسحب إن كان فارغاً)؛ POST يُجبر إعادة السحب."""
+    conn = get_conn()
+    _ensure_listing_photos_col(conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT url, photos FROM sanad.masaed_listings WHERE id=%s", (lst_id,))
+        row = cur.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "العرض غير موجود"}), 404
+    url, photos = row[0], (row[1] or [])
+    force = request.method == "POST"
+    if url and (force or not photos):
+        try:
+            from haraj_scraper import scrape_single_url_sync
+            data = scrape_single_url_sync(url) or {}
+            imgs = [i.get("url") for i in (data.get("images") or []) if isinstance(i, dict) and i.get("url")]
+            if imgs:
+                photos = imgs
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE sanad.masaed_listings SET photos=%s WHERE id=%s",
+                                (json.dumps(photos, ensure_ascii=False), lst_id))
+                    conn.commit()
+        except Exception as e:
+            print(f"[PHOTOS] تعذّر سحب صور العرض {lst_id}: {e}", flush=True)
+    conn.close()
+    return jsonify({"ok": True, "photos": photos, "count": len(photos), "source": url})
 
 
 @app.route("/negotiate/start", methods=["POST"])
@@ -1044,6 +1112,19 @@ def lab_simulate_deal():
         "seeker_source": "lead" if seeker.get("lead_id") else "registration",
         "seeker_id": seeker.get("lead_id") or seeker.get("phone"),
     }
+
+    # هل للعقار صور مخزّنة؟ (إن لا → مساعد المسجل يطلبها من المالك في المحاكاة)
+    try:
+        conn_p = get_conn()
+        _ensure_listing_photos_col(conn_p)
+        with conn_p.cursor() as cur:
+            cur.execute("SELECT photos FROM sanad.masaed_listings WHERE id=%s", (listing_id,))
+            rr = cur.fetchone()
+        conn_p.close()
+        extras["owner_has_photos"] = bool(rr and rr[0])
+    except Exception:
+        extras["owner_has_photos"] = False
+
     try:
         job_id = start_job(reg_id, seeker_data, owner_data, extras=extras)
         print(f"[DEAL-SIM] محاكاة صفقة {seeker_phone}↔{offer.get('phone')} (job={job_id})", flush=True)

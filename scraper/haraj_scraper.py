@@ -110,11 +110,17 @@ async def scrape_single_url(url: str) -> dict:
             if not price and body:
                 price = extract_price(body)
 
-            # الصور من الـimg tags
+            # الصور من الـimg tags (حراج يخدم صوره من CDN، فنوسّع الفلتر مع تجاهل الأيقونات)
             images = []
             for img in soup.select('img[src], img[data-src]'):
                 img_url = img.get('src') or img.get('data-src')
-                if img_url and 'haraj' in img_url:
+                if not img_url or img_url.startswith('data:'):
+                    continue
+                low = img_url.lower()
+                is_img = ('haraj' in low or 'cdn' in low
+                          or low.split('?')[0].endswith(('.jpg', '.jpeg', '.png', '.webp')))
+                is_icon = any(x in low for x in ('logo', 'icon', 'avatar', 'sprite', 'placeholder', 'profile'))
+                if is_img and not is_icon:
                     images.append({"url": img_url, "alt": img.get('alt', '')})
 
             # الـvideo

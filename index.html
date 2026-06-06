@@ -1106,7 +1106,7 @@ async function loadDeals(){
   if(!deals.length){el.innerHTML=empty('🔭','لا توجد صفقات بعد','شغّل محاكاة من «طلبات» لتظهر سلسلتها هنا');return;}
   const SC={agreed:'badge-approved',negotiating:'badge-pending',approved:'badge-approved',review:'badge-pending',rejected:'badge-rejected',failed:'badge-rejected',candidate:'badge-pending'};
   el.innerHTML=deals.map(x=>`
-   <div class="match-card" style="cursor:pointer" onclick="openTimeline('${x.seeker_phone}','${x.owner_phone}',${x.deal_no||0})">
+   <div class="match-card" style="cursor:pointer" onclick="openDealPage('${x.seeker_phone}','${x.owner_phone}',${x.deal_no||0})">
      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
        <span class="badge" style="background:#58a6ff20;color:#58a6ff">صفقة #${x.deal_no||'—'}</span>
        <span class="badge ${SC[x.stage]||'badge-pending'}">${esc(x.stage_label||'')}</span>
@@ -1180,6 +1180,23 @@ function _kvList(obj,labels){
   }
   return rows.join('')||'<div style="color:var(--muted)">لا بيانات بعد</div>';
 }
+function _photosHtml(photos,lid){
+  if(photos&&photos.length) return `<div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0">${photos.slice(0,12).map(u=>`<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" loading="lazy" style="height:84px;border-radius:8px;border:1px solid var(--border)"></a>`).join('')}</div>`;
+  return `<button class="btn btn-ghost btn-sm" onclick="fetchPhotos(${lid||0},this)">🖼️ اسحب صور العقار من الإعلان وخزّنها</button>`;
+}
+async function fetchPhotos(lid,btn){
+  if(!lid){toast('لا يوجد عرض مرتبط');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> جارٍ سحب الصور من الإعلان…';
+  const d=await sfetch(`/listings/${lid}/photos`);
+  const box=document.getElementById('dossierPhotos');
+  if(d&&d.ok&&d.photos&&d.photos.length){
+    if(box) box.innerHTML=_photosHtml(d.photos,lid);
+    if(window._tlData&&window._tlData.offer) window._tlData.offer.photos=d.photos;
+    toast(`✅ خُزّنت ${d.photos.length} صورة في صفحة المستخدم`,3500);
+  }else{
+    btn.disabled=false;btn.innerHTML='🖼️ لا صور في الإعلان — تُطلب من المالك في التسجيل';
+  }
+}
 function openDossier(role){
   const t=window._tlData||{};
   const party = role==='seeker'?(t.request||{}):(t.offer||{});
@@ -1193,6 +1210,7 @@ function openDossier(role){
       <div style="font-size:.7rem;color:var(--muted);margin-bottom:8px" dir="ltr">${esc(party.phone||'')}</div>
       ${party.url?`<a href="${esc(party.url)}" target="_blank" class="btn btn-ghost btn-sm">🔗 الإعلان الأصلي</a>`:''}
       ${party.body?`<div style="font-size:.74rem;color:var(--muted);margin:8px 0;line-height:1.6">${esc(party.body)}</div>`:''}
+      ${role==='owner'?`<div style="margin-top:8px"><div style="font-weight:700;font-size:.78rem;margin-bottom:6px">🖼️ صور العقار (مخزّنة في صفحة المستخدم)</div><div id="dossierPhotos">${_photosHtml(party.photos,party.listing_id)}</div></div>`:''}
       <div style="margin-top:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px">
         <div style="font-weight:700;font-size:.78rem;margin-bottom:6px;color:var(--green-light)">📋 المأخوذ من الإعلان</div>
         ${_kvList(fromAd,_LBL_AD)}
@@ -1206,6 +1224,121 @@ function openDossier(role){
       <button class="btn btn-primary btn-sm" onclick="renderTimeline(window._tlData)">← رجوع للسلسلة</button>
       <button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button>
     </div>`);
+}
+
+// ══ صفحة تحكم كاملة لكل صفقة (تبويبات · شاشة كاملة · بيانات حقيقية) ══
+let _dealData=null,_dealTab='overview';
+async function openDealPage(s,o,dealNo){
+  let pg=document.getElementById('dealPage');
+  if(!pg){pg=document.createElement('div');pg.id='dealPage';pg.style.cssText='position:fixed;inset:0;z-index:9998;background:var(--bg);overflow-y:auto;direction:rtl';document.body.appendChild(pg);}
+  pg.style.display='block';
+  pg.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:80vh"><div class="spinner"></div></div>';
+  const d=await sfetch(`/deal/timeline?seeker_phone=${encodeURIComponent(s)}&owner_phone=${encodeURIComponent(o)}`);
+  if(!d||d.ok===false){pg.innerHTML=`<div style="padding:40px">${govErr((d&&d.error)||'تعذّر التحميل')}<div style="text-align:center;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="closeDealPage()">رجوع</button></div></div>`;return;}
+  const t=d.timeline;t.deal_no=dealNo;_dealData=t;window._tlData=t;_tlSim=(t.simulation&&t.simulation.result)||null;_dealTab='overview';
+  renderDealPage();
+}
+function closeDealPage(){const pg=document.getElementById('dealPage');if(pg)pg.style.display='none';}
+function dealTab(n){_dealTab=n;renderDealPage();const pg=document.getElementById('dealPage');if(pg)pg.scrollTo(0,0);}
+function _stat(l,v){return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px"><div style="font-size:.66rem;color:var(--muted)">${l}</div><div style="font-size:.85rem;font-weight:700">${esc(String(v==null?'—':v))}</div></div>`;}
+function showDealSim(){ if(_tlSim) gateOverlay(simReviewInner(_tlSim)+`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`); }
+function renderDealPage(){
+  const t=_dealData||{},pg=document.getElementById('dealPage');if(!pg)return;
+  const req=t.request||{},off=t.offer||{};
+  const sName=req.name||req.phone||'الباحث',oName=off.name||off.phone||'المالك';
+  const TABS=[['overview','📊 نظرة عامة'],['landing','🏠 صفحة الهبوط'],['ad','🏷️ الإعلان'],['photos','🖼️ الصور'],['prelim','🧾 التسجيل المبدئي'],['client','👤 العميل'],['sim','🎭 المحاكاة'],['path','🚦 المسار']];
+  const tb=TABS.map(p=>`<button onclick="dealTab('${p[0]}')" style="white-space:nowrap;padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:${_dealTab===p[0]?'var(--green)':'var(--card)'};color:${_dealTab===p[0]?'#000':'var(--text)'};font-size:.78rem;font-weight:700;cursor:pointer">${p[1]}</button>`).join('');
+  pg.innerHTML=`
+    <div style="position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#0d1117,#161b22);border-bottom:1px solid var(--border);padding:12px 16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <button onclick="closeDealPage()" class="btn btn-ghost btn-sm">← رجوع</button>
+        <div style="font-weight:800;font-size:1.05rem">صفقة #${t.deal_no||'—'}</div>
+        <span class="badge badge-pending">${esc(t.stage_label||'')}</span>
+        <div style="margin-right:auto;font-size:.72rem;color:var(--muted)" dir="ltr">🔍 ${esc(sName)} ↔ 🏠 ${esc(oName)}</div>
+      </div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px">${tb}</div>
+    </div>
+    <div style="padding:16px;max-width:900px;margin:0 auto">${_dealTabContent(t)}</div>`;
+}
+function _dealTabContent(t){
+  const req=t.request||{},off=t.offer||{},dec=t.decision||{},exe=t.execution,sim=_tlSim;
+  const ru=req.understanding||{},ou=off.understanding||{};
+  const card=(h)=>`<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px">${h}</div>`;
+  const head=(x)=>`<div style="font-weight:800;font-size:.85rem;margin-bottom:8px">${x}</div>`;
+  const regBadge=(r)=>r?'<span class="badge badge-approved">مسجّل ✅</span>':'<span class="badge badge-pending">مبدئي (غير مؤكّد)</span>';
+  if(_dealTab==='overview'){
+    const asmt=(sim&&sim.understanding&&sim.understanding.assessment)||{};
+    return card(head('📊 ملخّص الصفقة')+
+      `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        ${_stat('المرحلة',t.stage_label)}${_stat('تقييم المحاكاة',sim&&sim.evaluation?(sim.evaluation.overall_score+'/10'):'—')}
+        ${_stat('حكم التوافق',asmt.verdict?(asmt.verdict+(asmt.score!=null?` ${asmt.score}%`:'')):'—')}${_stat('القرار',dec.gate_status||'—')}
+        ${_stat('التنفيذ',exe?exe.status:'لم يبدأ')}${_stat('السعر المتفق',exe&&exe.agreed_price?Number(exe.agreed_price).toLocaleString('ar')+' ر':'—')}
+      </div>`)+
+      card(head('👥 الطرفان')+
+        `<div style="font-size:.8rem;line-height:2">🔍 الباحث: <b>${esc(req.name||'—')}</b> <span dir="ltr" style="color:var(--muted)">${esc(req.phone||'')}</span> — ${regBadge(req.registration)}<br>
+         🏠 المالك: <b>${esc(off.name||'—')}</b> <span dir="ltr" style="color:var(--muted)">${esc(off.phone||'')}</span> — ${regBadge(off.registration)}</div>`);
+  }
+  if(_dealTab==='landing') return _landingHtml(t);
+  if(_dealTab==='photos') return card(head('🖼️ الصور المسحوبة من الإعلان')+`<div id="dealPhotoArea">${_photosHtml(off.photos,off.listing_id)}</div><div style="font-size:.72rem;color:var(--muted);margin-top:8px">تُسحب من إعلان حراج وتُخزَّن في صفحة المستخدم وتظهر في صفحة الهبوط.</div>`);
+  if(_dealTab==='ad') return card(head('🏷️ إعلان حراج (المسحوب الخام)')+
+      `${off.url?`<a href="${esc(off.url)}" target="_blank" class="btn btn-ghost btn-sm">🔗 الإعلان على حراج</a>`:''}
+       <div style="font-size:.8rem;margin-top:6px"><b>${esc(off.title||'—')}</b></div>
+       ${off.body?`<div style="font-size:.76rem;color:var(--muted);line-height:1.7;margin-top:4px">${esc(off.body)}</div>`:''}
+       <div style="margin-top:8px">${_kvList({city:off.city,price:off.price,rooms:off.rooms,property_type:off.property_type},_LBL_AD)}</div>`)+
+      card(head('🧠 المستخرَج من الإعلان (فهم عميق)')+_kvList(ou,_LBL_AD))+
+      card(head('🗄️ المسجّل عندنا (قاعدة بياناتنا)')+(off.registration?_kvList(off.registration,_LBL_AD):'<div style="color:var(--yellow);font-size:.78rem">لم يُسجَّل بعد — البيانات مبدئية من الإعلان فقط.</div>'));
+  if(_dealTab==='prelim') return `<div style="font-size:.74rem;color:var(--muted);margin-bottom:10px">التسجيل المبدئي يُبنى من فهم الإعلان قبل تأكيد العميل. عند تأكيده في المحادثة يصبح مسجّلاً في قاعدتنا.</div>`+
+      card(head('🔍 الباحث '+regBadge(req.registration))+_kvList(ru,_LBL_AD))+
+      card(head('🏠 المالك '+regBadge(off.registration))+_kvList(ou,_LBL_AD));
+  if(_dealTab==='client'){
+    const pf=(sim&&sim.party_facts)||{};
+    const block=(lbl,party,uobj,role)=>card(head(lbl)+
+      `<div style="font-weight:700;font-size:.76rem;color:var(--green-light);margin-bottom:4px">📋 من الإعلان</div>${_kvList(uobj,_LBL_AD)}
+       <div style="font-weight:700;font-size:.76rem;color:var(--blue);margin:8px 0 4px">💬 من سياق المحادثة (الحافظ)</div>${_kvList(pf[role]||{},_LBL_CONV)}
+       ${party.keeper&&party.keeper.notes?`<div style="font-size:.74rem;color:var(--muted);margin-top:6px">📝 ${esc(party.keeper.notes)}</div>`:''}`);
+    return block('🔍 الباحث: '+esc(req.name||req.phone||''),req,ru,'seeker')+block('🏠 المالك: '+esc(off.name||off.phone||''),off,ou,'owner');
+  }
+  if(_dealTab==='sim'){
+    if(!sim) return card('لم تُشغّل محاكاة محفوظة لهذه الصفقة بعد.');
+    return `<div style="margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="showDealSim()">👁 عرض المحادثة الكاملة</button></div>`+simReviewInner(sim);
+  }
+  if(_dealTab==='path') return _pathHtml(t);
+  return '';
+}
+function _landingHtml(t){
+  const off=t.offer||{},u=off.understanding||{};
+  const oName=off.name||'صاحب العقار',photos=off.photos||[];
+  const hero=photos.length?`<img src="${esc(photos[0])}" style="width:100%;height:230px;object-fit:cover">`:`<div style="height:230px;background:linear-gradient(135deg,#1f6feb33,#2ea04333);display:flex;align-items:center;justify-content:center;font-size:3rem">🏠</div>`;
+  const spec=(ic,lb,v)=>v?`<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px;text-align:center"><div style="font-size:1.1rem">${ic}</div><div style="font-size:.64rem;color:var(--muted)">${lb}</div><div style="font-size:.78rem;font-weight:700">${esc(String(v))}</div></div>`:'';
+  const fur=u.furnished===true?'مفروش':u.furnished===false?'بدون أثاث':'';
+  return `<div style="background:#e3b34115;border:1px solid #e3b34140;border-radius:8px;padding:6px 10px;font-size:.72rem;color:var(--yellow);margin-bottom:10px">🔒 صفحة هبوط احترافية — معاينة داخلية (غير منشورة)</div>
+   <div style="border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--card)">
+     <div style="position:relative">${hero}<div style="position:absolute;bottom:0;right:0;left:0;background:linear-gradient(transparent,rgba(0,0,0,.75));padding:24px 14px 10px;display:flex;align-items:center;gap:8px"><div style="width:36px;height:36px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:1.1rem">👤</div><div><div style="font-weight:800;color:#fff">${esc(oName)}</div><div style="font-size:.66rem;color:#ddd">صاحب العقار</div></div></div></div>
+     <div style="padding:14px">
+       <div style="font-size:1.1rem;font-weight:800;margin-bottom:6px">${esc(off.title||u.summary||'عقار للإيجار')}</div>
+       ${off.price?`<div style="font-size:1.5rem;font-weight:900;color:var(--green-light);margin-bottom:8px">${Number(off.price).toLocaleString('ar')} <span style="font-size:.8rem;color:var(--muted)">ريال/سنة</span></div>`:''}
+       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0">
+         ${spec('🏙️','المدينة',off.city||u.city)}${spec('📍','الحي',u.district)}${spec('🛏️','الغرف',off.rooms||u.rooms)}${spec('🚿','دورات',u.bathrooms)}
+         ${spec('📐','م²',u.area_sqm)}${spec('🏷️','النوع',off.property_type||u.property_type)}${spec('✨','التشطيب',u.finishing)}${spec('🛋️','الأثاث',fur)}
+       </div>
+       ${(u.special&&u.special.length)?`<div style="font-size:.78rem;margin-bottom:8px">⭐ ${u.special.map(esc).join(' · ')}</div>`:''}
+       ${off.body?`<div style="font-size:.77rem;color:var(--muted);line-height:1.8">${esc(off.body)}</div>`:''}
+       ${photos.length>1?`<div style="display:flex;gap:6px;overflow-x:auto;margin-top:12px">${photos.slice(1,12).map(p=>`<img src="${esc(p)}" loading="lazy" style="height:74px;border-radius:8px">`).join('')}</div>`:(photos.length?'':`<div id="dealPhotoArea" style="margin-top:12px">${_photosHtml(off.photos,off.listing_id)}</div>`)}
+       ${off.url?`<a href="${esc(off.url)}" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:12px">🔗 المصدر (حراج)</a>`:''}
+     </div>
+   </div>`;
+}
+function _pathHtml(t){
+  const dec=t.decision||{},exe=t.execution,sim=_tlSim,req=t.request||{},off=t.offer||{};
+  const step=(ic,ti,inner,done)=>`<div style="display:flex;gap:10px;margin-bottom:10px"><div style="flex:0 0 30px"><div style="width:30px;height:30px;border-radius:50%;background:${done?'#2ea04330':'var(--card)'};border:1px solid var(--border);display:flex;align-items:center;justify-content:center">${ic}</div></div><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:.8rem">${ti}</div><div style="font-size:.76rem;color:var(--muted)">${inner}</div></div></div>`;
+  return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px">`+
+    step('🔍','الطلب',(esc(req.title||'—'))+(req.url?` · <a href="${esc(req.url)}" target="_blank" style="color:var(--blue)">رابط</a>`:''),!!req.title)+
+    step('🏠','العرض',(esc(off.title||'—'))+(off.url?` · <a href="${esc(off.url)}" target="_blank" style="color:var(--blue)">رابط</a>`:''),!!off.title)+
+    step('🧾','التسجيل المبدئي',(req.registration?'الباحث مؤكّد':'الباحث مبدئي')+' · '+(off.registration?'المالك مؤكّد':'المالك مبدئي'),true)+
+    step('🎭','المحاكاة',sim?`تقييم ${sim.evaluation?sim.evaluation.overall_score:'—'}/10 · ${((sim.simulation&&sim.simulation.messages)||[]).length} رسالة`:'لم تُشغّل',!!sim)+
+    step('🚦','القرار',esc(dec.gate_status||'لا قرار'),!!dec.gate_status)+
+    step('🤝','التنفيذ',exe?(esc(exe.status)+(exe.agreed_price?` · ${Number(exe.agreed_price).toLocaleString('ar')} ر`:'')):'لم يبدأ',!!exe)+
+  `</div>`;
 }
 
 function openNegFromMatch(negId) {
