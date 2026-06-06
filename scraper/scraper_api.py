@@ -2290,65 +2290,94 @@ def cron_auto_match():
     return jsonify({"ok": True, "matches": match_result, "expired_closed": expired})
 
 
-@app.route("/cron/auto-simulate", methods=["POST"])
-def cron_auto_simulate():
-    """🤖 يحاكي أفضل التوفيقات المعلّقة تلقائياً (بلا أي إرسال واتساب) ويسجّلها
-    pending_review لتظهر في «الشفافية» جاهزةً لمراجعتك. آمن تماماً: لا تواصل، لا اعتماد.
-    البوّابة تبقى يدوية. Query/Body: batch (افتراضي 3، أقصى 6)."""
+# حالة آخر تشغيل لمحاكاة تلقائية (للوحة التحكم)
+_autosim_state = {"running": False, "done": 0, "skipped": 0, "total": 0, "started": None, "finished": None}
+
+
+def _run_auto_simulate(batch):
+    """يحاكي أفضل التوفيقات المعلّقة (بلا إرسال) ويسجّلها pending_review."""
     import deal_gate
     from sim_engine import start_job, get_status, RateLimited
     import time as _t
+    _autosim_state.update({"running": True, "done": 0, "skipped": 0, "total": batch,
+                           "started": _t.strftime("%H:%M"), "finished": None})
+    try:
+        ensure_matches_table()
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT m.id, m.req_phone, m.lst_phone, m.listing_id, m.score
+                FROM sanad.masaed_matches m
+                WHERE m.status='pending'
+                  AND m.req_phone IS NOT NULL AND m.lst_phone IS NOT NULL
+                  AND m.listing_id IN (SELECT id FROM sanad.masaed_listings)
+                  AND NOT EXISTS (SELECT 1 FROM sanad.masaed_deal_gate g
+                                  WHERE g.seeker_phone=m.req_phone AND g.owner_phone=m.lst_phone)
+                ORDER BY m.score DESC NULLS LAST, m.matched_at DESC
+                LIMIT 80
+            """)
+            rows = cur.fetchall()
+        conn.close()
+        results = []
+        for mid, req_phone, lst_phone, listing_id, score in rows:
+            if _autosim_state["done"] >= batch:
+                break
+            if _is_test_phone(req_phone) or _is_test_phone(lst_phone) or req_phone == lst_phone:
+                _autosim_state["skipped"] += 1; continue
+            try:
+                inp = _build_deal_sim(req_phone, listing_id, lst_phone)
+                if not inp or not (inp["offer"] or {}).get("phone"):
+                    _autosim_state["skipped"] += 1; continue
+                job = start_job(inp["reg_id"], inp["seeker_data"], inp["owner_data"], extras=inp["extras"])
+                st = None
+                for _ in range(50):
+                    _t.sleep(3)
+                    st = get_status(job)
+                    if st and st.get("status") in ("done", "error"):
+                        break
+                res = (st or {}).get("result") or {}
+                if not res.get("ok"):
+                    _autosim_state["skipped"] += 1; continue
+                ev = res.get("evaluation") or {}; sm = res.get("simulation") or {}
+                deal_gate.record(req_phone, lst_phone, listing_id, job,
+                                 {"score": ev.get("overall_score"), "final_status": sm.get("final_status"),
+                                  "fact_errors": len(res.get("fact_errors") or [])},
+                                 gate_status="pending_review", by="auto-sim")
+                _autosim_state["done"] += 1
+                results.append({"match": mid, "score": ev.get("overall_score")})
+            except RateLimited:
+                break
+            except Exception as e:
+                print(f"[AUTO-SIM] {e}", flush=True); _autosim_state["skipped"] += 1
+        return {"ok": True, "simulated": _autosim_state["done"],
+                "skipped": _autosim_state["skipped"], "results": results}
+    finally:
+        import time as _t2
+        _autosim_state["running"] = False
+        _autosim_state["finished"] = _t2.strftime("%H:%M")
+
+
+@app.route("/cron/auto-simulate", methods=["POST"])
+def cron_auto_simulate():
+    """🤖 يحاكي أفضل التوفيقات المعلّقة (بلا أي إرسال) ويسجّلها pending_review لتظهر
+    في «الشفافية». يدوي من اللوحة. Query: batch (افتراضي 3، أقصى 6)، async=1 للخلفية."""
+    import threading
     body = request.get_json(silent=True) or {}
     batch = min(int(request.args.get("batch", body.get("batch", 3))), 6)
-    ensure_matches_table()
-    conn = get_conn()
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT m.id, m.req_phone, m.lst_phone, m.listing_id, m.score
-            FROM sanad.masaed_matches m
-            WHERE m.status='pending'
-              AND m.req_phone IS NOT NULL AND m.lst_phone IS NOT NULL
-              AND m.listing_id IN (SELECT id FROM sanad.masaed_listings)
-              AND NOT EXISTS (SELECT 1 FROM sanad.masaed_deal_gate g
-                              WHERE g.seeker_phone=m.req_phone AND g.owner_phone=m.lst_phone)
-            ORDER BY m.score DESC NULLS LAST, m.matched_at DESC
-            LIMIT 80
-        """)
-        rows = cur.fetchall()
-    conn.close()
+    if _autosim_state.get("running"):
+        return jsonify({"ok": False, "error": "محاكاة تلقائية قيد التشغيل بالفعل",
+                        "state": _autosim_state}), 409
+    if request.args.get("async") == "1" or body.get("async"):
+        threading.Thread(target=_run_auto_simulate, args=(batch,), daemon=True).start()
+        return jsonify({"ok": True, "started": True, "batch": batch,
+                        "message": "بدأت المحاكاة في الخلفية — حدّث بعد دقائق"}), 202
+    return jsonify(_run_auto_simulate(batch))
 
-    done, skipped, results = 0, 0, []
-    for mid, req_phone, lst_phone, listing_id, score in rows:
-        if done >= batch:
-            break
-        if _is_test_phone(req_phone) or _is_test_phone(lst_phone) or req_phone == lst_phone:
-            skipped += 1; continue
-        try:
-            inp = _build_deal_sim(req_phone, listing_id, lst_phone)
-            if not inp or not (inp["offer"] or {}).get("phone"):
-                skipped += 1; continue
-            job = start_job(inp["reg_id"], inp["seeker_data"], inp["owner_data"], extras=inp["extras"])
-            st = None
-            for _ in range(50):
-                _t.sleep(3)
-                st = get_status(job)
-                if st and st.get("status") in ("done", "error"):
-                    break
-            res = (st or {}).get("result") or {}
-            if not res.get("ok"):
-                skipped += 1; continue
-            ev = res.get("evaluation") or {}; sm = res.get("simulation") or {}
-            deal_gate.record(req_phone, lst_phone, listing_id, job,
-                             {"score": ev.get("overall_score"), "final_status": sm.get("final_status"),
-                              "fact_errors": len(res.get("fact_errors") or [])},
-                             gate_status="pending_review", by="auto-sim")
-            done += 1
-            results.append({"match": mid, "score": ev.get("overall_score")})
-        except RateLimited:
-            break
-        except Exception as e:
-            print(f"[AUTO-SIM] {e}", flush=True); skipped += 1
-    return jsonify({"ok": True, "simulated": done, "skipped": skipped, "results": results})
+
+@app.route("/cron/auto-simulate-status", methods=["GET"])
+def cron_auto_simulate_status():
+    """حالة آخر/جاري محاكاة تلقائية (للوحة التحكم)."""
+    return jsonify({"ok": True, "state": _autosim_state})
 
 
 # ══════════════════════════════════════════════════════════════════════════════

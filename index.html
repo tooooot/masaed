@@ -452,11 +452,16 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
 
     <div class="page" id="page-deals">
       <div class="page-body">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
           <div style="font-weight:800;font-size:1rem">🔭 شفافية الصفقات</div>
           <button class="btn btn-ghost btn-sm" onclick="loadDeals()" style="margin-right:auto">🔄 تحديث</button>
         </div>
-        <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px">كل صفقة كسلسلة كاملة: طلب → مرشحون → فهم → محاكاة → قرار → تنفيذ.</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn btn-blue btn-sm" id="btnAutoMatch" onclick="runAutoMatch(this)">🔗 مطابقة جديدة</button>
+          <button class="btn btn-primary btn-sm" id="btnAutoSim" onclick="runAutoSimulate(this)">🤖 حاكِ أفضل ٣ توفيقات</button>
+          <span id="autoSimNote" style="font-size:.72rem;color:var(--muted);align-self:center"></span>
+        </div>
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px">يدوي بالكامل: «مطابقة» تحدّث التوفيقات، و«حاكِ» يملأ الصفقات (بلا أي إرسال). البوّابة تبقى باعتمادك.</div>
         <div id="deals-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
     </div>
@@ -1119,6 +1124,37 @@ async function loadDeals(){
      <div style="font-size:.72rem;color:var(--muted);margin-top:3px" dir="ltr">🔍 ${esc(x.seeker_phone)} ↔ 🏠 ${esc(x.owner_phone)}</div>
      <div style="font-size:.7rem;color:var(--blue);margin-top:6px">عرض السلسلة الكاملة ←</div>
    </div>`).join('');
+}
+// تشغيل يدوي للأتمتة الآمنة من اللوحة (لا cron)
+async function runAutoMatch(btn){
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> مطابقة…';
+  const d=await sfetch('/cron/auto-match',{method:'POST'});
+  btn.disabled=false;btn.innerHTML='🔗 مطابقة جديدة';
+  const nm=(d&&d.matches&&d.matches.new_matches)??0;
+  toast(d&&d.ok?`✅ ${nm} توفيق جديد`:'⚠️ '+((d&&d.error)||'خطأ'),4000);
+}
+let _autoSimPoll=null;
+async function runAutoSimulate(btn){
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> بدء…';
+  const d=await sfetch('/cron/auto-simulate?async=1&batch=3',{method:'POST'});
+  if(!d||d.ok===false){toast('⚠️ '+((d&&d.error)||'تعذّر البدء'),4000);btn.disabled=false;btn.innerHTML='🤖 حاكِ أفضل ٣ توفيقات';return;}
+  toast('🤖 بدأت المحاكاة في الخلفية (بلا إرسال) — ستظهر الصفقات تباعاً',5000);
+  pollAutoSim(btn);
+}
+async function pollAutoSim(btn){
+  if(_autoSimPoll) clearInterval(_autoSimPoll);
+  const note=document.getElementById('autoSimNote');
+  _autoSimPoll=setInterval(async()=>{
+    const s=await sfetch('/cron/auto-simulate-status');
+    const st=(s&&s.state)||{};
+    if(st.running){ if(note)note.textContent=`⏳ جارٍ… ${st.done||0}/${st.total||0}`; if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> محاكاة…';} }
+    else{
+      clearInterval(_autoSimPoll);_autoSimPoll=null;
+      if(note)note.textContent=`✅ تمّت: ${st.done||0} صفقة`;
+      if(btn){btn.disabled=false;btn.innerHTML='🤖 حاكِ أفضل ٣ توفيقات';}
+      loadDeals();
+    }
+  },5000);
 }
 async function openTimeline(s,o,dealNo){
   gateOverlay('<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></div>');
