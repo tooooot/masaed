@@ -20,6 +20,18 @@ from bot import get_conn
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
 
 
+_SEV = {"high": 0, "medium": 1, "low": 2}
+_MAX_PER_REVIEW = 6   # سقف اقتراحات كل محاكاة
+
+
+def _sig(typ, field, stage, issue):
+    """توقيع للتكرار: النوع + الحقل/المرحلة + بداية نص المشكلة (مُطبَّع)."""
+    import re
+    key = (typ or "") + "|" + (field or stage or "") + "|"
+    iss = re.sub(r"\s+", " ", (issue or "").strip()).lower()[:38]
+    return (key + iss).lower()
+
+
 def ensure_table():
     with get_conn() as c, c.cursor() as cur:
         cur.execute("""CREATE TABLE IF NOT EXISTS sanad.masaed_improvements(
@@ -98,13 +110,23 @@ def review_conversation(transcript, deal_data=None, source="sim", neg_id=None):
     if not out:
         return None
     findings = out.get("findings", []) or []
-    saved = 0
     valid = set(identity.DEFAULTS.keys())
+    # رتّب بالشدّة واقتطع سقفاً لكل محاكاة (تجنّب الضجيج)
+    findings.sort(key=lambda f: _SEV.get((f.get("severity") or "").lower(), 3))
+    findings = findings[:_MAX_PER_REVIEW]
+    saved = 0
     with get_conn() as c, c.cursor() as cur:
+        # وقّع الموجود المفتوح لتفادي التكرار عبر المحاكاات
+        cur.execute("SELECT type, field, stage, issue FROM sanad.masaed_improvements WHERE status='open'")
+        seen = {_sig(t, fl, st, iss) for t, fl, st, iss in cur.fetchall()}
         for f in findings:
             fld = f.get("field") or None
             if fld and fld not in valid:
                 fld = None
+            sig = _sig(f.get("type"), fld, f.get("stage"), f.get("issue"))
+            if sig in seen:
+                continue   # مكرّر — موجود مفتوح بنفس المعنى
+            seen.add(sig)
             cur.execute("""INSERT INTO sanad.masaed_improvements
                 (source,neg_id,severity,stage,issue,type,field,suggestion,evidence)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
