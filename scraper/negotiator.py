@@ -395,6 +395,12 @@ def _append_log(neg_id: int, role: str, text: str, conn):
 
 def _close(neg_id: int, status: str, conn, agreed_price: int = None):
     _update_neg(neg_id, conn, status=status, agreed_price=agreed_price)
+    # 🔧 نظام التطوير: راجِع المحادثة الحقيقية عند إغلاقها (خيط منفصل)
+    try:
+        import reviewer
+        reviewer.review_negotiation_async(neg_id)
+    except Exception as _re:
+        print(f"[REVIEWER] تعذّر إطلاق مراجعة #{neg_id}: {_re}", flush=True)
 
 
 # ── Admin notification ─────────────────────────────────────────────────────────

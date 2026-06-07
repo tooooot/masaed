@@ -115,6 +115,43 @@ def review_conversation(transcript, deal_data=None, source="sim", neg_id=None):
     return {"score": out.get("score"), "summary": out.get("summary"), "count": saved}
 
 
+def review_negotiation(neg_id):
+    """يراجع تفاوضاً حقيقياً من chat_log (المختبرون/الإطلاق)."""
+    from bot import get_conn
+    with get_conn() as c, c.cursor() as cur:
+        cur.execute("""SELECT chat_log, listing_title, listing_city, listing_price,
+                              lead_phone, listing_phone
+                       FROM sanad.masaed_negotiations WHERE id=%s""", (neg_id,))
+        row = cur.fetchone()
+    if not row:
+        return None
+    chat, title, city, price, lp, sp = row
+    transcript = []
+    for e in (chat or []):
+        role = e.get("role", "") or ""
+        text = e.get("text", "")
+        if role.startswith("bot→"):
+            transcript.append({"from": "الوسيط", "to": role.split("→", 1)[1], "text": text})
+        else:
+            transcript.append({"from": role, "text": text})
+    facts = {"title": title, "city": city, "price": price}
+    return review_conversation(transcript, facts, "real", neg_id)
+
+
+def review_negotiation_async(neg_id):
+    import threading
+    threading.Thread(target=lambda: _safe_neg_review(neg_id), daemon=True).start()
+
+
+def _safe_neg_review(neg_id):
+    try:
+        r = review_negotiation(neg_id)
+        if r:
+            print(f"[REVIEWER] تفاوض #{neg_id} → {r['count']} اقتراح (score {r.get('score')})", flush=True)
+    except Exception as e:
+        print(f"[REVIEWER] تفاوض #{neg_id} فشل: {e}", flush=True)
+
+
 def review_async(transcript, deal_data=None, source="sim", neg_id=None):
     """يشغّل المراجعة في خيط منفصل (لا يؤخّر عرض نتيجة المحاكاة)."""
     import threading

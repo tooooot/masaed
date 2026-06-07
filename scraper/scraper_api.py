@@ -2449,6 +2449,18 @@ def improvements_dismiss(imp_id):
     return jsonify(reviewer.dismiss_improvement(imp_id))
 
 
+@app.route("/improvements/review-neg", methods=["POST"])
+def improvements_review_neg():
+    """مراجعة تفاوض حقيقي بالـid (للمختبرين/الإطلاق) — حتى لو لم يُغلق بعد."""
+    import reviewer
+    data = request.get_json() or {}
+    neg_id = data.get("neg_id")
+    if not neg_id:
+        return jsonify({"ok": False, "error": "neg_id مطلوب"}), 400
+    r = reviewer.review_negotiation(int(neg_id))
+    return jsonify({"ok": bool(r), "result": r})
+
+
 @app.route("/improvements/review", methods=["POST"])
 def improvements_review():
     """تشغيل المراجعة يدوياً على محاكاة محفوظة لصفقة (seeker_phone+owner_phone)."""
