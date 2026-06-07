@@ -1007,6 +1007,21 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         intent_q = parse_intent(text)
         soft = _is_soft_accept(text, neg["proposed_price"])
         if intent_q["intent"] == "accept" or soft:
+            p_str = f"{neg['proposed_price']:,}"
+            # 🛑 قبول مصحوب بسؤال/شرط جوهري ليس قبولاً نهائياً: أحِل السؤال ولا تُغلق
+            # (يمنع «إعلان إتمام الصفقة» بينما الطرف ما زال يستفسر عن معلومة جوهرية.)
+            _facts = " ".join(str(neg.get(k) or "") for k in
+                              ("listing_facts", "listing_title", "listing_city"))
+            has_followup = (_asks_unknown_attr(text, _facts)
+                            or any(w in text for w in _SEEKER_ATTR))
+            if has_followup:
+                _append_log(neg_id, my_role, text, conn)
+                _relay_info_request(neg, my_role, text, conn)
+                wa_send(phone, f"قبل ما نثبّت المقترح ({p_str} ر)، خلّني آخذ لك جواب "
+                               f"استفسارك من الطرف الآخر وأرجع لك فوراً 👌")
+                return True
+
+            # قبول نظيف بلا أسئلة معلّقة → سجّله، وأغلق إن اتفق الطرفان
             field  = "lead_accepted" if is_lead else "owner_accepted"
             _update_neg(neg_id, conn, **{field: True})
             neg[field] = True
@@ -1016,32 +1031,19 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
 
             lead_ok  = neg.get("lead_accepted")  or is_lead
             owner_ok = neg.get("owner_accepted") or (not is_lead)
-            p_str    = f"{neg['proposed_price']:,}"
-
-            # شرط/سؤال ملحق بالقبول الناعم → نُحيله لاحقاً كي لا يضيع
-            _facts = " ".join(str(neg.get(k) or "") for k in
-                              ("listing_facts", "listing_title", "listing_city"))
-            has_followup = (_asks_unknown_attr(text, _facts)
-                            or any(w in text for w in _SEEKER_ATTR))
 
             if lead_ok and owner_ok:
-                # انتقال FSM: closing → agreed (إتمام تلقائي عند اتفاق الطرفين)
                 print(f"[NEG #{neg_id}] FSM: closing → agreed (price={neg['proposed_price']:,})", flush=True)
                 _close(neg_id, "agreed", conn, agreed_price=neg["proposed_price"])
                 msg = (f"🎉 تم إتمام الصفقة على {p_str} ر/سنة بنجاح ✅\n"
                        f"مبروك! سيتم التواصل لإكمال إجراءات العقد.")
                 wa_send(phone, msg)
                 wa_send(other, msg)
-                if has_followup:               # ثبّتنا السعر، ثم نوضّح الشرط/السؤال الملحق
-                    _relay_info_request(neg, my_role, text, conn)
-                    wa_send(phone, "وبخصوص ملاحظتك الأخيرة، أستوضحها من الطرف الآخر وأوافيك بها ضمن العقد 👌")
-                _notify_admin(neg, "ready_to_close", conn)  # إشعار للعلم فقط
+                _notify_admin(neg, "ready_to_close", conn)
             else:
                 wa_send(phone,
                     f"تم تسجيل موافقتك على {p_str} ر/سنة ✅\n"
                     f"ننتظر رد الطرف الآخر.")
-                if has_followup:               # أحِل الشرط/السؤال للطرف الآخر بالتوازي
-                    _relay_info_request(neg, my_role, text, conn)
             return True
 
     # ── parse intent + سجّل حالة الـFSM الحالية ───────────────────────────────
