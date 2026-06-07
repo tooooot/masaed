@@ -694,22 +694,45 @@ def deals_list():
             d["neg_status"] = r[3]; d["agreed_price"] = r[4]
             d["title"] = d.get("title") or r[5]; d["neg_id"] = r[6]
             d["ts"] = d.get("ts") or r[8] or r[7]
+
+    # 🛡️ حارس المصدر الحيّ: phones التي لها طلب/إعلان برابط حراج صحيح فقط
+    def _both_fmt(p):
+        out = {p}
+        if p and p.startswith("0"):   out.add("966" + p[1:])
+        elif p and p.startswith("966"): out.add("0" + p[3:])
+        return out
+    live_seekers, live_owners = set(), set()
+    with conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT phone FROM sanad.masaed_leads "
+                    "WHERE listing_type='wanted' AND url LIKE 'https://haraj.com.sa/1%%'")
+        for (p,) in cur.fetchall(): live_seekers |= _both_fmt(p)
+        cur.execute("SELECT DISTINCT phone FROM sanad.masaed_listings "
+                    "WHERE url LIKE 'https://haraj.com.sa/1%%'")
+        for (p,) in cur.fetchall(): live_owners |= _both_fmt(p)
     conn.close()
 
     out = []
     test_hidden = 0
+    orphan_hidden = 0
     for d in deals.values():
         is_test = _is_test_phone(d.get("seeker_phone")) or _is_test_phone(d.get("owner_phone"))
         if is_test and not include_test:
             test_hidden += 1
             continue
+        # يتيمة: لا مصدر حيّ (طلب/إعلان حراج) لأحد الطرفين
+        has_source = (d.get("seeker_phone") in live_seekers and d.get("owner_phone") in live_owners)
+        if not has_source and not include_test:
+            orphan_hidden += 1
+            continue
         stage, label = _deal_stage(d.get("gate_status"), d.get("neg_status"))
         ts = d.get("ts")
         deal_no = d.get("gate_id") or d.get("neg_id")
         out.append({**d, "stage": stage, "stage_label": label, "test": is_test,
-                    "deal_no": deal_no, "ts": ts.isoformat() if ts else None})
+                    "deal_no": deal_no, "has_source": has_source,
+                    "ts": ts.isoformat() if ts else None})
     out.sort(key=lambda x: x.get("ts") or "", reverse=True)
-    return jsonify({"ok": True, "deals": out, "test_hidden": test_hidden})
+    return jsonify({"ok": True, "deals": out, "test_hidden": test_hidden,
+                    "orphan_hidden": orphan_hidden})
 
 
 @app.route("/deal/timeline")

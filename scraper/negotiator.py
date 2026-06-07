@@ -1396,24 +1396,36 @@ def start_negotiation(lead_id: int, listing_id: int,
     print(f"[NEG] lead{lead_reg_note} listing{listing_reg_note}", flush=True)
 
     if send_intro:
-        # روابط الإعلانات الذاتية (إثبات) — تُجلب بالهاتف بكلتا الصيغتين (966 و0)
-        _su = _so = None
+        # 🔗 حلّ الرابط الموحّد — بالـID الفعلي للصفقة (الإعلان الصحيح بالضبط)، لا
+        # بالهاتف-الأحدث (الذي يخطئ حين يملك الطرف أكثر من إعلان). الأولوية:
+        # (١) رابط مُمرَّر صراحةً، (٢) بالـid مع التحقّق أنه يخصّ هاتف الطرف،
+        # (٣) احتياط أخير بالهاتف فقط حين لا id.
+        _su = lead_url
+        _so = listing_url
+        _lp_v = set(_pvar(listing_phone)); _sp_v = set(_pvar(lead_phone))
         try:
             with _conn_ctx() as _c, _c.cursor() as _cur:
-                _cur.execute("""SELECT url FROM sanad.masaed_leads
-                                WHERE phone = ANY(%s) AND listing_type='wanted'
-                                ORDER BY scraped_at DESC LIMIT 1""", (_pvar(lead_phone),))
-                _r = _cur.fetchone(); _su = _r[0] if _r else None
-                _cur.execute("""SELECT url FROM sanad.masaed_listings
-                                WHERE phone = ANY(%s) ORDER BY id DESC LIMIT 1""", (_pvar(listing_phone),))
-                _r = _cur.fetchone(); _so = _r[0] if _r else None
+                if not _so and listing_id:
+                    _cur.execute("SELECT url, phone FROM sanad.masaed_listings WHERE id=%s", (listing_id,))
+                    _r = _cur.fetchone()
+                    if _r and _r[1] and _r[1] in _lp_v:   # الإعلان يخصّ هذا المالك
+                        _so = _r[0]
+                if not _su and lead_id:
+                    _cur.execute("SELECT url, phone FROM sanad.masaed_leads WHERE id=%s", (lead_id,))
+                    _r = _cur.fetchone()
+                    if _r and _r[1] and _r[1] in _sp_v:
+                        _su = _r[0]
+                # احتياط: بالهاتف فقط إن بقي ناقصاً (حالات بلا id حقيقي)
+                if not _su:
+                    _cur.execute("""SELECT url FROM sanad.masaed_leads WHERE phone = ANY(%s)
+                                    AND listing_type='wanted' ORDER BY scraped_at DESC LIMIT 1""", (list(_sp_v),))
+                    _r = _cur.fetchone(); _su = _r[0] if _r else None
+                if not _so:
+                    _cur.execute("""SELECT url FROM sanad.masaed_listings WHERE phone = ANY(%s)
+                                    ORDER BY id DESC LIMIT 1""", (list(_lp_v),))
+                    _r = _cur.fetchone(); _so = _r[0] if _r else None
         except Exception as _e:
             print(f"[NEG] جلب روابط المبادرة: {_e}", flush=True)
-
-        # روابط مُمرَّرة صراحةً (كاختبار صفقة حقيقية بأرقام المستخدم) تَجبُر غياب
-        # إعلانات أرقام الاختبار على حراج.
-        _su = _su or lead_url
-        _so = _so or listing_url
 
         # المبادرة من الهوية الموحّدة (identity) — مصدر واحد للموقع والواتساب.
         import identity
