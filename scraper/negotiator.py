@@ -292,6 +292,9 @@ def ensure_table(conn=None):
             ("listing_facts",   "TEXT"),
             ("pending_req",     "JSONB"),
             ("alt_offers",      "JSONB"),
+            ("phase",           "TEXT"),
+            ("seeker_reg",      "INT DEFAULT 0"),
+            ("owner_reg",       "INT DEFAULT 0"),
         ]:
             cur.execute(
                 f"ALTER TABLE sanad.masaed_negotiations "
@@ -310,7 +313,7 @@ def _load_neg(phone: str, conn) -> dict | None:
                    listing_price, lead_max_price, owner_min_price,
                    proposed_price, lead_accepted, owner_accepted,
                    needs_admin, admin_notified, listing_facts, chat_log,
-                   pending_req
+                   pending_req, phase, seeker_reg, owner_reg
             FROM sanad.masaed_negotiations
             WHERE (lead_phone = %s OR listing_phone = %s)
               AND status = 'active'
@@ -326,7 +329,7 @@ def _load_neg(phone: str, conn) -> dict | None:
         'listing_price','lead_max_price','owner_min_price',
         'proposed_price','lead_accepted','owner_accepted',
         'needs_admin','admin_notified','listing_facts','chat_log',
-        'pending_req',
+        'pending_req','phase','seeker_reg','owner_reg',
     ]
     d = dict(zip(cols, row))
     d['chat_log'] = d['chat_log'] or []
@@ -784,6 +787,169 @@ def _seeker_alternatives(lead_phone: str, current_listing_id, conn, limit: int =
         return []
 
 
+def _pvar(p):
+    """صيغتا الهاتف السعودي (966 و0) للمطابقة في الاستعلامات."""
+    p = (p or "").strip()
+    v = {p}
+    if p.startswith("966") and len(p) > 3:
+        v.add("0" + p[3:])
+    elif p.startswith("0") and len(p) > 1:
+        v.add("966" + p[1:])
+    return list(v)
+
+
+def _safe_int(v):
+    try:
+        return int(float(str(v).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_understanding(role, phone, conn):
+    """فهم الطرف المستخرَج من إعلانه (من كاش masaed_comprehension)."""
+    try:
+        with conn.cursor() as cur:
+            if role == "seeker":
+                cur.execute("""SELECT id FROM sanad.masaed_leads WHERE phone = ANY(%s)
+                               AND listing_type='wanted' ORDER BY scraped_at DESC LIMIT 1""", (_pvar(phone),))
+                r = cur.fetchone()
+                if not r:
+                    return {}
+                cur.execute("SELECT profile FROM sanad.masaed_comprehension WHERE source='lead' AND ext_id=%s", (str(r[0]),))
+            else:
+                cur.execute("""SELECT id FROM sanad.masaed_listings WHERE phone = ANY(%s)
+                               ORDER BY id DESC LIMIT 1""", (_pvar(phone),))
+                r = cur.fetchone()
+                if not r:
+                    return {}
+                cur.execute("SELECT profile FROM sanad.masaed_comprehension WHERE source='listing' AND ext_id=%s", (str(r[0]),))
+            p = cur.fetchone()
+            return (p[0] if p and p[0] else {})
+    except Exception as e:
+        print(f"[REG] fetch understanding: {e}", flush=True)
+        return {}
+
+
+def _reg_fields(profile, role):
+    """يبني (المعروف للتأكيد، النواقص للسؤال) من فهم الإعلان."""
+    profile = profile or {}
+    if role == "seeker":
+        fields = [("المدينة", "city"), ("الحي", "district"), ("عدد الغرف", "rooms"),
+                  ("الميزانية السنوية", "price"), ("التأثيث", "furnished")]
+    else:
+        fields = [("نوع العقار", "property_type"), ("المدينة", "city"), ("الحي", "district"),
+                  ("عدد الغرف", "rooms"), ("السعر السنوي", "price"), ("التشطيب", "finishing"),
+                  ("التأثيث", "furnished")]
+    known, missing = [], []
+    for label, key in fields:
+        v = profile.get(key)
+        if key == "furnished":
+            v = "مفروشة" if v is True else ("بدون أثاث" if v is False else None)
+        if isinstance(v, list):
+            v = "، ".join(str(x) for x in v) if v else None
+        if v not in (None, "", "null", "غير محدد"):
+            known.append(f"{label}: {v}")
+        else:
+            missing.append(label)
+    return known, missing
+
+
+def _create_party_registration(role, phone, neg, profile, conn):
+    """مساعد المسجّل: ينشئ تسجيلاً للطرف في قاعدتنا ويُرجع رابط صفحته الاحترافية."""
+    base = os.getenv("MASAED_BASE_URL", "https://masaed.wardyat.net")
+    profile = profile or {}
+    try:
+        with conn.cursor() as cur:
+            if role == "seeker":
+                cur.execute("""INSERT INTO sanad.masaed_registrations
+                        (phone,name,type,slug,city,district,property_type,rooms,budget_annual,status)
+                        VALUES (%s,%s,'wanted',%s,%s,%s,%s,%s,%s,'complete')
+                        ON CONFLICT (slug) DO UPDATE SET status='complete', updated_at=NOW() RETURNING id""",
+                    (phone, neg.get("lead_name") or "باحث", f"neg-seeker-{phone}",
+                     profile.get("city") or neg.get("listing_city"), profile.get("district"),
+                     profile.get("property_type"), _safe_int(profile.get("rooms")),
+                     _safe_int(profile.get("price"))))
+            else:
+                cur.execute("""INSERT INTO sanad.masaed_registrations
+                        (phone,name,type,slug,city,district,property_type,rooms,price_annual,status)
+                        VALUES (%s,%s,'listing',%s,%s,%s,%s,%s,%s,'complete')
+                        ON CONFLICT (slug) DO UPDATE SET status='complete', updated_at=NOW() RETURNING id""",
+                    (phone, "مالك", f"neg-owner-{phone}",
+                     profile.get("city") or neg.get("listing_city"), profile.get("district"),
+                     profile.get("property_type"), _safe_int(profile.get("rooms")),
+                     _safe_int(profile.get("price")) or neg.get("listing_price")))
+            rid = cur.fetchone()[0]
+            conn.commit()
+        return f"{base}/p/{rid}"
+    except Exception as e:
+        print(f"[REG] create registration: {e}", flush=True)
+        return None
+
+
+def _start_negotiation_phase(neg, conn):
+    """انتقال من التسجيل إلى التفاوض بعد اكتمال تسجيل الطرفين."""
+    _update_neg(neg["id"], conn, phase="negotiating")
+    neg["phase"] = "negotiating"
+    wa_send(neg["lead_phone"],
+            "✅ اكتمل تسجيل الطرفين. أبدأ الآن التفاوض نيابةً عنك. "
+            "ما السعر السنوي الذي يناسبك؟")
+    wa_send(neg["listing_phone"],
+            "✅ اكتمل تسجيل الطرفين. لديّ مستأجر مسجّل ومناسب. "
+            "ما أفضل سعر سنوي تقبله؟")
+    print(f"[NEG #{neg['id']}] المرحلة: تسجيل → تفاوض", flush=True)
+
+
+def _handle_registration(neg, phone, text, conn):
+    """📝 مرحلة التسجيل قبل التفاوض (تطابق المحاكاة):
+    موافقة على المبادرة → تأكيد البيانات المستخرَجة + إنشاء صفحة → عند اكتمال
+    الطرفين تبدأ مرحلة التفاوض."""
+    neg_id  = neg["id"]
+    is_lead = (phone == neg["lead_phone"])
+    role    = "seeker" if is_lead else "owner"
+    role_ar = "مستأجر" if is_lead else "مالك"
+    step_col = "seeker_reg" if is_lead else "owner_reg"
+    step = neg.get(step_col) or 0
+    _append_log(neg_id, role_ar, text, conn)
+
+    if _has_cancel(text):
+        _close(neg_id, "cancelled", conn)
+        wa_send(phone, "تمام، شكراً لك 🙏 إن احتجت لاحقاً فأنا في الخدمة.")
+        wa_send(neg["listing_phone"] if is_lead else neg["lead_phone"],
+                "اعتذر، الطرف الآخر لم يكمل حالياً. سأوافيك عند توفّر مناسب آخر.")
+        return True
+
+    if step == 0:
+        # ردّ الرغبة على المبادرة → اطلب تأكيد البيانات والنواقص
+        prof = {"city": neg.get("listing_city"), "price": neg.get("listing_price")}
+        prof.update({k: v for k, v in _fetch_understanding(role, phone, conn).items() if v not in (None, "")})
+        known, missing = _reg_fields(prof, role)
+        msg = ("تمام 🙌 خلّني أكمل تسجيلك بسرعة. من إعلانك سجّلت مبدئياً:\n- "
+               + "\n- ".join(known or ["(لا تفاصيل كافية)"]) + "\nأكّد لي صحّتها"
+               + ((" — وينقصني فقط: " + "، ".join(missing) + "؟") if missing else " من فضلك."))
+        _update_neg(neg_id, conn, **{step_col: 1})
+        _append_log(neg_id, f"bot→{role_ar}", msg, conn)
+        wa_send(phone, msg)
+        return True
+
+    # step >= 1: تأكيد/تصحيح → أنشئ التسجيل وأرسل الصفحة، ثم تحقق من اكتمال الطرفين
+    prof = _fetch_understanding(role, phone, conn)
+    page = _create_party_registration(role, phone, neg, prof, conn)
+    _update_neg(neg_id, conn, **{step_col: 2})
+    neg[step_col] = 2
+    done = "✅ اكتمل تسجيلك في قاعدتنا."
+    if page:
+        done += f"\n📄 صفحتك الاحترافية بكل بياناتك: {page}"
+    _append_log(neg_id, f"bot→{role_ar}", done, conn)
+    wa_send(phone, done)
+
+    other_step = (neg.get("owner_reg") if is_lead else neg.get("seeker_reg")) or 0
+    if other_step >= 2:
+        _start_negotiation_phase(neg, conn)
+    else:
+        wa_send(phone, "بانتظار تأكيد الطرف الآخر، ثم أبدأ التفاوض نيابةً عنك 👌")
+    return True
+
+
 def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None) -> bool:
     neg_id   = neg["id"]
     is_lead  = (phone == neg["lead_phone"])
@@ -1162,6 +1328,9 @@ def handle_negotiation_message(phone: str, text: str, media_url: str = None) -> 
                 neg["_profile"] = build_party_profile(phone, conn)  # ملف الحافظ المضغوط
             except Exception:
                 pass
+            # 📝 مرحلة التسجيل (قبل التفاوض): مبادرة→موافقة→تسجيل→تفاوض
+            if neg.get("phase") == "registering":
+                return _handle_registration(neg, phone, text or "", conn)
             return _handle_active(neg, phone, text or "", conn, media_url)
 
 
@@ -1195,25 +1364,8 @@ def start_negotiation(lead_id: int, listing_id: int,
                     "error": "تعذّر التحقق من بوّابة الاعتماد — مُنع البدء احترازاً."}
 
     with _conn_ctx() as conn:
-        # ── شرط التسجيل: كلا الطرفين يجب أن يكونا في masaed_registrations ──
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT phone FROM sanad.masaed_registrations
-                WHERE phone IN (%s, %s) AND status != 'abandoned'
-            """, (lead_phone, listing_phone))
-            registered = {r[0] for r in cur.fetchall()}
-
-        unregistered = []
-        if lead_phone    not in registered: unregistered.append(lead_phone)
-        if listing_phone not in registered: unregistered.append(listing_phone)
-
-        if unregistered:
-            return {
-                "ok": False,
-                "error": "يجب تسجيل الطرفين قبل بدء التفاوض",
-                "unregistered": unregistered,
-            }
-
+        # ملاحظة: لم يعد شرط التسجيل المسبق مطلوباً — مرحلة التسجيل داخل المفاوض
+        # (phase='registering') تتكفّل بتسجيل الطرفين أثناء المحادثة قبل التفاوض.
         existing = _load_neg(lead_phone, conn)
         if existing and existing.get("listing_id") == listing_id:
             return {"ok": False, "error": "التفاوض جارٍ بالفعل", "neg_id": existing["id"]}
@@ -1228,8 +1380,8 @@ def start_negotiation(lead_id: int, listing_id: int,
                 INSERT INTO sanad.masaed_negotiations
                     (lead_id, listing_id, lead_phone, listing_phone,
                      lead_name, listing_title, listing_city, listing_price,
-                     listing_facts, status, expires_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'active', NOW() + INTERVAL '7 days')
+                     listing_facts, status, phase, expires_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'active','registering', NOW() + INTERVAL '7 days')
                 RETURNING id
             """, (lead_id, listing_id, lead_phone, listing_phone,
                   lead_name, listing_title, listing_city, listing_price, facts or None))
@@ -1266,23 +1418,15 @@ def start_negotiation(lead_id: int, listing_id: int,
 
     if send_intro:
         # روابط الإعلانات الذاتية (إثبات) — تُجلب بالهاتف بكلتا الصيغتين (966 و0)
-        def _pv(p):
-            p = (p or "").strip()
-            v = {p}
-            if p.startswith("966") and len(p) > 3:
-                v.add("0" + p[3:])
-            elif p.startswith("0") and len(p) > 1:
-                v.add("966" + p[1:])
-            return list(v)
         _su = _so = None
         try:
             with _conn_ctx() as _c, _c.cursor() as _cur:
                 _cur.execute("""SELECT url FROM sanad.masaed_leads
                                 WHERE phone = ANY(%s) AND listing_type='wanted'
-                                ORDER BY scraped_at DESC LIMIT 1""", (_pv(lead_phone),))
+                                ORDER BY scraped_at DESC LIMIT 1""", (_pvar(lead_phone),))
                 _r = _cur.fetchone(); _su = _r[0] if _r else None
                 _cur.execute("""SELECT url FROM sanad.masaed_listings
-                                WHERE phone = ANY(%s) ORDER BY id DESC LIMIT 1""", (_pv(listing_phone),))
+                                WHERE phone = ANY(%s) ORDER BY id DESC LIMIT 1""", (_pvar(listing_phone),))
                 _r = _cur.fetchone(); _so = _r[0] if _r else None
         except Exception as _e:
             print(f"[NEG] جلب روابط المبادرة: {_e}", flush=True)
