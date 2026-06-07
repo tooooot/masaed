@@ -320,13 +320,8 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
         _stamp("الوسيط", "المستأجر", identity.viewing_confirmed("seeker"))
         _stamp("الوسيط", "المالك", identity.viewing_confirmed("owner"))
 
-        # 🔁 ترشيح بدائل (من الهوية)
-        _alts = (extras or {}).get("alternatives") or []
-        if _alts:
-            _line = "\n".join(
-                f"{i+1}) " + (a.get("title") or "عرض") + (f" — {_to_int(a.get('price')):,} ر" if _to_int(a.get("price")) else "")
-                for i, a in enumerate(_alts[:2]))
-            _stamp("الوسيط", "المستأجر", identity.alternatives_offer(_line))
+        # (البدائل لا تُعرَض هنا — تظهر فقط عند عدم رغبة الباحث، يتولّاها المفاوض
+        #  الحقيقي تفاعلياً عبر نيّة want_alternatives. عرضها مسبقاً مخالف للتدفّق.)
 
         # ── المرحلة ٥: بدء التفاوض (من الهوية، عبر المفاوض الحقيقي) ──
         progress("بدء التفاوض بعد اكتمال التسجيل")
