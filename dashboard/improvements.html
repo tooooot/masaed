@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🔧 تطوير مساعد</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--green:#2ea043;--green-light:#3fb950;--blue:#58a6ff;--yellow:#e3b341;--red:#f85149}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Tahoma,sans-serif;direction:rtl}
+.wrap{max-width:780px;margin:0 auto;padding:16px}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#0d1117,#161b22);border-bottom:1px solid var(--border);padding:14px 16px}
+h1{font-size:1.1rem;margin:0 0 4px}
+.sub{font-size:.74rem;color:var(--muted)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.btn{padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:.8rem;font-weight:700;cursor:pointer}
+.pill{font-size:.7rem;padding:3px 9px;border-radius:20px;background:var(--card);border:1px solid var(--border)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:11px;border-right:4px solid var(--border)}
+.s-high{border-right-color:var(--red)} .s-medium{border-right-color:var(--yellow)} .s-low{border-right-color:var(--blue)}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.badge{font-size:.62rem;padding:1px 8px;border-radius:20px;font-weight:700}
+.b-high{background:#f8514920;color:var(--red)} .b-medium{background:#e3b34120;color:var(--yellow)} .b-low{background:#58a6ff20;color:var(--blue)}
+.b-identity{background:#a371f720;color:#a371f7} .b-code{background:#f0883e20;color:#f0883e} .b-data{background:#2ea04320;color:var(--green-light)}
+.issue{font-weight:700;font-size:.86rem;margin:2px 0}
+.ev{font-size:.74rem;color:var(--muted);background:var(--bg);border-radius:7px;padding:6px;margin:5px 0;border:1px solid var(--border)}
+.sugg{font-size:.8rem;background:#2ea04312;border:1px solid #2ea04330;border-radius:7px;padding:7px;margin:5px 0;white-space:pre-wrap;line-height:1.7}
+.acts{display:flex;gap:7px;margin-top:7px}
+.btn-apply{background:var(--green);color:#fff;border-color:var(--green)}
+.btn-dismiss{background:transparent;color:var(--muted)}
+.empty{text-align:center;padding:50px;color:var(--muted)}
+a.back{color:var(--blue);text-decoration:none;font-size:.8rem}
+#status{font-size:.78rem;margin-top:6px;min-height:1em}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding:0">
+    <h1>🔧 تطوير «مساعد» — اقتراحات ما بعد المحادثة</h1>
+    <div class="sub">يراجِع كل محاكاة تلقائياً ويقترح إصلاحات. الهوية تُطبَّق بضغطة، أخطاء الكود تُبلَّغ لي. <a class="back" href="/">← الرئيسية</a></div>
+    <div class="bar">
+      <span class="pill" id="st-high">🔴 0</span>
+      <span class="pill" id="st-med">🟡 0</span>
+      <span class="pill" id="st-low">🔵 0</span>
+      <button class="btn" onclick="load()">🔄 تحديث</button>
+    </div>
+    <div id="status"></div>
+  </div>
+</header>
+<div class="wrap" id="list"><div class="empty">جارٍ التحميل…</div></div>
+
+<script>
+const API='/api';
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function status(t,ok){const e=document.getElementById('status');if(!e)return;e.textContent=t||'';e.style.color=ok?'var(--green-light)':'var(--red)';}
+
+async function load(){
+  let d;
+  try{ d=await (await fetch(`${API}/improvements`)).json(); }
+  catch(e){ document.getElementById('list').innerHTML='<div class="empty">تعذّر الاتصال</div>'; return; }
+  const items=d.items||[];
+  let hi=0,me=0,lo=0;
+  items.forEach(i=>{ if(i.severity==='high')hi++; else if(i.severity==='medium')me++; else lo++; });
+  document.getElementById('st-high').textContent='🔴 '+hi;
+  document.getElementById('st-med').textContent='🟡 '+me;
+  document.getElementById('st-low').textContent='🔵 '+lo;
+  if(!items.length){ document.getElementById('list').innerHTML='<div class="empty">✅ لا اقتراحات مفتوحة — الأداء سليم.</div>'; return; }
+  document.getElementById('list').innerHTML=items.map(card).join('');
+}
+function card(i){
+  const sev=i.severity||'low', typ=i.type||'code';
+  const canApply = (typ==='identity' && i.field && i.field!=='principles' && i.suggestion);
+  return `<div class="card s-${sev}">
+    <div class="row">
+      <span class="badge b-${sev}">${sev==='high'?'عالٍ':sev==='medium'?'متوسط':'منخفض'}</span>
+      <span class="badge b-${typ}">${typ==='identity'?'هوية':typ==='data'?'بيانات':'كود'}</span>
+      <span class="pill">${esc(i.stage||'عام')}</span>
+      ${i.field?`<span class="pill">حقل: ${esc(i.field)}</span>`:''}
+      <span style="margin-right:auto;color:var(--muted);font-size:.68rem">#${i.id} · ${esc(i.source||'')}</span>
+    </div>
+    <div class="issue">${esc(i.issue)}</div>
+    ${i.evidence?`<div class="ev">📌 ${esc(i.evidence)}</div>`:''}
+    ${i.suggestion?`<div class="sugg">💡 ${esc(i.suggestion)}</div>`:''}
+    <div class="acts">
+      ${canApply?`<button class="btn btn-apply" onclick="apply(${i.id})">✅ طبّق على الهوية</button>`:`<span class="pill" style="color:var(--muted)">يحتاج إصلاح يدوي (كود/بيانات)</span>`}
+      <button class="btn btn-dismiss" onclick="dismiss(${i.id})">تجاهل</button>
+    </div>
+  </div>`;
+}
+async function apply(id){
+  status('جارٍ التطبيق…',true);
+  const d=await (await fetch(`${API}/improvements/${id}/apply`,{method:'POST'})).json();
+  if(d.ok){status('✅ طُبّق على حقل «'+d.field+'» — انعكس على المحاكي والواتساب.',true);load();}
+  else status('❌ '+(d.error||'فشل'),false);
+}
+async function dismiss(id){
+  await fetch(`${API}/improvements/${id}/dismiss`,{method:'POST'});
+  status('أُهمل.',true); load();
+}
+load();
+</script>
+</body>
+</html>

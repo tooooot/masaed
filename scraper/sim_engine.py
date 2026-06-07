@@ -522,6 +522,17 @@ def _worker(job_id, reg_id, seeker_data, owner_data, extras=None):
         if result.get("ok"):
             _set_job(job_id, status="done", result=result)
             _persist_run(extras, result)
+            # 🔧 نظام التطوير: راجِع المحادثة واقترح تحسينات (خيط منفصل، لا يؤخّر النتيجة)
+            try:
+                import reviewer
+                _facts = {"seeker_url": (seeker_data or {}).get("url"),
+                          "owner_url": (owner_data or {}).get("url"),
+                          "price": (owner_data or {}).get("price"),
+                          "city": (owner_data or {}).get("city")}
+                reviewer.review_async((result.get("simulation") or {}).get("messages") or [],
+                                      _facts, "sim", None)
+            except Exception as _re:
+                print(f"[REVIEWER] تعذّر الإطلاق: {_re}", flush=True)
         else:
             _set_job(job_id, status="error", error=result.get("error", "فشلت المحاكاة"), result=result)
     except Exception as e:

@@ -2429,6 +2429,49 @@ def identity_reset():
     return jsonify({"ok": True, "message": "أُعيدت الهوية للقيم الافتراضية"})
 
 
+# ── 🔧 نظام التطوير: اقتراحات تحسين ما بعد المحادثة ──────────────────────────
+@app.route("/improvements", methods=["GET"])
+def improvements_list():
+    import reviewer
+    return jsonify({"ok": True, "items": reviewer.list_open(), "stats": reviewer.stats()})
+
+
+@app.route("/improvements/<int:imp_id>/apply", methods=["POST"])
+def improvements_apply(imp_id):
+    import reviewer
+    r = reviewer.apply_improvement(imp_id)
+    return jsonify(r), (200 if r.get("ok") else 400)
+
+
+@app.route("/improvements/<int:imp_id>/dismiss", methods=["POST"])
+def improvements_dismiss(imp_id):
+    import reviewer
+    return jsonify(reviewer.dismiss_improvement(imp_id))
+
+
+@app.route("/improvements/review", methods=["POST"])
+def improvements_review():
+    """تشغيل المراجعة يدوياً على محاكاة محفوظة لصفقة (seeker_phone+owner_phone)."""
+    import reviewer
+    data = request.get_json() or {}
+    sp = normalize_phone(str(data.get("seeker_phone", "")))
+    op = normalize_phone(str(data.get("owner_phone", "")))
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT result FROM sanad.masaed_sim_runs
+                           WHERE seeker_phone=%s AND owner_phone=%s
+                           ORDER BY created_at DESC LIMIT 1""", (sp, op))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"ok": False, "error": "لا توجد محاكاة محفوظة لهذه الصفقة"}), 404
+    msgs = (row[0].get("simulation") or {}).get("messages") or []
+    r = reviewer.review_conversation(msgs, {"seeker_phone": sp, "owner_phone": op}, "sim", None)
+    return jsonify({"ok": bool(r), "result": r})
+
+
 @app.route("/deal/wa-test", methods=["POST"])
 def deal_wa_test():
     """🧪 اختبار واتساب حقيقي بأرقام المستخدم نفسه (محاكاة الدرجة الثانية): يبدأ
