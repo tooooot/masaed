@@ -831,27 +831,9 @@ def _fetch_understanding(role, phone, conn):
 
 
 def _reg_fields(profile, role):
-    """يبني (المعروف للتأكيد، النواقص للسؤال) من فهم الإعلان."""
-    profile = profile or {}
-    if role == "seeker":
-        fields = [("المدينة", "city"), ("الحي", "district"), ("عدد الغرف", "rooms"),
-                  ("الميزانية السنوية", "price"), ("التأثيث", "furnished")]
-    else:
-        fields = [("نوع العقار", "property_type"), ("المدينة", "city"), ("الحي", "district"),
-                  ("عدد الغرف", "rooms"), ("السعر السنوي", "price"), ("التشطيب", "finishing"),
-                  ("التأثيث", "furnished")]
-    known, missing = [], []
-    for label, key in fields:
-        v = profile.get(key)
-        if key == "furnished":
-            v = "مفروشة" if v is True else ("بدون أثاث" if v is False else None)
-        if isinstance(v, list):
-            v = "، ".join(str(x) for x in v) if v else None
-        if v not in (None, "", "null", "غير محدد"):
-            known.append(f"{label}: {v}")
-        else:
-            missing.append(label)
-    return known, missing
+    """من الهوية الموحّدة."""
+    import identity
+    return identity.reg_fields(profile, role)
 
 
 def _create_party_registration(role, phone, neg, profile, conn):
@@ -888,14 +870,11 @@ def _create_party_registration(role, phone, neg, profile, conn):
 
 def _start_negotiation_phase(neg, conn):
     """انتقال من التسجيل إلى التفاوض بعد اكتمال تسجيل الطرفين."""
+    import identity
     _update_neg(neg["id"], conn, phase="negotiating")
     neg["phase"] = "negotiating"
-    wa_send(neg["lead_phone"],
-            "✅ اكتمل تسجيل الطرفين. أبدأ الآن التفاوض نيابةً عنك. "
-            "ما السعر السنوي الذي يناسبك؟")
-    wa_send(neg["listing_phone"],
-            "✅ اكتمل تسجيل الطرفين. لديّ مستأجر مسجّل ومناسب. "
-            "ما أفضل سعر سنوي تقبله؟")
+    wa_send(neg["lead_phone"], identity.negotiation_start("seeker"))
+    wa_send(neg["listing_phone"], identity.negotiation_start("owner"))
     print(f"[NEG #{neg['id']}] المرحلة: تسجيل → تفاوض", flush=True)
 
 
@@ -903,6 +882,7 @@ def _handle_registration(neg, phone, text, conn):
     """📝 مرحلة التسجيل قبل التفاوض (تطابق المحاكاة):
     موافقة على المبادرة → تأكيد البيانات المستخرَجة + إنشاء صفحة → عند اكتمال
     الطرفين تبدأ مرحلة التفاوض."""
+    import identity
     neg_id  = neg["id"]
     is_lead = (phone == neg["lead_phone"])
     role    = "seeker" if is_lead else "owner"
@@ -913,9 +893,8 @@ def _handle_registration(neg, phone, text, conn):
 
     if _has_cancel(text):
         _close(neg_id, "cancelled", conn)
-        wa_send(phone, "تمام، شكراً لك 🙏 إن احتجت لاحقاً فأنا في الخدمة.")
-        wa_send(neg["listing_phone"] if is_lead else neg["lead_phone"],
-                "اعتذر، الطرف الآخر لم يكمل حالياً. سأوافيك عند توفّر مناسب آخر.")
+        wa_send(phone, identity.cancel_to_party())
+        wa_send(neg["listing_phone"] if is_lead else neg["lead_phone"], identity.cancel_to_other())
         return True
 
     if step == 0:
@@ -923,9 +902,7 @@ def _handle_registration(neg, phone, text, conn):
         prof = {"city": neg.get("listing_city"), "price": neg.get("listing_price")}
         prof.update({k: v for k, v in _fetch_understanding(role, phone, conn).items() if v not in (None, "")})
         known, missing = _reg_fields(prof, role)
-        msg = ("تمام 🙌 خلّني أكمل تسجيلك بسرعة. من إعلانك سجّلت مبدئياً:\n- "
-               + "\n- ".join(known or ["(لا تفاصيل كافية)"]) + "\nأكّد لي صحّتها"
-               + ((" — وينقصني فقط: " + "، ".join(missing) + "؟") if missing else " من فضلك."))
+        msg = identity.registration_confirm(role, known, missing)
         _update_neg(neg_id, conn, **{step_col: 1})
         _append_log(neg_id, f"bot→{role_ar}", msg, conn)
         wa_send(phone, msg)
@@ -936,9 +913,7 @@ def _handle_registration(neg, phone, text, conn):
     page = _create_party_registration(role, phone, neg, prof, conn)
     _update_neg(neg_id, conn, **{step_col: 2})
     neg[step_col] = 2
-    done = "✅ اكتمل تسجيلك في قاعدتنا."
-    if page:
-        done += f"\n📄 صفحتك الاحترافية بكل بياناتك: {page}"
+    done = identity.registration_done(role, page)
     _append_log(neg_id, f"bot→{role_ar}", done, conn)
     wa_send(phone, done)
 
@@ -946,7 +921,7 @@ def _handle_registration(neg, phone, text, conn):
     if other_step >= 2:
         _start_negotiation_phase(neg, conn)
     else:
-        wa_send(phone, "بانتظار تأكيد الطرف الآخر، ثم أبدأ التفاوض نيابةً عنك 👌")
+        wa_send(phone, identity.waiting_other())
     return True
 
 
@@ -975,14 +950,12 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
             _ci = _choice_from(text, len(_alts_saved))
             if _ci is not None:
                 chosen = _alts_saved[_ci]
+                import identity
                 _append_log(neg_id, my_role, text, conn)
                 _link_alternative(neg, _lead_id, chosen, conn)
-                wa_send(phone,
-                        f"ممتاز ✅ اخترت: {chosen.get('title') or 'العرض'}.\n"
-                        "جهّزته لك وسأرتّب تفاصيله ومعاينته قريباً 👌")
+                wa_send(phone, identity.alternative_chosen(chosen.get("title")))
                 _close(neg_id, "cancelled", conn)
-                wa_send(neg["listing_phone"],
-                        "شكراً لك 🙏 المستأجر يكمل خياراً آخر حالياً، وسنعاود التواصل عند توفّر مهتم.")
+                wa_send(neg["listing_phone"], identity.cancel_to_other())
                 try:
                     _notify_admin(neg, "chose_alternative", conn)
                 except Exception:
@@ -991,6 +964,7 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
 
     # ── 🔁 الباحث يطلب عروضاً أخرى / لم يرغب بهذا العرض → نرشّح بدائل مطابقة ──
     if is_lead and parse_intent(text).get("intent") == "want_alternatives":
+        import identity
         _append_log(neg_id, my_role, text, conn)
         alts = _seeker_alternatives(neg["lead_phone"], neg.get("listing_id"), conn)
         if alts:
@@ -999,16 +973,14 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
                 + (f" — {int(a['price']):,} ر/سنة" if a.get('price') else "")
                 + (f" — {a['city']}" if a.get('city') else "")
                 for i, a in enumerate(alts))
-            wa_send(phone,
-                    "تمام، لديّ عروض أخرى تطابق طلبك:\n" + lines +
-                    "\nأيّها يهمّك لأجهّز لك تفاصيله ومعاينته؟ (أرسل رقمه)")
+            wa_send(phone, identity.alternatives_offer(lines))
             _update_neg(neg_id, conn, alt_offers=json.dumps(alts, ensure_ascii=False))
             try:
                 _notify_admin(neg, "wants_alternatives", conn)
             except Exception as _e:
                 print(f"[NEG #{neg_id}] إشعار البدائل: {_e}", flush=True)
         else:
-            wa_send(phone, "لا أجد عروضاً أخرى مطابقة لطلبك حالياً، سأبحث لك وأوافيك فور توفّرها 👌")
+            wa_send(phone, identity.alternatives_none())
         return True
 
     # ── قراءة proposed_price من DB (لتجنب race condition) ────────────────────
@@ -1431,23 +1403,10 @@ def start_negotiation(lead_id: int, listing_id: int,
         except Exception as _e:
             print(f"[NEG] جلب روابط المبادرة: {_e}", flush=True)
 
-        # مبادرة المنتج الصحيحة: مبرر + إثبات (رابط ذاتي) + معلومة المطابقة + سؤال الرغبة.
-        # بلا ربط بالطرف الآخر، بلا سعر، بلا ادّعاء «مُسجَّل». (التسجيل ثم التفاوض لاحقاً.)
-        greeting_lead = f"السلام عليكم {lead_name_resolved} 👋" if lead_name_resolved else "السلام عليكم 👋"
-        wa_send(lead_phone,
-            f"{greeting_lead} أنا «مساعد» العقاري — وسيط إلكتروني.\n"
-            "لاحظنا طلبك المنشور على حراج"
-            + (f":\n{_su}" if _su else "") + "\n"
-            "وقد يطابق عرضاً متاحاً لدينا في قاعدتنا — نودّ التأكد معك. هل ما زلت تبحث؟"
-        )
-
-        greeting_listing = f"السلام عليكم {listing_name_resolved} 👋" if listing_name_resolved else "السلام عليكم 👋"
-        wa_send(listing_phone,
-            f"{greeting_listing} أنا «مساعد» العقاري — وسيط إلكتروني.\n"
-            "لاحظنا إعلانك المنشور على حراج"
-            + (f":\n{_so}" if _so else "") + "\n"
-            "وقد يطابق طلب باحث لدينا في قاعدتنا — نودّ التأكد معك. هل العقار ما زال متاحاً؟"
-        )
+        # المبادرة من الهوية الموحّدة (identity) — مصدر واحد للموقع والواتساب.
+        import identity
+        wa_send(lead_phone, identity.outreach("seeker", _su, lead_name_resolved or None))
+        wa_send(listing_phone, identity.outreach("owner", _so, listing_name_resolved or None))
 
     print(f"[NEG] Active #{neg_id}: {lead_phone} ↔ {listing_phone}", flush=True)
     return {"ok": True, "neg_id": neg_id}

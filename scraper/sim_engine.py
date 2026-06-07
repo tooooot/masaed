@@ -18,12 +18,14 @@
 """
 
 import json
+import os
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 
 import negotiator
+import identity
 from bot import get_conn
 from simulator import (call_llm, CriticAssistant, _SYS_SEEKER, _SYS_OWNER,
                        _SYS_SEEKER_HARD, _SYS_OWNER_HARD)
@@ -253,22 +255,9 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
         # مبرر التواصل + إثبات (رابط إعلان الطرف نفسه) + طلب الرغبة — بلا ربط بالطرف
         # الآخر وبلا سعر في أول رسالة. (التسجيل ثم التفاوض يأتيان لاحقاً.)
         progress("مساعد يبادر: مبرر + رابط الإعلان الذاتي")
-        _owner_url  = owner_data.get("url")
-        _seeker_url = seeker_data.get("url")
-        # الرسالة الأولى: مبرر + إثبات (رابط ذاتي) + إخباره أن إعلانه يطابق/قد يطابق
-        # طلباً/عرضاً لدينا (للتأكد) — بلا طلب تسجيل بعد (يُؤجَّل لما يردّ).
-        intro_seeker = (
-            "السلام عليكم 👋 أنا «مساعد» العقاري. "
-            "لاحظنا طلبك المنشور على حراج"
-            + (f":\n{_seeker_url}" if _seeker_url else "") +
-            "\nوقد يطابق عرضاً متاحاً لدينا في قاعدتنا — نودّ التأكد معك. هل ما زلت تبحث؟"
-        )
-        intro_owner = (
-            "السلام عليكم 👋 أنا «مساعد» العقاري. "
-            "لاحظنا إعلانك المنشور على حراج"
-            + (f":\n{_owner_url}" if _owner_url else "") +
-            "\nوقد يطابق طلب باحث لدينا في قاعدتنا — نودّ التأكد معك. هل العقار ما زال متاحاً؟"
-        )
+        # المبادرة من الهوية الموحّدة (identity) — نفس مصدر المفاوض الحقيقي
+        intro_seeker = identity.outreach("seeker", seeker_data.get("url"))
+        intro_owner  = identity.outreach("owner", owner_data.get("url"))
         def _stamp(frm, to, txt):
             transcript.append({"from": frm, "to": to, "text": txt,
                                "timestamp": datetime.now(timezone.utc).isoformat()})
@@ -292,76 +281,61 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
         _seek_prof = (understanding or {}).get("seeker") if understanding else None
         _off_prof = (understanding or {}).get("offer") if understanding else None
 
-        sk_known, sk_missing = _reg_confirm(_seek_prof, "seeker")
-        reg_q_seeker = ("تمام 🙌 من إعلانك سجّلت مبدئياً:\n- "
-                        + "\n- ".join(sk_known or ["(لا تفاصيل كافية في الإعلان)"]) + "\nأكّد لي صحّتها"
-                        + ((" — وينقصني فقط: " + "، ".join(sk_missing) + "؟") if sk_missing else " من فضلك."))
+        reg_q_seeker = identity.registration_confirm("seeker", *identity.reg_fields(_seek_prof, "seeker"))
         _stamp("الوسيط", "المستأجر", reg_q_seeker)
         sr = _seeker_reply(seeker_data, [reg_q_seeker], is_first=False)
         if sr:
             _stamp("المستأجر", None, sr)
 
-        ow_known, ow_missing = _reg_confirm(_off_prof, "owner")
-        reg_q_owner = ("تمام 🙌 من إعلانك سجّلت مبدئياً:\n- "
-                       + "\n- ".join(ow_known or ["(لا تفاصيل كافية في الإعلان)"]) + "\nأكّد لي صحّتها"
-                       + ((" — وينقصني فقط: " + "، ".join(ow_missing) + "؟") if ow_missing else " من فضلك."))
+        reg_q_owner = identity.registration_confirm("owner", *identity.reg_fields(_off_prof, "owner"))
         _stamp("الوسيط", "المالك", reg_q_owner)
         orp = _owner_reply(owner_data, [reg_q_owner], is_first=False)
         if orp:
             _stamp("المالك", None, orp)
-        _stamp("الوسيط", "المستأجر", "✅ اكتمل تسجيل طلبك في قاعدتنا.")
-        _stamp("الوسيط", "المالك", "✅ اكتمل تسجيل إعلانك في قاعدتنا.")
 
-        # ── مساعد المسجل: صفحة هبوط احترافية بكل بيانات المستخدم بعد التسجيل ──
-        import os as _os
-        _base = _os.getenv("MASAED_BASE_URL", "https://masaed.wardyat.net")
-        _oid = (extras or {}).get("offer_id")
-        _sid = (extras or {}).get("seeker_id")
-        if _sid:
-            _stamp("الوسيط", "المستأجر", f"📄 وجهّزت لك صفحة احترافية بكل بيانات طلبك: {_base}/p/{_sid}")
-        if _oid:
-            _stamp("الوسيط", "المالك", f"📄 وجهّزت لك صفحة احترافية بكل بيانات عقارك: {_base}/p/{_oid}")
+        # ── مساعد المسجل: اكتمال التسجيل + صفحة هبوط (من الهوية) ──
+        _base = os.getenv("MASAED_BASE_URL", "https://masaed.wardyat.net")
+        _sid = (extras or {}).get("seeker_id"); _oid = (extras or {}).get("offer_id")
+        _stamp("الوسيط", "المستأجر", identity.registration_done("seeker", f"{_base}/p/{_sid}" if _sid else None))
+        _stamp("الوسيط", "المالك", identity.registration_done("owner", f"{_base}/p/{_oid}" if _oid else None))
 
-        # ── مرحلة المعاينة قبل التفاوض: صور/فيديو/موقع + تنسيق موعد ──
+        # ── المعاينة: صور/موقع + تنسيق موعد (من الهوية) ──
         progress("المعاينة: صور وفيديو وموقع وتنسيق موعد")
-        # إن لم تتوفّر صور في الإعلان → مساعد المسجل يطلبها من المالك ويضيفها لصفحته
-        if not (extras or {}).get("owner_has_photos"):
-            _stamp("الوسيط", "المالك",
-                   "إعلانك لا يحتوي صوراً واضحة. أرسل لي صوراً وفيديو للعقار من الداخل "
-                   "لأضيفها إلى صفحتك الاحترافية وأعرضها للمستأجرين 📸🎥")
+        _has_photos = bool((extras or {}).get("owner_has_photos"))
+        if not _has_photos:
+            _stamp("الوسيط", "المالك", identity.ask_owner_photos())
             ph = _owner_reply(owner_data, ["أرسل صور وفيديو العقار من الداخل لإضافتها لصفحتك"], is_first=False)
             if ph:
                 _stamp("المالك", None, ph)
-            _stamp("الوسيط", "المالك", "✅ استلمت الصور وأضفتها إلى صفحة عقارك.")
-            _photos_line = "وصلتني صور العقار من المالك وأضفتها لصفحته، وأرسلها لك الآن 📸 مع موقعه على الخريطة 📍."
-        else:
-            _photos_line = ("تفضّل صور العقار وفيديوه وموقعه على الخريطة (من إعلان المالك) 📸🎥📍:\n"
-                            + (owner_data.get("url") or ""))
+            _stamp("الوسيط", "المالك", identity.photos_received())
         _stamp("الوسيط", "المستأجر",
-               "وقبل التفاوض، " + _photos_line + "\nتحب أنسّق لك موعد معاينة على الطبيعة؟")
-        vr = _seeker_reply(seeker_data, ["وصلتك صور وفيديو وموقع العقار. تحب نحجز لك موعد معاينة؟"], is_first=False)
+               identity.viewing_to_seeker(owner_data.get("url"), photos_from_owner=not _has_photos))
+        vr = _seeker_reply(seeker_data, ["وصلتك صور وموقع العقار. تحب نحجز لك موعد معاينة؟"], is_first=False)
         if vr:
             _stamp("المستأجر", None, vr)
-        _stamp("الوسيط", "المالك", "المستأجر اطّلع على الصور والموقع ويرغب بمعاينة العقار. متى يناسبك الموعد؟")
+        _stamp("الوسيط", "المالك", identity.viewing_to_owner())
         ar = _owner_reply(owner_data, ["المستأجر يريد معاينة العقار، متى يناسبك موعد المعاينة؟"], is_first=False)
         if ar:
             _stamp("المالك", None, ar)
-        _stamp("الوسيط", "المستأجر", "تمام 🗓️ نسّقت موعد المعاينة مبدئياً. وبعد المعاينة نُكمل التفاوض على السعر والشروط.")
-        _stamp("الوسيط", "المالك", "ممتاز، حجزت الموعد. بعد المعاينة نبدأ التفاوض على السعر النهائي.")
+        _stamp("الوسيط", "المستأجر", identity.viewing_confirmed("seeker"))
+        _stamp("الوسيط", "المالك", identity.viewing_confirmed("owner"))
 
-        # 🔁 ترشيح بدائل: إن لم يرغب الباحث بهذا العرض أو طلب غيره، نعرض أفضل البدائل المطابقة
+        # 🔁 ترشيح بدائل (من الهوية)
         _alts = (extras or {}).get("alternatives") or []
         if _alts:
-            _line = " · ".join(
-                (a.get("title") or "عرض") + (f" ({_to_int(a.get('price')):,} ر)" if _to_int(a.get("price")) else "")
-                for a in _alts[:2])
-            _stamp("الوسيط", "المستأجر",
-                   f"وهذا أفضل عرض يطابق طلبك. وإن لم يناسبك أو رغبت بغيره، لديّ بدائل مطابقة: {_line} — قل لي وأرسل تفاصيلها فوراً.")
+            _line = "\n".join(
+                f"{i+1}) " + (a.get("title") or "عرض") + (f" — {_to_int(a.get('price')):,} ر" if _to_int(a.get("price")) else "")
+                for i, a in enumerate(_alts[:2]))
+            _stamp("الوسيط", "المستأجر", identity.alternatives_offer(_line))
 
-        # ── المرحلة ٤: التفاوض (الآن فقط، عبر المفاوض الحقيقي) ──
+        # ── المرحلة ٥: بدء التفاوض (من الهوية، عبر المفاوض الحقيقي) ──
         progress("بدء التفاوض بعد اكتمال التسجيل")
-        seeker_inbox.append("اكتمل تسجيلك، وبدأنا التفاوض على العقار المناسب لطلبك.")
-        owner_inbox.append("اكتمل تسجيل الطرفين، وبدأنا التفاوض مع المستأجر المسجّل.")
+        _ns_s = identity.negotiation_start("seeker")
+        _ns_o = identity.negotiation_start("owner")
+        _stamp("الوسيط", "المستأجر", _ns_s)
+        _stamp("الوسيط", "المالك", _ns_o)
+        seeker_inbox.append(_ns_s)
+        owner_inbox.append(_ns_o)
         msg = _seeker_reply(seeker_data, seeker_inbox, is_first=False)
         if msg:
             deliver(lead_phone, "المستأجر", msg)
