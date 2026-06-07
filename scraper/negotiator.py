@@ -1265,24 +1265,44 @@ def start_negotiation(lead_id: int, listing_id: int,
     print(f"[NEG] lead{lead_reg_note} listing{listing_reg_note}", flush=True)
 
     if send_intro:
-        # رسالة المستأجر
-        greeting_lead = f"مرحباً {lead_name_resolved} 👋" if lead_name_resolved else "مرحباً 👋"
+        # روابط الإعلانات الذاتية (إثبات) — تُجلب بالهاتف بكلتا الصيغتين (966 و0)
+        def _pv(p):
+            p = (p or "").strip()
+            v = {p}
+            if p.startswith("966") and len(p) > 3:
+                v.add("0" + p[3:])
+            elif p.startswith("0") and len(p) > 1:
+                v.add("966" + p[1:])
+            return list(v)
+        _su = _so = None
+        try:
+            with _conn_ctx() as _c, _c.cursor() as _cur:
+                _cur.execute("""SELECT url FROM sanad.masaed_leads
+                                WHERE phone = ANY(%s) AND listing_type='wanted'
+                                ORDER BY scraped_at DESC LIMIT 1""", (_pv(lead_phone),))
+                _r = _cur.fetchone(); _su = _r[0] if _r else None
+                _cur.execute("""SELECT url FROM sanad.masaed_listings
+                                WHERE phone = ANY(%s) ORDER BY id DESC LIMIT 1""", (_pv(listing_phone),))
+                _r = _cur.fetchone(); _so = _r[0] if _r else None
+        except Exception as _e:
+            print(f"[NEG] جلب روابط المبادرة: {_e}", flush=True)
+
+        # مبادرة المنتج الصحيحة: مبرر + إثبات (رابط ذاتي) + معلومة المطابقة + سؤال الرغبة.
+        # بلا ربط بالطرف الآخر، بلا سعر، بلا ادّعاء «مُسجَّل». (التسجيل ثم التفاوض لاحقاً.)
+        greeting_lead = f"السلام عليكم {lead_name_resolved} 👋" if lead_name_resolved else "السلام عليكم 👋"
         wa_send(lead_phone,
-            f"{greeting_lead}، أنا مساعد العقاري — وسيط إلكتروني.\n"
-            f"وجدت طلبك المُسجَّل وربطتك بعرض يناسبه:\n"
-            f"📍 {title_str}" + (f" — {city_str}" if city_str else "") + "\n"
-            f"💰 {price_str}\n\n"
-            f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المالك."
+            f"{greeting_lead} أنا «مساعد» العقاري — وسيط إلكتروني.\n"
+            "لاحظنا طلبك المنشور على حراج"
+            + (f":\n{_su}" if _su else "") + "\n"
+            "وقد يطابق عرضاً متاحاً لدينا في قاعدتنا — نودّ التأكد معك. هل ما زلت تبحث؟"
         )
 
-        # رسالة المالك
-        greeting_listing = f"مرحباً {listing_name_resolved} 👋" if listing_name_resolved else "مرحباً 👋"
+        greeting_listing = f"السلام عليكم {listing_name_resolved} 👋" if listing_name_resolved else "السلام عليكم 👋"
         wa_send(listing_phone,
-            f"{greeting_listing}، أنا مساعد العقاري — وسيط إلكتروني.\n"
-            f"وجدت إعلانك في حراج وربطتك بمستأجر مهتم"
-            + (f" في {city_str}" if city_str else "") + ".\n"
-            f"💰 {price_str}\n\n"
-            f"تحدّث معي مباشرة — أنا الوسيط بينك وبين المستأجر."
+            f"{greeting_listing} أنا «مساعد» العقاري — وسيط إلكتروني.\n"
+            "لاحظنا إعلانك المنشور على حراج"
+            + (f":\n{_so}" if _so else "") + "\n"
+            "وقد يطابق طلب باحث لدينا في قاعدتنا — نودّ التأكد معك. هل العقار ما زال متاحاً؟"
         )
 
     print(f"[NEG] Active #{neg_id}: {lead_phone} ↔ {listing_phone}", flush=True)
