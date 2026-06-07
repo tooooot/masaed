@@ -295,6 +295,8 @@ def ensure_table(conn=None):
             ("phase",           "TEXT"),
             ("seeker_reg",      "INT DEFAULT 0"),
             ("owner_reg",       "INT DEFAULT 0"),
+            ("lead_lang",       "TEXT"),
+            ("listing_lang",    "TEXT"),
         ]:
             cur.execute(
                 f"ALTER TABLE sanad.masaed_negotiations "
@@ -313,7 +315,7 @@ def _load_neg(phone: str, conn) -> dict | None:
                    listing_price, lead_max_price, owner_min_price,
                    proposed_price, lead_accepted, owner_accepted,
                    needs_admin, admin_notified, listing_facts, chat_log,
-                   pending_req, phase, seeker_reg, owner_reg
+                   pending_req, phase, seeker_reg, owner_reg, lead_lang, listing_lang
             FROM sanad.masaed_negotiations
             WHERE (lead_phone = %s OR listing_phone = %s)
               AND status = 'active'
@@ -329,7 +331,7 @@ def _load_neg(phone: str, conn) -> dict | None:
         'listing_price','lead_max_price','owner_min_price',
         'proposed_price','lead_accepted','owner_accepted',
         'needs_admin','admin_notified','listing_facts','chat_log',
-        'pending_req','phase','seeker_reg','owner_reg',
+        'pending_req','phase','seeker_reg','owner_reg','lead_lang','listing_lang',
     ]
     d = dict(zip(cols, row))
     d['chat_log'] = d['chat_log'] or []
@@ -600,6 +602,12 @@ def _generate_reply(neg: dict, my_role: str, text: str, intent: dict) -> str:
         # الأسئلة والعموم: prompt المفاوض الموحّد الموجّه بالهدف
         system = _sys_negotiator().format(role_ctx=role_ctx, other_party=other_party, context=context)
 
+    # 🌍 لغة الطرف: إن كتب بغير العربية، ولّد الرد بلغته مباشرةً
+    import i18n
+    _lang = neg.get("lead_lang") if my_role == "مستأجر" else neg.get("listing_lang")
+    if not i18n.is_arabic(_lang):
+        system += (f"\n\n🌍 CRITICAL: The user writes in {_lang}. Reply ONLY in {_lang} "
+                   f"(NOT Arabic), with the same warm, concise broker tone.")
     return _llm(system, f"[{my_role}]: {text}", max_tokens=400) or "وصلت رسالتك، نكمّل — وش السعر اللي يناسبك؟"
 
 
@@ -811,6 +819,31 @@ def _safe_int(v):
         return None
 
 
+# ── 🌍 اللغة: كشف لغة كل طرف وإرسال رسائل المراحل بلغته ──────────────────────
+def _party_lang(neg, phone):
+    return neg.get("lead_lang") if phone == neg.get("lead_phone") else neg.get("listing_lang")
+
+
+def _detect_party_lang(neg, phone, text, conn):
+    """يكشف لغة الطرف من رسالته إن لم تُخزَّن، ويحفظها."""
+    is_lead = (phone == neg.get("lead_phone"))
+    col = "lead_lang" if is_lead else "listing_lang"
+    if neg.get(col) or not (text or "").strip():
+        return
+    import i18n
+    lang = i18n.detect_lang(text)
+    neg[col] = lang
+    _update_neg(neg["id"], conn, **{col: lang})
+    if not i18n.is_arabic(lang):
+        print(f"[I18N #{neg['id']}] {'lead' if is_lead else 'listing'} = {lang}", flush=True)
+
+
+def _say(neg, phone, text_ar):
+    """يرسل رسالة مرحلة مترجَمة إلى لغة الطرف المتلقّي (عربي → كما هي)."""
+    import i18n
+    wa_send(phone, i18n.localize(text_ar, _party_lang(neg, phone)))
+
+
 def _fetch_understanding(role, phone, conn):
     """فهم الطرف المستخرَج من إعلانه (من كاش masaed_comprehension)."""
     try:
@@ -879,8 +912,8 @@ def _start_negotiation_phase(neg, conn):
     import identity
     _update_neg(neg["id"], conn, phase="negotiating")
     neg["phase"] = "negotiating"
-    wa_send(neg["lead_phone"], identity.negotiation_start("seeker"))
-    wa_send(neg["listing_phone"], identity.negotiation_start("owner"))
+    _say(neg, neg["lead_phone"], identity.negotiation_start("seeker"))
+    _say(neg, neg["listing_phone"], identity.negotiation_start("owner"))
     print(f"[NEG #{neg['id']}] المرحلة: تسجيل → تفاوض", flush=True)
 
 
@@ -899,8 +932,8 @@ def _handle_registration(neg, phone, text, conn):
 
     if _has_cancel(text):
         _close(neg_id, "cancelled", conn)
-        wa_send(phone, identity.cancel_to_party())
-        wa_send(neg["listing_phone"] if is_lead else neg["lead_phone"], identity.cancel_to_other())
+        _say(neg, phone, identity.cancel_to_party())
+        _say(neg, neg["listing_phone"] if is_lead else neg["lead_phone"], identity.cancel_to_other())
         return True
 
     if step == 0:
@@ -911,7 +944,7 @@ def _handle_registration(neg, phone, text, conn):
         msg = identity.registration_confirm(role, known, missing)
         _update_neg(neg_id, conn, **{step_col: 1})
         _append_log(neg_id, f"bot→{role_ar}", msg, conn)
-        wa_send(phone, msg)
+        _say(neg, phone, msg)
         return True
 
     # step >= 1: تأكيد/تصحيح → أنشئ التسجيل وأرسل الصفحة، ثم تحقق من اكتمال الطرفين
@@ -921,13 +954,13 @@ def _handle_registration(neg, phone, text, conn):
     neg[step_col] = 2
     done = identity.registration_done(role, page)
     _append_log(neg_id, f"bot→{role_ar}", done, conn)
-    wa_send(phone, done)
+    _say(neg, phone, done)
 
     other_step = (neg.get("owner_reg") if is_lead else neg.get("seeker_reg")) or 0
     if other_step >= 2:
         _start_negotiation_phase(neg, conn)
     else:
-        wa_send(phone, identity.waiting_other())
+        _say(neg, phone, identity.waiting_other())
     return True
 
 
@@ -1308,6 +1341,11 @@ def handle_negotiation_message(phone: str, text: str, media_url: str = None) -> 
                 neg["_profile"] = build_party_profile(phone, conn)  # ملف الحافظ المضغوط
             except Exception:
                 pass
+            # 🌍 كشف لغة الطرف من رسالته (مرّة واحدة) وتخزينها — ليردّ مساعد بلغته
+            try:
+                _detect_party_lang(neg, phone, text or "", conn)
+            except Exception as _le:
+                print(f"[I18N] كشف اللغة: {_le}", flush=True)
             # 📝 مرحلة التسجيل (قبل التفاوض): مبادرة→موافقة→تسجيل→تفاوض
             if neg.get("phase") == "registering":
                 return _handle_registration(neg, phone, text or "", conn)
