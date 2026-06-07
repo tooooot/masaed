@@ -2498,6 +2498,7 @@ def deal_wa_test():
         lead_phone=my_phone, listing_phone=test_phone, lead_name="باحث اختبار",
         listing_title=offer.get("title") or "عقار للإيجار",
         listing_city=city, listing_price=offer.get("price"),
+        lead_url=seeker.get("url"), listing_url=offer.get("url"),  # روابط الصفقة الحقيقية
         require_gate=False)   # اختبار صريح بأرقام المستخدم → خارج البوّابة
     if result.get("ok"):
         return jsonify({"ok": True, "neg_id": result["neg_id"],

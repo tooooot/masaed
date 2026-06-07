@@ -1312,7 +1312,8 @@ def start_negotiation(lead_id: int, listing_id: int,
                       lead_phone: str, listing_phone: str,
                       lead_name: str = None, listing_title: str = None,
                       listing_city: str = None, listing_price: int = None,
-                      send_intro: bool = True, require_gate: bool = True) -> dict:
+                      send_intro: bool = True, require_gate: bool = True,
+                      lead_url: str = None, listing_url: str = None) -> dict:
     ensure_table()
 
     if lead_phone == listing_phone:
@@ -1402,6 +1403,11 @@ def start_negotiation(lead_id: int, listing_id: int,
                 _r = _cur.fetchone(); _so = _r[0] if _r else None
         except Exception as _e:
             print(f"[NEG] جلب روابط المبادرة: {_e}", flush=True)
+
+        # روابط مُمرَّرة صراحةً (كاختبار صفقة حقيقية بأرقام المستخدم) تَجبُر غياب
+        # إعلانات أرقام الاختبار على حراج.
+        _su = _su or lead_url
+        _so = _so or listing_url
 
         # المبادرة من الهوية الموحّدة (identity) — مصدر واحد للموقع والواتساب.
         import identity
