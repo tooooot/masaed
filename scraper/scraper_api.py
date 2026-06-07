@@ -2485,6 +2485,11 @@ def deal_wa_test():
             RETURNING id""", (test_phone, "مالك اختبار", f"watest-owner-{test_phone}", city,
                               offer.get("property_type"), offer.get("rooms"), offer.get("price")))
         owner_reg_id = cur.fetchone()[0]
+        # أغلق أي تفاوض اختبار سابق لرقمَي المستخدم → يسمح بإعادة الاختبار بلا حظر
+        cur.execute("""UPDATE sanad.masaed_negotiations SET status='cancelled'
+                       WHERE (lead_phone IN (%s,%s) OR listing_phone IN (%s,%s))
+                         AND status='active'""",
+                    (my_phone, test_phone, my_phone, test_phone))
         conn.commit()
     conn.close()
 
