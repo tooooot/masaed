@@ -2398,6 +2398,71 @@ def cron_auto_simulate_status():
     return jsonify({"ok": True, "state": _autosim_state})
 
 
+@app.route("/deal/wa-test", methods=["POST"])
+def deal_wa_test():
+    """🧪 اختبار واتساب حقيقي بأرقام المستخدم نفسه (محاكاة الدرجة الثانية): يبدأ
+    تفاوضاً فعلياً بين رقمَيك (أنت + رقم اختبار تضيفه) ببيانات صفقة حقيقية، فتلعب
+    الطرفين بردود صعبة وتختبر مساعد على واتساب الحقيقي.
+    حارس أمان: يرفض إن طابق أحد الرقمين رقم الإعلان الحقيقي (منعاً للتواصل بالخطأ).
+    Body: {my_phone, test_phone, deal_seeker_phone, listing_id, listing_phone?, mode?}"""
+    from negotiator import start_negotiation, ensure_table as _ensure_neg
+    _ensure_neg()
+    data = request.get_json() or {}
+    my_phone   = normalize_phone(str(data.get("my_phone", "")))     # الباحث (أنت)
+    test_phone = normalize_phone(str(data.get("test_phone", "")))   # المالك (رقمك الآخر)
+    deal_seeker  = (data.get("deal_seeker_phone") or "").strip()
+    listing_id   = data.get("listing_id")
+    listing_phone = (data.get("listing_phone") or "").strip() or None
+    if not my_phone or not test_phone:
+        return jsonify({"ok": False, "error": "رقمك ورقم الاختبار مطلوبان"}), 400
+    if my_phone == test_phone:
+        return jsonify({"ok": False, "error": "الرقمان يجب أن يكونا مختلفين"}), 400
+
+    inp = _build_deal_sim(deal_seeker or my_phone, listing_id, listing_phone)
+    if not inp:
+        return jsonify({"ok": False, "error": "لا توجد بيانات لهذه الصفقة"}), 404
+    offer = inp["offer"]; seeker = inp["seeker"]
+
+    # 🛑 حارس الخط الأحمر: لا تسمح بأرقام الإعلانات الحقيقية في الاختبار
+    real_nums = {normalize_phone(str(x)) for x in
+                 (deal_seeker, listing_phone, offer.get("phone"), seeker.get("phone")) if x}
+    if my_phone in real_nums or test_phone in real_nums:
+        return jsonify({"ok": False, "error": "⛔ استخدم أرقامك أنت فقط للاختبار — لا أرقام الإعلانات الحقيقية."}), 400
+
+    city = offer.get("city") or seeker.get("city")
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO sanad.masaed_registrations
+            (phone,name,type,slug,city,property_type,rooms,budget_annual,status)
+            VALUES (%s,%s,'wanted',%s,%s,%s,%s,%s,'complete')
+            ON CONFLICT (slug) DO UPDATE SET city=EXCLUDED.city,status='complete',updated_at=NOW()
+            RETURNING id""", (my_phone, "باحث اختبار", f"watest-seeker-{my_phone}", city,
+                              offer.get("property_type"), seeker.get("rooms") or offer.get("rooms"),
+                              seeker.get("budget_annual") or offer.get("price")))
+        seeker_reg_id = cur.fetchone()[0]
+        cur.execute("""INSERT INTO sanad.masaed_registrations
+            (phone,name,type,slug,city,property_type,rooms,price_annual,status)
+            VALUES (%s,%s,'listing',%s,%s,%s,%s,%s,'complete')
+            ON CONFLICT (slug) DO UPDATE SET city=EXCLUDED.city,price_annual=EXCLUDED.price_annual,
+                status='complete',updated_at=NOW()
+            RETURNING id""", (test_phone, "مالك اختبار", f"watest-owner-{test_phone}", city,
+                              offer.get("property_type"), offer.get("rooms"), offer.get("price")))
+        owner_reg_id = cur.fetchone()[0]
+        conn.commit()
+    conn.close()
+
+    result = start_negotiation(
+        lead_id=seeker_reg_id, listing_id=owner_reg_id,
+        lead_phone=my_phone, listing_phone=test_phone, lead_name="باحث اختبار",
+        listing_title=offer.get("title") or "عقار للإيجار",
+        listing_city=city, listing_price=offer.get("price"),
+        require_gate=False)   # اختبار صريح بأرقام المستخدم → خارج البوّابة
+    if result.get("ok"):
+        return jsonify({"ok": True, "neg_id": result["neg_id"],
+                        "message": f"بدأ اختبار التفاوض #{result['neg_id']} — وصلت رسائل واتساب لرقميك. العبهما وتابع في «جلسات»."})
+    return jsonify({"ok": False, "error": result.get("error", "فشل بدء الاختبار")}), 500
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # LAB — مساعد المختبر
 # ══════════════════════════════════════════════════════════════════════════════

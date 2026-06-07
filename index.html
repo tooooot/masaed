@@ -1282,6 +1282,38 @@ function closeDealPage(){const pg=document.getElementById('dealPage');if(pg)pg.s
 function dealTab(n){_dealTab=n;renderDealPage();const pg=document.getElementById('dealPage');if(pg)pg.scrollTo(0,0);}
 function _stat(l,v){return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px"><div style="font-size:.66rem;color:var(--muted)">${l}</div><div style="font-size:.85rem;font-weight:700">${esc(String(v==null?'—':v))}</div></div>`;}
 function showDealSim(){ if(_tlSim) gateOverlay(simReviewInner(_tlSim)+`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="gateClose()">إغلاق</button></div>`); }
+// 🧪 اختبار واتساب حقيقي بأرقام المستخدم نفسه (محاكاة الدرجة الثانية)
+function openWaTest(){
+  const t=_dealData||{};
+  gateOverlay(`
+    <div style="font-weight:800;margin-bottom:6px">🧪 اختبار بواتساب — أرقامك أنت</div>
+    <div style="background:#f8514915;border:1px solid #f8514940;border-radius:8px;padding:8px;font-size:.74rem;color:#f85149;margin-bottom:10px">
+      ⚠️ أدخل <b>رقميك أنت فقط</b> (جوالك + رقم اختبار تملكه). <b>لا تُدخل أرقام الإعلانات الحقيقية.</b>
+      ستصلك رسائل واتساب فعلية على الرقمين فتلعب الباحث والمالك بردود صعبة وتختبر مساعد.
+    </div>
+    <div style="font-size:.78rem;color:var(--muted);margin-bottom:6px">سيستخدم بيانات هذه الصفقة الحقيقية (#${t.deal_no||'—'}) لكن بأرقامك.</div>
+    <label style="font-size:.76rem">📱 رقمك (تلعب الباحث)</label>
+    <input id="waMy" type="tel" placeholder="9665XXXXXXXX" dir="ltr" style="width:100%;padding:8px;margin:4px 0 8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text)">
+    <label style="font-size:.76rem">📱 رقم اختبارك (تلعب المالك)</label>
+    <input id="waTest" type="tel" placeholder="9665XXXXXXXX" dir="ltr" style="width:100%;padding:8px;margin:4px 0 8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text)">
+    <div id="waMsg" style="margin:6px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-wa btn-sm" id="waGo" onclick="submitWaTest()">🚀 ابدأ الاختبار (يُرسل واتساب)</button>
+      <button class="btn btn-ghost btn-sm" onclick="gateClose()">إلغاء</button>
+    </div>`);
+}
+async function submitWaTest(){
+  const t=_dealData||{}, off=t.offer||{};
+  const my=(document.getElementById('waMy').value||'').trim();
+  const test=(document.getElementById('waTest').value||'').trim();
+  const msg=document.getElementById('waMsg');
+  if(!my||!test){msg.innerHTML='<div style="color:var(--red);font-size:.78rem">أدخل الرقمين</div>';return;}
+  const b=document.getElementById('waGo');b.disabled=true;b.innerHTML='<span class="spinner"></span> بدء…';
+  const d=await sfetch('/deal/wa-test',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({my_phone:my,test_phone:test,deal_seeker_phone:t.seeker_phone,listing_id:off.listing_id,listing_phone:off.phone})});
+  if(d&&d.ok){gateClose();toast('🧪 '+(d.message||'بدأ الاختبار — تابع واتساب و«جلسات»'),6000);}
+  else{msg.innerHTML='<div style="color:var(--red);font-size:.78rem">❌ '+esc((d&&d.error)||'فشل')+'</div>';b.disabled=false;b.innerHTML='🚀 ابدأ الاختبار (يُرسل واتساب)';}
+}
 function renderDealPage(){
   const t=_dealData||{},pg=document.getElementById('dealPage');if(!pg)return;
   const req=t.request||{},off=t.offer||{};
@@ -1348,8 +1380,9 @@ function _dealTabContent(t){
     return block('🔍 الباحث: '+esc(req.name||req.phone||''),req,ru,'seeker')+block('🏠 المالك: '+esc(off.name||off.phone||''),off,ou,'owner');
   }
   if(_dealTab==='sim'){
-    if(!sim) return card('لم تُشغّل محاكاة محفوظة لهذه الصفقة بعد.');
-    return `<div style="margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="showDealSim()">👁 عرض المحادثة الكاملة</button></div>`+simReviewInner(sim);
+    const waBtn=`<button class="btn btn-wa btn-sm" onclick="openWaTest()">🧪 اختبار بواتساب (أرقامي)</button>`;
+    if(!sim) return card('لم تُشغّل محاكاة محفوظة لهذه الصفقة بعد.'+'<div style="margin-top:10px">'+waBtn+'</div>');
+    return `<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="showDealSim()">👁 عرض المحادثة الكاملة</button>${waBtn}</div>`+simReviewInner(sim);
   }
   if(_dealTab==='path') return _pathHtml(t);
   return '';
