@@ -1163,6 +1163,8 @@ def lab_simulate_deal():
     seeker_data = inp["seeker_data"]; owner_data = inp["owner_data"]
     extras = inp["extras"]; offer = inp["offer"]; seeker = inp["seeker"]
     reg_id = data.get("reg_id") or inp["reg_id"]
+    if (data.get("mode") or request.args.get("mode")) == "hard":
+        extras["mode"] = "hard"   # 🔥 وضع أسوأ حالة (شخصيات عدائية)
 
     try:
         job_id = start_job(reg_id, seeker_data, owner_data, extras=extras)
@@ -2303,7 +2305,7 @@ def cron_auto_match():
 _autosim_state = {"running": False, "done": 0, "skipped": 0, "total": 0, "started": None, "finished": None}
 
 
-def _run_auto_simulate(batch):
+def _run_auto_simulate(batch, mode="normal"):
     """يحاكي أفضل التوفيقات المعلّقة (بلا إرسال) ويسجّلها pending_review."""
     import deal_gate
     from sim_engine import start_job, get_status, RateLimited
@@ -2341,6 +2343,8 @@ def _run_auto_simulate(batch):
                 inp = _build_deal_sim(req_phone, listing_id, lst_phone)
                 if not inp or not (inp["offer"] or {}).get("phone"):
                     _autosim_state["skipped"] += 1; continue
+                if mode == "hard":
+                    inp["extras"]["mode"] = "hard"
                 job = start_job(inp["reg_id"], inp["seeker_data"], inp["owner_data"], extras=inp["extras"])
                 st = None
                 for _ in range(50):
@@ -2377,14 +2381,15 @@ def cron_auto_simulate():
     import threading
     body = request.get_json(silent=True) or {}
     batch = min(int(request.args.get("batch", body.get("batch", 3))), 6)
+    mode = "hard" if (request.args.get("mode") or body.get("mode")) == "hard" else "normal"
     if _autosim_state.get("running"):
         return jsonify({"ok": False, "error": "محاكاة تلقائية قيد التشغيل بالفعل",
                         "state": _autosim_state}), 409
     if request.args.get("async") == "1" or body.get("async"):
-        threading.Thread(target=_run_auto_simulate, args=(batch,), daemon=True).start()
-        return jsonify({"ok": True, "started": True, "batch": batch,
+        threading.Thread(target=_run_auto_simulate, args=(batch, mode), daemon=True).start()
+        return jsonify({"ok": True, "started": True, "batch": batch, "mode": mode,
                         "message": "بدأت المحاكاة في الخلفية — حدّث بعد دقائق"}), 202
-    return jsonify(_run_auto_simulate(batch))
+    return jsonify(_run_auto_simulate(batch, mode))
 
 
 @app.route("/cron/auto-simulate-status", methods=["GET"])

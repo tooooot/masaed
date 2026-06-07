@@ -38,7 +38,9 @@ ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── Seeker Simulator — يتقمص دور الباحث ──────────────────────────────────────
 
-from prompts import SYS_SEEKER as _SYS_SEEKER, SYS_OWNER as _SYS_OWNER, SYS_CRITIC as _SYS_CRITIC
+from prompts import (SYS_SEEKER as _SYS_SEEKER, SYS_OWNER as _SYS_OWNER,
+                     SYS_CRITIC as _SYS_CRITIC,
+                     SYS_SEEKER_HARD as _SYS_SEEKER_HARD, SYS_OWNER_HARD as _SYS_OWNER_HARD)
 
 
 # ── LLM Calls ────────────────────────────────────────────────────────────────

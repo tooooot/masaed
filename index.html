@@ -459,6 +459,7 @@ button{font-family:'Tajawal',sans-serif;cursor:pointer;}
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
           <button class="btn btn-blue btn-sm" id="btnAutoMatch" onclick="runAutoMatch(this)">🔗 مطابقة جديدة</button>
           <button class="btn btn-primary btn-sm" id="btnAutoSim" onclick="runAutoSimulate(this)">🤖 حاكِ أفضل ٥ توفيقات</button>
+          <label style="display:flex;align-items:center;gap:4px;font-size:.74rem;cursor:pointer;align-self:center"><input type="checkbox" id="hardMode"> 🔥 وضع صعب (أسوأ حالة)</label>
           <span id="autoSimNote" style="font-size:.72rem;color:var(--muted);align-self:center"></span>
         </div>
         <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px">يدوي بالكامل: «مطابقة» تحدّث التوفيقات، و«حاكِ» يملأ الصفقات (بلا أي إرسال). البوّابة تبقى باعتمادك.</div>
@@ -1014,6 +1015,7 @@ function simReviewInner(res){
   }
   return `<div style="max-height:62vh;overflow:auto">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:.75rem">
+        ${res.mode==='hard'?'<span class="badge badge-rejected">🔥 وضع صعب</span>':''}
         <span class="badge badge-approved">التقييم العام ${ev.overall_score??'—'}/10</span>
         <span class="badge badge-pending">${STA[sim.final_status]||sim.final_status||'—'}</span>
         ${sim.agreed_price?`<span class="badge badge-approved">السعر ${Number(sim.agreed_price).toLocaleString('ar')} ر</span>`:''}
@@ -1136,7 +1138,8 @@ async function runAutoMatch(btn){
 let _autoSimPoll=null;
 async function runAutoSimulate(btn){
   btn.disabled=true;btn.innerHTML='<span class="spinner"></span> بدء…';
-  const d=await sfetch('/cron/auto-simulate?async=1&batch=5',{method:'POST'});
+  const hard=document.getElementById('hardMode')&&document.getElementById('hardMode').checked;
+  const d=await sfetch('/cron/auto-simulate?async=1&batch=5'+(hard?'&mode=hard':''),{method:'POST'});
   if(!d||d.ok===false){toast('⚠️ '+((d&&d.error)||'تعذّر البدء'),4000);btn.disabled=false;btn.innerHTML='🤖 حاكِ أفضل ٥ توفيقات';return;}
   toast('🤖 بدأت المحاكاة في الخلفية (بلا إرسال) — ستظهر الصفقات تباعاً',5000);
   pollAutoSim(btn);

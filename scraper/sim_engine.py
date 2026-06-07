@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 
 import negotiator
 from bot import get_conn
-from simulator import call_llm, CriticAssistant, _SYS_SEEKER, _SYS_OWNER
+from simulator import (call_llm, CriticAssistant, _SYS_SEEKER, _SYS_OWNER,
+                       _SYS_SEEKER_HARD, _SYS_OWNER_HARD)
 
 # ── اعتراض wa_send عبر thread-local (يُثبّت مرة واحدة) ────────────────────────────
 
@@ -136,9 +137,11 @@ def _sweep_orphans(conn):
 
 # ── بوتات الطرفين (تردّ على الوسيط، لا على بعضهما) ──────────────────────────────
 
-def _seeker_reply(seeker_data, mediator_to_seeker, is_first):
+def _seeker_reply(seeker_data, mediator_to_seeker, is_first, hard=None):
+    if hard is None:
+        hard = getattr(_tls, "hard", False)
     furnished = "مفروشة" if seeker_data.get("furnished") else "بدون أثاث"
-    system = _SYS_SEEKER.format(
+    system = (_SYS_SEEKER_HARD if hard else _SYS_SEEKER).format(
         city=seeker_data.get("city", "جدة"),
         district=seeker_data.get("district") or "—",
         rooms=seeker_data.get("rooms", 3),
@@ -154,9 +157,11 @@ def _seeker_reply(seeker_data, mediator_to_seeker, is_first):
     return call_llm(system, prompt)
 
 
-def _owner_reply(owner_data, mediator_to_owner, is_first):
+def _owner_reply(owner_data, mediator_to_owner, is_first, hard=None):
+    if hard is None:
+        hard = getattr(_tls, "hard", False)
     furnished = "مفروشة بالكامل" if owner_data.get("furnished") else "بدون أثاث"
-    system = _SYS_OWNER.format(
+    system = (_SYS_OWNER_HARD if hard else _SYS_OWNER).format(
         title=owner_data.get("title", "عقار"),
         city=owner_data.get("city", "جدة"),
         price=_to_int(owner_data.get("price"), 45000),
@@ -211,6 +216,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
 
     captured = []                     # كل ما "يرسله" الوسيط [{to, text}]
     _tls.sim_buffer = captured        # فعّل الاعتراض لهذا الخيط
+    _tls.hard = bool((extras or {}).get("mode") == "hard")   # 🔥 وضع أسوأ حالة
 
     transcript = []                   # المحادثة الموحّدة الثلاثية
     seeker_inbox, owner_inbox = [], []
@@ -450,6 +456,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
             },
             "understanding": understanding,
             "party_facts": party_facts,
+            "mode": ((extras or {}).get("mode") or "normal"),
             "evaluation": evaluation,
             "fact_errors": fact_errors,
             "recommendations": critic.get_recommendations(),
@@ -458,6 +465,7 @@ def _run_simulation(reg_id, seeker_data, owner_data, progress_cb=None, extras=No
     finally:
         # نظافة مضمونة: عطّل الاعتراض + احذف صفوف الـsandbox
         _tls.sim_buffer = None
+        _tls.hard = False
         try:
             _cleanup_run(conn, lead_phone, listing_phone)
         except Exception as e:
