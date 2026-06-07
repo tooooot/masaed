@@ -1388,8 +1388,10 @@ def auto_match():
             SELECT id, title, body, city, phone, phone_hidden,
                    FALSE AS is_registered
             FROM sanad.masaed_leads
-            WHERE listing_type = 'wanted' AND status IN ('new', 'active')
-            ORDER BY id DESC LIMIT 30
+            WHERE listing_type = 'wanted'
+              AND status IN ('new', 'active', 'phone_extracted')
+              AND phone IS NOT NULL
+            ORDER BY id DESC LIMIT 120
         """)
         lead_cols = [d[0] for d in cur.description]
         scraped_leads = [dict(zip(lead_cols, r)) for r in cur.fetchall()]
