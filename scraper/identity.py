@@ -40,8 +40,10 @@ DEFAULTS = {
                        "لاحظنا إعلانك المنشور على حراج{url}\n"
                        "وعندنا باحث قد يناسب عقارك — حبّينا نتأكّد. العقار لا زال متاح؟"),
     # ٣) التسجيل
-    "reg_confirm": ("تمام 🙌 خلّني أكمّل تسجيلك بسرعة. من إعلانك سجّلت لك مبدئياً:\n"
-                    "{fields}\nصحّ كذا؟{missing}"),
+    "reg_confirm_seeker": ("تمام 🙌 خلّني أكمّل تسجيلك بسرعة. من طلبك سجّلت لك مبدئياً:\n"
+                           "{fields}\nصحّ كذا؟{missing}"),
+    "reg_confirm_owner": ("تمام 🙌 خلّني أكمّل تسجيلك بسرعة. من إعلانك سجّلت لك مبدئياً:\n"
+                          "{fields}\nصحّ كذا؟{missing}"),
     "reg_done": "✅ تمّ تسجيلك عندنا، الله يسهّل.{page}",
     "waiting_other": "بس ننتظر تأكيد الطرف الثاني، وبعدها أبدأ التفاوض نيابةً عنك 👌",
     # ٤) المعاينة
@@ -74,7 +76,9 @@ FIELD_LABELS = {
     "persona": "الشخصية (مَن هو مساعد)",
     "principles": "المبادئ/القواعد",
     "outreach_seeker": "١) المبادرة — للباحث", "outreach_owner": "١) المبادرة — للمالك",
-    "reg_confirm": "٣) التسجيل — تأكيد البيانات", "reg_done": "٣) اكتمال التسجيل + الصفحة",
+    "reg_confirm_seeker": "٣) التسجيل — تأكيد (باحث/طلبك)",
+    "reg_confirm_owner": "٣) التسجيل — تأكيد (مالك/إعلانك)",
+    "reg_done": "٣) اكتمال التسجيل + الصفحة",
     "waiting_other": "٣) بانتظار الطرف الآخر",
     "ask_owner_photos": "٤) طلب الصور", "photos_received": "٤) استلام الصور",
     "viewing_seeker_url": "٤) المعاينة — للباحث (برابط)",
@@ -178,9 +182,11 @@ def reg_fields(profile, role):
 
 # ── ٣) التسجيل ──────────────────────────────────────────────────────────────
 def registration_confirm(role, known, missing):
-    fields = "- " + "\n- ".join(known or ["(ما لقيت تفاصيل كافية بالإعلان)"])
+    src = "طلبك" if role == "seeker" else "إعلانك"
+    fields = "- " + "\n- ".join(known or [f"(ما لقيت تفاصيل كافية في {src})"])
     miss = (" وينقصني بس: " + "، ".join(missing) + ".") if missing else ""
-    return cfg("reg_confirm").format(fields=fields, missing=miss)
+    key = "reg_confirm_seeker" if role == "seeker" else "reg_confirm_owner"
+    return cfg(key).format(fields=fields, missing=miss)
 
 
 def registration_done(role, page_url=None):
