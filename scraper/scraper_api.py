@@ -2423,11 +2423,17 @@ def deal_wa_test():
         return jsonify({"ok": False, "error": "لا توجد بيانات لهذه الصفقة"}), 404
     offer = inp["offer"]; seeker = inp["seeker"]
 
-    # 🛑 حارس الخط الأحمر: لا تسمح بأرقام الإعلانات الحقيقية في الاختبار
+    # 🛑 حارس الخط الأحمر: امنع أرقام الإعلانات الحقيقية — إلا إن كانت ضمن أرقام
+    # الاختبار/الـsandbox المُصرّح بها (أرقام المستخدم نفسه).
+    from bot import SANDBOX_PHONES, get_config
+    _allowed = set(SANDBOX_PHONES) | {n for n in (get_config("test_owner", ""),
+                                                  get_config("test_seeker", "")) if n}
     real_nums = {normalize_phone(str(x)) for x in
                  (deal_seeker, listing_phone, offer.get("phone"), seeker.get("phone")) if x}
-    if my_phone in real_nums or test_phone in real_nums:
-        return jsonify({"ok": False, "error": "⛔ استخدم أرقامك أنت فقط للاختبار — لا أرقام الإعلانات الحقيقية."}), 400
+    for p in (my_phone, test_phone):
+        if p in real_nums and p not in _allowed:
+            return jsonify({"ok": False,
+                            "error": "⛔ استخدم أرقامك أنت فقط للاختبار — لا أرقام الإعلانات الحقيقية."}), 400
 
     city = offer.get("city") or seeker.get("city")
     conn = get_conn()
