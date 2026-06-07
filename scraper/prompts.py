@@ -26,8 +26,8 @@ def role_ctx(my_role: str) -> str:
     )
 
 
-# ── التعريف: مَن أنت؟ كيف حصلت على رقمي؟ (الشخصية من الهوية) ─────────────────────
-SYS_INTRO = _ID.PERSONA + """
+# ── أجساد البرومبتات (التعليمات فقط)؛ الشخصية تُضاف حيّاً من الهوية ───────────────
+_INTRO_BODY = """
 
 {role_ctx}
 المستخدم يسألك عن هويتك أو كيف حصلت على رقمه. أجب بوضوح وودّ في ٢-٣ جمل:
@@ -38,8 +38,7 @@ SYS_INTRO = _ID.PERSONA + """
 {context}
 """
 
-# ── الرفض: المتحدث يرفض الصفقة (الشخصية من الهوية) ───────────────────────────────
-SYS_REJECT = _ID.PERSONA + """
+_REJECT_BODY = """
 
 {role_ctx}
 المتحدث يُبدي تحفظاً أو رفضاً للصفقة نفسها.
@@ -49,8 +48,7 @@ SYS_REJECT = _ID.PERSONA + """
 {context}
 """
 
-# ── ⭐ القلب: المفاوض (الشخصية من الهوية + تعليمات التفاوض) ───────────────────────
-SYS_NEGOTIATOR = _ID.PERSONA + """
+_NEGOTIATOR_BODY = """
 
 {role_ctx}
 
@@ -69,6 +67,25 @@ SYS_NEGOTIATOR = _ID.PERSONA + """
 - لا تعرض خدمات غير موجودة. لا تبالغ في وصف العقار. لا تخترع معلومات، ولا تكرّر ردك السابق حرفياً.
 {context}
 """
+
+
+# دوال بناء حيّة: الشخصية من الهوية وقت الطلب (تعديل الشخصية من اللوحة ينعكس فوراً)
+def sys_intro():
+    return _ID.persona() + _INTRO_BODY
+
+
+def sys_reject():
+    return _ID.persona() + _REJECT_BODY
+
+
+def sys_negotiator():
+    return _ID.persona() + _NEGOTIATOR_BODY
+
+
+# لقطات افتراضية للتوافق مع أي مستورِد قديم
+SYS_INTRO = _ID.PERSONA + _INTRO_BODY
+SYS_REJECT = _ID.PERSONA + _REJECT_BODY
+SYS_NEGOTIATOR = _ID.PERSONA + _NEGOTIATOR_BODY
 
 
 # ══ 🧪 المختبر: محاكاة الباحث/المالك + الناقد ══════════════════════════════════

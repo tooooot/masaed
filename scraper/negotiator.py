@@ -241,8 +241,8 @@ def _needs_relay(my_role: str, text: str, neg: dict) -> bool:
 
 
 # ── System Prompts (الأقوال) — معزولة في prompts.py ───────────────────────────
-from prompts import (role_ctx as _role_ctx, SYS_INTRO as _SYS_INTRO,
-                     SYS_REJECT as _SYS_REJECT, SYS_NEGOTIATOR as _SYS_NEGOTIATOR)
+from prompts import (role_ctx as _role_ctx, sys_intro as _sys_intro,
+                     sys_reject as _sys_reject, sys_negotiator as _sys_negotiator)
 
 
 # ── DB helpers (يقبلون conn اختياري) ──────────────────────────────────────────
@@ -587,12 +587,12 @@ def _generate_reply(neg: dict, my_role: str, text: str, intent: dict) -> str:
     if is_identity:
         source = "وجدت رقمك من إعلانك في حراج" if my_role == "مالك" \
                  else "وجدت رقمك من طلبك المُسجَّل للبحث عن سكن"
-        system = _SYS_INTRO.format(role_ctx=role_ctx, source=source, context=context)
+        system = _sys_intro().format(role_ctx=role_ctx, source=source, context=context)
     elif intent_type == "reject":
-        system = _SYS_REJECT.format(role_ctx=role_ctx, context=context)
+        system = _sys_reject().format(role_ctx=role_ctx, context=context)
     else:
         # الأسئلة والعموم: prompt المفاوض الموحّد الموجّه بالهدف
-        system = _SYS_NEGOTIATOR.format(role_ctx=role_ctx, other_party=other_party, context=context)
+        system = _sys_negotiator().format(role_ctx=role_ctx, other_party=other_party, context=context)
 
     return _llm(system, f"[{my_role}]: {text}", max_tokens=400) or "وصلت رسالتك، نكمّل — وش السعر اللي يناسبك؟"
 

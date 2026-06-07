@@ -1,149 +1,129 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>هوية مساعد وتعليماته</title>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🟣 هوية مساعد — تعديل</title>
 <style>
-:root{--bg:#0f1419;--card:#1a2129;--bd:#2a3540;--tx:#e6edf3;--mut:#8b98a5;--pur:#a371f7;--grn:#3fb950;--yel:#d29922;--red:#f85149;}
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--green:#2ea043;--green-light:#3fb950;--blue:#58a6ff;--yellow:#e3b341;--red:#f85149}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;line-height:1.7;padding:0 0 60px}
-header{background:linear-gradient(135deg,#1a2129,#0f1419);border-bottom:1px solid var(--bd);padding:20px 24px;position:sticky;top:0;z-index:5}
-h1{margin:0;font-size:1.3rem}
-.sub{color:var(--mut);font-size:.85rem;margin-top:4px}
-nav{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-nav a{background:var(--card);border:1px solid var(--bd);color:var(--tx);text-decoration:none;padding:6px 12px;border-radius:8px;font-size:.8rem}
-nav a.active{background:var(--pur);border-color:var(--pur)}
-.wrap{max-width:900px;margin:0 auto;padding:24px}
-.legend{display:flex;gap:16px;flex-wrap:wrap;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:.85rem}
-.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:.7rem;font-weight:700}
-.tag.p{background:#a371f733;color:var(--pur);border:1px solid var(--pur)}
-.tag.c{background:#3fb95033;color:var(--grn);border:1px solid var(--grn)}
-.block{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px;margin-bottom:18px}
-.block h3{margin:0 0 4px;font-size:1.05rem}
-.when{color:var(--yel);font-size:.8rem;margin:6px 0}
-pre{background:#0b0f14;border:1px solid var(--bd);border-radius:8px;padding:14px;overflow-x:auto;white-space:pre-wrap;font-size:.82rem;color:#cdd9e5;font-family:"SF Mono",Consolas,monospace;direction:rtl}
-.exp{color:var(--mut);font-size:.85rem;margin-top:8px}
-.fix{background:#d2992218;border-right:3px solid var(--yel);padding:8px 12px;border-radius:6px;margin-top:10px;font-size:.82rem}
-.fix b{color:var(--yel)}
-.var{color:var(--pur);font-weight:700}
-.file{color:var(--mut);font-size:.75rem;font-family:monospace}
-</style></head><body>
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Tahoma,sans-serif;direction:rtl}
+.wrap{max-width:760px;margin:0 auto;padding:16px}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#0d1117,#161b22);border-bottom:1px solid var(--border);padding:14px 16px}
+h1{font-size:1.1rem;margin:0 0 4px}
+.sub{font-size:.74rem;color:var(--muted)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.btn{padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:.82rem;font-weight:700;cursor:pointer}
+.btn-green{background:var(--green);color:#fff;border-color:var(--green)}
+.btn-red{background:#f8514920;color:var(--red);border-color:#f8514940}
+.field{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px}
+.flabel{font-weight:700;font-size:.82rem;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{font-size:.62rem;padding:1px 7px;border-radius:20px;font-weight:700}
+.b-edit{background:#e3b34120;color:var(--yellow)}
+.b-def{background:#2ea04320;color:var(--green-light)}
+textarea{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px;font-family:inherit;font-size:.84rem;line-height:1.7;resize:vertical;min-height:58px}
+.hint{font-size:.68rem;color:var(--muted);margin-top:4px}
+.reset1{font-size:.68rem;color:var(--blue);cursor:pointer;background:none;border:none;margin-right:auto}
+.group{font-weight:800;font-size:.92rem;margin:18px 0 8px;color:var(--green-light)}
+#status{font-size:.78rem;margin-top:8px}
+a.back{color:var(--blue);text-decoration:none;font-size:.8rem}
+</style>
+</head>
+<body>
 <header>
-  <h1>🟣 هوية مساعد وتعليماته (System Instructions)</h1>
-  <div class="sub">كل ما يُحقَن في "عقل" الذكاء الاصطناعي ليصوغ ردوده — قابل للتغيير بالكلمات. المصدر: <span class="file">scraper/negotiator.py</span></div>
-  <nav>
-    <a class="active" href="/dashboard/identity.html">🟣 الهوية/التعليمات</a>
-    <a href="/dashboard/behavior.html">⚙️ السلوك البرمجي</a>
-    <a href="/dashboard/code.html">🗂️ خريطة الكود</a>
-    <a href="/dashboard/lab.html">🔬 المختبر</a>
-  </nav>
+  <div class="wrap" style="padding:0">
+    <h1>🟣 هوية «مساعد» — التعديل المباشر</h1>
+    <div class="sub">المصدر الواحد. أي تعديل هنا ينعكس على المحاكي والمختبرين والإطلاق فوراً. <a class="back" href="/">← الرئيسية</a></div>
+    <div class="bar">
+      <button class="btn btn-green" onclick="saveAll(this)">💾 حفظ الكل</button>
+      <button class="btn btn-red" onclick="resetAll()">↩️ إرجاع للافتراضي</button>
+      <button class="btn" onclick="load()">🔄 تحديث</button>
+    </div>
+    <div id="status"></div>
+  </div>
 </header>
-<div class="wrap">
 
-<div class="legend">
-  <span><span class="tag p">تعليمات</span> نص يُعطى للنموذج — يفهمه ويصوغ على أساسه. <b>مرن لكن غير مضمون 100%</b> (قد يتذبذب).</span>
-  <span>لتغييره: تكفي إعادة صياغة الكلمات.</span>
-</div>
+<div class="wrap" id="form"><div style="text-align:center;padding:40px;color:var(--muted)">جارٍ التحميل…</div></div>
 
-<div class="block" style="border-color:var(--pur)">
-  <h3>📖 كيف يُبنى رد مساعد؟ (مبسّط)</h3>
-  <div class="exp">في كل رسالة، نجمع <b>«ورقة تعليمات»</b> ونرسلها للنموذج، تتكوّن من ٣ طبقات تُركّب معاً:</div>
-  <pre>┌─ طبقة الشخصية (ثابتة): "أنت وسيط مفاوض، هدفك السعر..."   ← _SYS_NEGOTIATOR
-├─ طبقة الدور (متغيّرة): "أنت تخاطب المالك الآن"            ← _role_ctx
-├─ طبقة السياق (متغيّرة): بيانات العقار + ذاكرة العميل + حالة العروض
-└─ رسالة المستخدم: "كم السعر؟"
-        ↓ يُرسَل كله للنموذج ↓
-   النموذج يصوغ الرد ضمن هذه الحدود فقط</pre>
-  <div class="exp"><b>لماذا نخبره بالدور صراحةً؟</b> لأن نفس البوت يكلّم المالك والمستأجر بنفس الكود. بدون «أنت تخاطب المالك» قد يخلط فيقول للمالك «سأنسّق مع المالك» (وهو المالك نفسه!). فطبقة الدور تُملأ برمجياً (مالك/مستأجر) لتمنع هذا الخلط. <b>هي ليست هوية منفصلة — بل توجيه لمن يخاطب الآن.</b></div>
-</div>
+<script>
+const API='/api';
+let DATA=null;
+const PLACEHOLDERS={
+  outreach_seeker:'{greet} التحية · {url} رابط الإعلان',
+  outreach_owner:'{greet} التحية · {url} رابط الإعلان',
+  reg_confirm:'{fields} البيانات المستخرجة · {missing} النواقص',
+  reg_done:'{page} رابط الصفحة',
+  viewing_seeker_url:'{url} رابط الإعلان',
+  alternatives_offer:'{alts} قائمة البدائل',
+  alternative_chosen:'{title} اسم العرض',
+};
+const GROUPS=[
+  ['🧬 الشخصية والمبادئ',['persona']],
+  ['1️⃣ المبادرة',['outreach_seeker','outreach_owner']],
+  ['3️⃣ التسجيل',['reg_confirm','reg_done','waiting_other']],
+  ['4️⃣ المعاينة',['ask_owner_photos','photos_received','viewing_seeker_url','viewing_seeker_from_owner','viewing_owner','viewing_confirmed_seeker','viewing_confirmed_owner']],
+  ['5️⃣ التفاوض',['negotiation_start_seeker','negotiation_start_owner']],
+  ['6️⃣ البدائل',['alternatives_offer','alternatives_none','alternative_chosen']],
+  ['🚪 الإلغاء',['cancel_to_party','cancel_to_other']],
+];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function status(t,ok){const e=document.getElementById('status');e.textContent=t;e.style.color=ok?'var(--green-light)':'var(--red)';}
 
-<div class="block">
-  <h3>0) النماذج المستخدمة</h3>
-  <div class="exp">يصوغ مساعد ردوده عبر <b>DeepSeek فقط</b> الآن (توفير التكلفة — Claude غالٍ ومُعطَّل). درجة الحرارة 0.3 (ثبات)، حد الطول 400 كلمة. كل التعليمات أدناه تُرسَل للنموذج مع رسالة المستخدم.</div>
-</div>
+async function load(){
+  let d;
+  try{ const r=await fetch(`${API}/identity`); d=await r.json(); }catch(e){ document.getElementById('form').innerHTML='تعذّر الاتصال'; return; }
+  if(!d||!d.ok){document.getElementById('form').innerHTML='تعذّر التحميل';return;}
+  DATA=d;
+  let h='';
+  for(const g of GROUPS){
+    const title=g[0], keys=g[1];
+    h+=`<div class="group">${title}</div>`;
+    if(keys[0]==='persona'){
+      h+=fieldHtml('persona',d.fields.persona);
+      const pe=d.fields.principles;
+      h+=`<div class="field"><div class="flabel">المبادئ/القواعد ${(pe&&pe.edited)?'<span class="badge b-edit">مُعدّل</span>':'<span class="badge b-def">افتراضي</span>'}</div>
+        <textarea id="fld_principles" rows="8">${esc((d.principles||[]).join('\n'))}</textarea>
+        <div class="hint">سطر لكل مبدأ.</div></div>`;
+    } else {
+      for(const k of keys){ if(d.fields[k]) h+=fieldHtml(k,d.fields[k]); }
+    }
+  }
+  document.getElementById('form').innerHTML=h;
+}
+function fieldHtml(k,f){
+  const ph=PLACEHOLDERS[k];
+  const rows=Math.max(2,Math.ceil((f.value||'').length/55));
+  return `<div class="field">
+    <div class="flabel">${esc(f.label)} ${f.edited?'<span class="badge b-edit">مُعدّل</span>':'<span class="badge b-def">افتراضي</span>'}
+      <button class="reset1" onclick="resetField('${k}')">↺ الافتراضي</button></div>
+    <textarea id="fld_${k}" rows="${rows}">${esc(f.value)}</textarea>
+    ${ph?`<div class="hint">متغيّرات: ${esc(ph)}</div>`:''}
+  </div>`;
+}
+function resetField(k){ if(DATA&&DATA.fields[k]){document.getElementById('fld_'+k).value=DATA.fields[k].default;} }
 
-<div class="block">
-  <h3>1) سياق الدور <span class="tag p">تعليمات</span></h3>
-  <div class="when">يُحقَن في <b>كل</b> رد — يمنع البوت من مخاطبة المالك كأنه شخص ثالث.</div>
-  <pre>⚠️ أنت الآن تخاطب: {الدور} مباشرة.
-الطرف الآخر غائب: {الطرف الآخر}.
-- خاطبه بـ(أنت/لك/معك) — لا تذكر "{الدور}" كشخص ثالث أبداً
-- إذا أردت الإشارة للطرف الآخر قل "{الطرف الآخر}"
-مثال صحيح (للمالك): "خلنا ننسق موعد معك" أو "سأنسق مع المستأجر"</pre>
-  <div class="exp">الكلمات بين {} تُملأ برمجياً (الدور = مالك/مستأجر).</div>
-  <div class="fix"><b>لتعديله قل لي:</b> «عدّل سياق الدور بحيث يخاطب المالك بصيغة الاحترام/الجمع».</div>
-</div>
-
-<div class="block">
-  <h3>2) برومبت التعريف <span class="tag p">تعليمات</span> <span class="var">_SYS_INTRO</span></h3>
-  <div class="when">يُستخدم عندما يسأل المستخدم: "مين أنت؟" / "كيف جبت رقمي؟"</div>
-  <pre>أنت "مساعد" — وسيط عقاري إلكتروني يربط الملاك بالباحثين.
-أجب في ٢-٣ جمل:
-١. عرّف نفسك: "أنا مساعد العقاري، وسيط إلكتروني"
-٢. اشرح المصدر: {المصدر}
-٣. اذكر العرض باختصار ثم ادفع نحو السعر مباشرة
-   (مثال: "السعر المطروح ٤٥ ألف — وش رأيك؟").
-ملاحظة: أنت الوسيط — لا تشارك أرقام، وتنسّق المعاينة بنفسك.</pre>
-  <div class="fix"><b>لتعديله قل لي:</b> «خلّ التعريف يذكر اسم المنصة ورابط الموقع».</div>
-</div>
-
-<div class="block">
-  <h3>3) برومبت المفاوض الموحّد <span class="tag p">تعليمات</span> <span class="var">_SYS_NEGOTIATOR</span> ⭐</h3>
-  <div class="when">القلب — يُستخدم لكل الأسئلة والمحادثة العامة. هذا ما يحدّد "شخصية" مساعد وأسلوب تفاوضه.</div>
-  <pre>أنت "مساعد" — وسيط عقاري سعودي محترف ونشِط، مهمتك إتمام صفقة إيجار هذا العقار تحديداً.
-
-🎯 هدفك الوحيد: الوصول لاتفاق على سعر إيجار سنوي يرضي الطرفين، ثم إغلاق الصفقة.
-
-كيف تتصرف:
-- بادِر وكن متحمّساً — قُد المحادثة نحو رقم، لا تنتظر ولا تعرض قوائم خدمات.
-- إن لم يُطرح سعر بعد: اذكر السعر المطروح واسأل الطرف صراحةً عن رقمه أو قبوله.
-- إن وُجد عرض على الطاولة: علّق عليه وادفع نحو تقارب برقم محدّد.
-- أجب على سؤاله من البيانات المتاحة فقط، باختصار، ثم أعِد توجيهه نحو السعر.
-- جُمل قصيرة (٢-٤)، عامية سعودية، شخصية ودودة ثابتة.
-
-🚧 حدود صارمة:
-- أنت الوسيط: لا تُعطِ رقم هاتف الطرف الآخر إطلاقاً.
-- طلب الصور/المعاينة: قل إنك ستنسّق وترتّب — لا تعِد بصور فوراً ولا تخترع.
-- لا تعرض خدمات غير موجودة (نشر إعلانات، تسويق). مهمتك هذه الصفقة فقط.
-- لا تخترع معلومات، ولا تكرّر ردك السابق حرفياً.</pre>
-  <div class="exp">⬅️ هذا أهم نص. أي تغيير في "شخصية" مساعد أو أسلوبه = تعديل هنا.</div>
-  <div class="fix"><b>لتعديله قل لي مثلاً:</b> «خلّ مساعد أكثر حزماً في التفاوض ولا ينزل بسهولة»، أو «أضف أنه يذكر مميزات الحي»، أو «يستخدم لهجة أكثر رسمية».</div>
-</div>
-
-<div class="block">
-  <h3>4) برومبت الرفض <span class="tag p">تعليمات</span> <span class="var">_SYS_REJECT</span></h3>
-  <div class="when">عندما يرفض الطرف الصفقة فعلاً (سعر غالي/غير مهتم) — بشكل حازم وسلبي.</div>
-  <pre>المتحدث يُبدي تحفظاً أو رفضاً للصفقة نفسها.
-- تعاطف بهدوء  - لا تُلحّ
-- اترك الباب مفتوحاً: "إذا تغيّر رأيك نحن هنا"  - جملة أو جملتان</pre>
-  <div class="fix"><b>لتعديله قل لي:</b> «عند الرفض، اعرض خصماً بسيطاً قبل الاستسلام».</div>
-</div>
-
-<div class="block">
-  <h3>5) السياق الديناميكي (يُلحق بكل برومبت) <span class="tag p">تعليمات</span> <span class="var">_build_context</span></h3>
-  <div class="when">يُبنى برمجياً ويُحقَن في كل برومبت — يعطي النموذج بيانات العقار + <b>ملف الحافظ الذكي</b> + <b>حالة العروض</b> + هدف الحالة الحالية.</div>
-  <pre>سياق العقار: شقة 3 غرف — جدة — 45,000 ر/سنة + المواصفات
-
-🧠 ملف العميل — محمد:
-• الدور: مالك + باحث | تفاوضاته: 3 (ناجحة: 1)
-• تفضيلاته الأحدث: جدة · 3 غرف · ~40,000 ر/سنة
-• ملاحظات: يفضّل الدفع كاش
-
-حالة التفاوض (استخدمها لتدفع نحو الإغلاق):
-- أعلى سعر عرضه المستأجر: 40,000 ر | أقل سعر يقبله المالك: 44,000 ر
-
-🎯 حالة التفاوض الآن: [converge] — هدفك: قرّب الأرقام واقترح وسطاً محدّداً.</pre>
-  <div class="exp">السطر الأخير (🎯) يأتي من <b>آلة الحالات البرمجية</b> — انظر الصفحة الأخرى. هنا يلتقي البرمجي بالتعليمات: الكود يحسب الهدف، والنموذج يصوغه.</div>
-</div>
-
-<div class="block" style="border-color:var(--yel)">
-  <h3>📝 كيف تعطيني برومبت للإصلاح (تعليمات)</h3>
-  <div class="exp">إذا المشكلة في <b>الأسلوب/النبرة/ما يقوله</b> مساعد → غالباً تعديل تعليمات. قل لي بصيغة:</div>
-  <pre>"في برومبت المفاوض: [غيّر/أضف/احذف] ___"
-أمثلة:
-• "خلّ مساعد يسأل عن وظيفة المستأجر قبل الاتفاق"
-• "لا يستخدم إيموجي إطلاقاً"
-• "يبدأ دائماً بالترحيب باسم العميل"</pre>
-  <div class="exp">وإذا المشكلة في <b>المسار/المنطق/قرار</b> (متى ينقل، متى يغلق، أرقام) → ذلك <b>برمجي</b>، انظر صفحة «السلوك البرمجي».</div>
-</div>
-
-</div></body></html>
+async function saveAll(btn){
+  btn.disabled=true;status('جارٍ الحفظ…',true);
+  const ov={};
+  for(const k in DATA.fields){
+    if(k==='principles') continue;
+    const el=document.getElementById('fld_'+k); if(el) ov[k]=el.value;
+  }
+  const pr=document.getElementById('fld_principles');
+  if(pr) ov.principles=pr.value.split('\n').map(s=>s.trim()).filter(Boolean);
+  let d;
+  try{ const r=await fetch(`${API}/identity`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({overrides:ov})}); d=await r.json(); }
+  catch(e){ status('❌ تعذّر الاتصال',false); btn.disabled=false; return; }
+  btn.disabled=false;
+  if(d.ok){status(`✅ حُفظ (${d.saved_count} حقل مُعدّل). ينعكس فوراً على المحاكي والواتساب.`,true);load();}
+  else status('❌ '+(d.error||'فشل'),false);
+}
+async function resetAll(){
+  if(!confirm('إرجاع كل الهوية للقيم الافتراضية؟')) return;
+  const r=await fetch(`${API}/identity/reset`,{method:'POST'});const d=await r.json();
+  if(d.ok){status('↩️ أُعيدت للافتراضي.',true);load();}
+}
+load();
+</script>
+</body>
+</html>

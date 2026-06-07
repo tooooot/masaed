@@ -2398,6 +2398,34 @@ def cron_auto_simulate_status():
     return jsonify({"ok": True, "state": _autosim_state})
 
 
+# ── 🟣 الهوية: قراءة/تعديل من اللوحة (المصدر الواحد identity.py) ──────────────
+@app.route("/identity", methods=["GET"])
+def identity_get():
+    import identity
+    return jsonify({"ok": True, "bot_name": identity.BOT_NAME,
+                    "principles": identity.principles(),
+                    "fields": identity.snapshot()})
+
+
+@app.route("/identity", methods=["POST"])
+def identity_save():
+    import identity
+    data = request.get_json() or {}
+    overrides = data.get("overrides") if isinstance(data.get("overrides"), dict) else data
+    try:
+        saved = identity.save_overrides(overrides)
+        return jsonify({"ok": True, "saved_count": len(saved), "saved": list(saved.keys())})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/identity/reset", methods=["POST"])
+def identity_reset():
+    import identity
+    identity.reset_overrides()
+    return jsonify({"ok": True, "message": "أُعيدت الهوية للقيم الافتراضية"})
+
+
 @app.route("/deal/wa-test", methods=["POST"])
 def deal_wa_test():
     """🧪 اختبار واتساب حقيقي بأرقام المستخدم نفسه (محاكاة الدرجة الثانية): يبدأ
