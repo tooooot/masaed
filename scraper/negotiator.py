@@ -721,18 +721,39 @@ def _standing_tail(neg: dict) -> str:
 # ── جلب الناقص + الصور (Feature: relay & media) ─────────────────────────────────
 
 def _listing_photos(neg: dict, conn) -> list:
-    """صور/فيديو العقار من تسجيل المالك (listing)."""
+    """صور العقار — أولاً من الإعلان المسحوب (masaed_listings.photos) بالـid الفعلي،
+    ثم بالهاتف، ثم تسجيل المالك. تُرسَل من القاعدة لا تُطلب من المالك."""
+    def _urls(raw):
+        out = []
+        for p in (raw or []):
+            if isinstance(p, dict) and p.get("url"):
+                out.append(p["url"])
+            elif isinstance(p, str) and p.startswith("http"):
+                out.append(p)
+        return out
+    pv = list(set(_pvar(neg["listing_phone"])))
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT photos FROM sanad.masaed_registrations
-            WHERE phone=%s AND type='listing' AND photos IS NOT NULL
-              AND jsonb_array_length(photos) > 0
-            ORDER BY created_at DESC LIMIT 1
-        """, (neg["listing_phone"],))
-        row = cur.fetchone()
-    if not row or not row[0]:
-        return []
-    return [p.get("url") for p in row[0] if p.get("url")]
+        # 1) الإعلان المسحوب بالـid الفعلي للصفقة (الأدقّ — listing_id موثوق)
+        if neg.get("listing_id"):
+            cur.execute("SELECT photos FROM sanad.masaed_listings WHERE id=%s", (neg["listing_id"],))
+            r = cur.fetchone()
+            if r and _urls(r[0]):
+                return _urls(r[0])
+        # 2) بالهاتف (احتياط لو listing_id تسجيلاً)
+        cur.execute("""SELECT photos FROM sanad.masaed_listings WHERE phone = ANY(%s)
+                       AND photos IS NOT NULL ORDER BY id DESC LIMIT 1""", (pv,))
+        r = cur.fetchone()
+        if r and _urls(r[0]):
+            return _urls(r[0])
+        # 3) تسجيل المالك (احتياط أخير)
+        cur.execute("""SELECT photos FROM sanad.masaed_registrations
+                       WHERE phone = ANY(%s) AND type='listing' AND photos IS NOT NULL
+                         AND jsonb_array_length(photos) > 0
+                       ORDER BY created_at DESC LIMIT 1""", (pv,))
+        r = cur.fetchone()
+        if r:
+            return _urls(r[0])
+    return []
 
 
 def _relay_info_request(neg: dict, my_role: str, text: str, conn):
@@ -1322,15 +1343,25 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
         asking_more = any(k in text for k in ("اضاف", "إضاف", "المزيد", "اكثر", "أكثر",
                                               "ثاني", "غيرها", "زياده", "زيادة", "واجهه", "واجهة"))
         if sent and not asking_more:
-            reply = (f"هذي صور العقار المتوفرة عندي 📸 "
-                     f"وعشان نتقدّم — وش السعر اللي يناسبك للإيجار السنوي؟")
+            reply = ("هذي صور العقار المتوفرة عندي 📸 "
+                     "وعشان نتقدّم — وش السعر اللي يناسبك للإيجار السنوي؟")
         else:
-            # لا صور مخزّنة أو طلب إضافي → أعد صياغة الطلب وأرسله للطرف الآخر
-            _relay_info_request(neg, my_role, text, conn)
-            head = "هذا كل المتوفّر عندي حالياً. " if sent else ""
-            need = "صوراً إضافية" if sent else "الصور/المعاينة"
-            reply = (f"{head}طلبت من {other_role} {need} وأوافيك فور وصولها 👌 "
-                     f"وعشان نمشّي بالتوازي — وش السعر اللي يناسبك؟")
+            # 🔁 لا صور مخزّنة → تفادَ الحلقة: المالك يُجاب بذكاء، والمستأجر يُسأل
+            # المالك مرّة واحدة فقط ثم تُعرَض المعاينة.
+            asked_before = any(("صور" in (e.get("text") or ""))
+                               and str(e.get("role", "")).startswith(("relay", "answer"))
+                               for e in neg.get("chat_log", [])[-10:])
+            if my_role == "مالك":
+                # المالك يتحدّث عن الصور (حيرة/لا صور) → لا تُحِله كطلب جديد للمستأجر
+                reply = ("المستأجر طلب صور العقار 📷 — إن عندك صور أرسلها هنا وأنقلها له، "
+                         "وإلا ننسّق له معاينة على الطبيعة. وعشان نمشّي — وش أفضل سعر تقبله؟")
+            elif not asked_before:
+                _relay_info_request(neg, my_role, text, conn)   # اسأل المالك مرّة واحدة
+                reply = ("طلبت من المالك صور العقار وأوافيك فور وصولها 👌 وإن ما توفّرت "
+                         "أنسّق لك معاينة على الطبيعة. وبالتوازي — وش السعر اللي يناسبك؟")
+            else:
+                reply = ("ما توفّرت صور للعقار حالياً 📷 — أنسّق لك معاينة على الطبيعة بدلاً منها؟ 🗓️ "
+                         "وعشان نتقدّم — وش السعر اللي يناسبك؟")
         _append_log(neg_id, f"bot→{my_role}", reply, conn)
         wa_send(phone, reply)
         return True

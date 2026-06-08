@@ -2574,7 +2574,7 @@ def deal_wa_test():
     conn.close()
 
     result = start_negotiation(
-        lead_id=seeker_reg_id, listing_id=owner_reg_id,
+        lead_id=seeker_reg_id, listing_id=offer.get("id") or owner_reg_id,  # id الإعلان الحقيقي → صور/روابط القاعدة
         lead_phone=my_phone, listing_phone=test_phone, lead_name="باحث اختبار",
         listing_title=offer.get("title") or "عقار للإيجار",
         listing_city=city, listing_price=offer.get("price"),
