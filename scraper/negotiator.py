@@ -43,8 +43,20 @@ def _classify_outbound(text: str) -> str:
     return "ردّ وسيط"
 
 
+import threading as _threading
+_lang_ctx = _threading.local()   # خريطة {phone: lang} للتفاوض الجاري (للترجمة)
+
+
 def wa_send(phone: str, text: str, retries: int = 3) -> bool:
-    """wa_send مع 3 محاولات وتراجع أسي. (في المحاكاة يُستبدَل بـ_routed_wa_send فلا يُتتبَّع)."""
+    """wa_send مع 3 محاولات. 🌍 يترجم تلقائياً لرسالة لغة الطرف إن كان سياق
+    التفاوض نشطاً (نقطة الترجمة الوحيدة — لا تفوت أي رسالة)."""
+    try:
+        _m = getattr(_lang_ctx, "map", None)
+        if _m and _m.get(phone):
+            import i18n
+            text = i18n.localize(text, _m.get(phone))
+    except Exception:
+        pass
     for attempt in range(retries):
         try:
             _wa_send_raw(phone, text)
@@ -602,12 +614,7 @@ def _generate_reply(neg: dict, my_role: str, text: str, intent: dict) -> str:
         # الأسئلة والعموم: prompt المفاوض الموحّد الموجّه بالهدف
         system = _sys_negotiator().format(role_ctx=role_ctx, other_party=other_party, context=context)
 
-    # 🌍 لغة الطرف: إن كتب بغير العربية، ولّد الرد بلغته مباشرةً
-    import i18n
-    _lang = neg.get("lead_lang") if my_role == "مستأجر" else neg.get("listing_lang")
-    if not i18n.is_arabic(_lang):
-        system += (f"\n\n🌍 CRITICAL: The user writes in {_lang}. Reply ONLY in {_lang} "
-                   f"(NOT Arabic), with the same warm, concise broker tone.")
+    # ردّ الـLLM يُولَّد بالعربية، وتُترجَم لغة الطرف تلقائياً في wa_send (نقطة واحدة)
     return _llm(system, f"[{my_role}]: {text}", max_tokens=400) or "وصلت رسالتك، نكمّل — وش السعر اللي يناسبك؟"
 
 
@@ -839,9 +846,8 @@ def _detect_party_lang(neg, phone, text, conn):
 
 
 def _say(neg, phone, text_ar):
-    """يرسل رسالة مرحلة مترجَمة إلى لغة الطرف المتلقّي (عربي → كما هي)."""
-    import i18n
-    wa_send(phone, i18n.localize(text_ar, _party_lang(neg, phone)))
+    """يرسل رسالة مرحلة؛ الترجمة تتم تلقائياً في wa_send عبر خريطة اللغة."""
+    wa_send(phone, text_ar)
 
 
 def _fetch_understanding(role, phone, conn):
@@ -1341,15 +1347,20 @@ def handle_negotiation_message(phone: str, text: str, media_url: str = None) -> 
                 neg["_profile"] = build_party_profile(phone, conn)  # ملف الحافظ المضغوط
             except Exception:
                 pass
-            # 🌍 كشف لغة الطرف من رسالته (مرّة واحدة) وتخزينها — ليردّ مساعد بلغته
+            # 🌍 كشف لغة الطرف وتفعيل خريطة الترجمة لكل رسائل هذا التفاوض
             try:
                 _detect_party_lang(neg, phone, text or "", conn)
+                _lang_ctx.map = {neg["lead_phone"]: neg.get("lead_lang"),
+                                 neg["listing_phone"]: neg.get("listing_lang")}
             except Exception as _le:
                 print(f"[I18N] كشف اللغة: {_le}", flush=True)
-            # 📝 مرحلة التسجيل (قبل التفاوض): مبادرة→موافقة→تسجيل→تفاوض
-            if neg.get("phase") == "registering":
-                return _handle_registration(neg, phone, text or "", conn)
-            return _handle_active(neg, phone, text or "", conn, media_url)
+            try:
+                # 📝 مرحلة التسجيل (قبل التفاوض): مبادرة→موافقة→تسجيل→تفاوض
+                if neg.get("phase") == "registering":
+                    return _handle_registration(neg, phone, text or "", conn)
+                return _handle_active(neg, phone, text or "", conn, media_url)
+            finally:
+                _lang_ctx.map = None
 
 
 # ── بدء تفاوض جديد ────────────────────────────────────────────────────────────
