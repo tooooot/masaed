@@ -142,6 +142,18 @@ def _fast_parse(text: str) -> dict | None:
 DEEP_INTENT = os.getenv("MASAED_DEEP_INTENT", "true").lower() == "true"
 
 
+def _norm_amount(a):
+    """في سياق الإيجار السنوي: الرقم الصغير (<1000) يعني بالآلاف.
+    «١٥»→15000، «٣٠»→30000، «٣٠الف»→30000. (الإيجار السنوي نادراً <1000 ر.)"""
+    try:
+        a = int(float(a))
+    except (TypeError, ValueError):
+        return None
+    if a <= 0:
+        return None
+    return a * 1000 if a < 1000 else a
+
+
 def _parse_raw(raw: str) -> dict | None:
     m = re.search(r'\{.*\}', raw, re.DOTALL)
     if not m:
@@ -155,7 +167,7 @@ def _parse_raw(raw: str) -> dict | None:
             intent = "other"
         res = {
             "intent":    intent,
-            "amount":    int(d["amount"]) if d.get("amount") else None,
+            "amount":    _norm_amount(d.get("amount")) if d.get("amount") else None,
             "sentiment": d.get("sentiment", "neutral"),
             "is_firm":   bool(d.get("is_firm", False)),
             "mood":      d.get("mood", "neutral"),

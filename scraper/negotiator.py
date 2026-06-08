@@ -999,18 +999,16 @@ def _handle_registration(neg, phone, text, conn):
         _say(neg, phone, msg)
         return True
 
-    # step >= 1: لا تُسجّل إلا على تأكيد فعلي — وإلا أجب/أعد الطلب بلا تأكيد أعمى
-    if not _looks_like_confirm(text, intent):
-        if intent.get("intent") == "question":
-            reply = _generate_reply(neg, role_ar, text, intent)
-        else:
-            reply = ("تمام 👍 وش رأيك بالبيانات اللي فوق؟ أرسل «نعم» إذا صحيحة "
-                     "لأكمّل تسجيلك، أو صحّح/أضف الناقص.")
+    # step >= 1: السؤال الصريح يُجاب بإيجاز (لا تفاوض سعر في التسجيل بعد)؛
+    # أما التأكيد/البيانات/التصحيح/الميزانية → تُكمل التسجيل.
+    if intent.get("intent") == "question" and not _looks_like_confirm(text, intent):
+        reply = ("نكمّل تسجيلك أول 👍 أكّد البيانات فوق (أرسل «نعم»)، أو صحّح/أضف الناقص — "
+                 "وبعدها أجاوبك على كل استفساراتك بالتفصيل.")
         _append_log(neg_id, f"bot→{role_ar}", reply, conn)
         _say(neg, phone, reply)
         return True
 
-    # تأكيد/تصحيح → أنشئ التسجيل وأرسل الصفحة، ثم تحقق من اكتمال الطرفين
+    # تأكيد/بيانات/تصحيح → أنشئ التسجيل وأرسل الصفحة، ثم تحقق من اكتمال الطرفين
     prof = _fetch_understanding(role, phone, conn)
     page = _create_party_registration(role, phone, neg, prof, conn)
     _update_neg(neg_id, conn, **{step_col: 2})
