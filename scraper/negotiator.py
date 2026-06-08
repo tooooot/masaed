@@ -923,11 +923,36 @@ def _start_negotiation_phase(neg, conn):
     print(f"[NEG #{neg['id']}] المرحلة: تسجيل → تفاوض", flush=True)
 
 
+_REG_CONFIRM_WORDS = {"صحيح", "صح", "مضبوط", "تمام", "نعم", "ايه", "ايوه", "ايوا", "اي",
+                      "زين", "اوك", "اوكي", "تم", "اكيد", "أكيد", "موافق", "صحيحه", "صحيحة",
+                      "ok", "okay", "yes", "correct", "right"}
+
+
+def _reg_identity_reply(role):
+    src   = "طلبك المنشور على حراج" if role == "seeker" else "إعلانك المنشور على حراج"
+    other = "عرض يناسبك" if role == "seeker" else "مستأجر مناسب"
+    return (f"أنا «مساعد» — وسيط عقاري إلكتروني 🤝 لاحظت {src}، وحبيت أوصّلك لـ{other}. "
+            f"خدمتنا مجانية ومتابعتك تهمّنا. تحب نكمل؟")
+
+
+def _reg_calm_reply(role):
+    src = "طلبك" if role == "seeker" else "إعلانك"
+    return (f"أعتذر منك بصدق 🙏 ما قصدي أزعجك. أنا «مساعد» وسيط إلكتروني، لقيت {src} على حراج "
+            f"وحبيت أساعدك توصل لاتفاق مناسب. راحتك أهم — تحب نكمل بهدوء، ولا أتوقّف؟")
+
+
+def _looks_like_confirm(text, intent):
+    if intent.get("intent") == "accept":
+        return True
+    words = set((text or "").replace("،", " ").replace(".", " ").split())
+    return bool(words & _REG_CONFIRM_WORDS)
+
+
 def _handle_registration(neg, phone, text, conn):
-    """📝 مرحلة التسجيل قبل التفاوض (تطابق المحاكاة):
-    موافقة على المبادرة → تأكيد البيانات المستخرَجة + إنشاء صفحة → عند اكتمال
-    الطرفين تبدأ مرحلة التفاوض."""
+    """📝 مرحلة التسجيل قبل التفاوض — مع فهم النية/الهوية/المزاج (لا تقدّم أعمى):
+    موافقة → تأكيد البيانات + صفحة → عند اكتمال الطرفين يبدأ التفاوض."""
     import identity
+    from intent_parser import parse_intent
     neg_id  = neg["id"]
     is_lead = (phone == neg["lead_phone"])
     role    = "seeker" if is_lead else "owner"
@@ -942,6 +967,23 @@ def _handle_registration(neg, phone, text, conn):
         _say(neg, neg["listing_phone"] if is_lead else neg["lead_phone"], identity.cancel_to_other())
         return True
 
+    intent = parse_intent(text)
+
+    # 🎭 مزاج غاضب/منزعج → احتواء + تعريف، بلا تقدّم في التسجيل
+    try:
+        from strategy import detect_mood
+        _mood = detect_mood(text, intent)
+    except Exception:
+        _mood = "neutral"
+    if _mood in ("angry", "frustrated"):
+        _say(neg, phone, _reg_calm_reply(role))
+        return True
+
+    # 🧠 سؤال الهوية «من أنت / كيف حصلت على رقمي» → أجب، بلا تقدّم
+    if intent.get("_identity"):
+        _say(neg, phone, _reg_identity_reply(role))
+        return True
+
     if step == 0:
         # ردّ الرغبة على المبادرة → اطلب تأكيد البيانات والنواقص
         prof = {"city": neg.get("listing_city"), "price": neg.get("listing_price")}
@@ -953,7 +995,18 @@ def _handle_registration(neg, phone, text, conn):
         _say(neg, phone, msg)
         return True
 
-    # step >= 1: تأكيد/تصحيح → أنشئ التسجيل وأرسل الصفحة، ثم تحقق من اكتمال الطرفين
+    # step >= 1: لا تُسجّل إلا على تأكيد فعلي — وإلا أجب/أعد الطلب بلا تأكيد أعمى
+    if not _looks_like_confirm(text, intent):
+        if intent.get("intent") == "question":
+            reply = _generate_reply(neg, role_ar, text, intent)
+        else:
+            reply = ("تمام 👍 وش رأيك بالبيانات اللي فوق؟ أرسل «نعم» إذا صحيحة "
+                     "لأكمّل تسجيلك، أو صحّح/أضف الناقص.")
+        _append_log(neg_id, f"bot→{role_ar}", reply, conn)
+        _say(neg, phone, reply)
+        return True
+
+    # تأكيد/تصحيح → أنشئ التسجيل وأرسل الصفحة، ثم تحقق من اكتمال الطرفين
     prof = _fetch_understanding(role, phone, conn)
     page = _create_party_registration(role, phone, neg, prof, conn)
     _update_neg(neg_id, conn, **{step_col: 2})
