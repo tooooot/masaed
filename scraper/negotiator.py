@@ -52,11 +52,14 @@ def wa_send(phone: str, text: str, retries: int = 3) -> bool:
     التفاوض نشطاً (نقطة الترجمة الوحيدة — لا تفوت أي رسالة)."""
     try:
         _m = getattr(_lang_ctx, "map", None)
-        if _m and _m.get(phone):
+        _lang = _m.get(phone) if _m else None
+        if _lang:
             import i18n
-            text = i18n.localize(text, _m.get(phone))
-    except Exception:
-        pass
+            if not i18n.is_arabic(_lang):
+                text = i18n.localize(text, _lang)
+                print(f"[I18N→{phone}] {_lang}: {text[:40]}", flush=True)
+    except Exception as _e:
+        print(f"[I18N] فشل الترجمة: {_e}", flush=True)
     for attempt in range(retries):
         try:
             _wa_send_raw(phone, text)
@@ -978,6 +981,11 @@ def _handle_registration(neg, phone, text, conn):
     # 🧠 سؤال الهوية «من أنت / كيف حصلت على رقمي» → أجب، بلا تقدّم
     if intent.get("_identity"):
         _say(neg, phone, _reg_identity_reply(role))
+        return True
+
+    # ✅ مسجّل بالفعل وينتظر الطرف الآخر → لا تُعِد طلب التسجيل (إصلاح حلقة الإعادة)
+    if step >= 2:
+        _say(neg, phone, identity.waiting_other())
         return True
 
     if step == 0:
