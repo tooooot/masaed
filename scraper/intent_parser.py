@@ -138,67 +138,83 @@ def _fast_parse(text: str) -> dict | None:
     return None  # غامض → LLM
 
 
+# 🧠 الفهم العميق: LLM يفسّر نيّة كل رسالة (لا regex). يُعطّل بـMASAED_DEEP_INTENT=false
+DEEP_INTENT = os.getenv("MASAED_DEEP_INTENT", "true").lower() == "true"
+
+
 def _parse_raw(raw: str) -> dict | None:
     m = re.search(r'\{.*\}', raw, re.DOTALL)
     if not m:
         return None
     try:
         d = json.loads(m.group())
-        return {
-            "intent":    d.get("intent", "other"),
+        intent = d.get("intent", "other")
+        is_identity = bool(d.get("is_identity")) or intent == "identity"
+        # «identity/greeting» تُعامَل كـother مع علامة _identity (يستهلكها المفاوض)
+        if intent in ("identity", "greeting"):
+            intent = "other"
+        res = {
+            "intent":    intent,
             "amount":    int(d["amount"]) if d.get("amount") else None,
             "sentiment": d.get("sentiment", "neutral"),
             "is_firm":   bool(d.get("is_firm", False)),
+            "mood":      d.get("mood", "neutral"),
         }
+        if is_identity:
+            res["_identity"] = True
+        return res
     except Exception:
         return None
 
 
-def parse_intent(text: str) -> dict:
-    """Extract structured intent. Fast-path first, LLM as fallback."""
-
-    # ── Fast path (بدون شبكة، < 1ms) ────────────────────────────────────────
-    fast = _fast_parse(text)
-    if fast is not None:
-        return fast
-
+def _llm_parse(text: str) -> dict | None:
+    """يفسّر النيّة عبر LLM (Anthropic إن فُعّل، وإلا DeepSeek)."""
     prompt = f"الرسالة: {text}"
-
-    # ── Anthropic (معطّل افتراضياً لتوفير التكلفة) ─────────────────────────────
     if ANTHROPIC_KEY and USE_ANTHROPIC:
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
             resp = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=120,
-                system=_SYSTEM,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            result = _parse_raw(resp.content[0].text.strip())
-            if result:
-                return result
+                model="claude-haiku-4-5-20251001", max_tokens=160,
+                system=_SYSTEM, messages=[{"role": "user", "content": prompt}])
+            r = _parse_raw(resp.content[0].text.strip())
+            if r:
+                return r
         except Exception as e:
             print(f"[INTENT] Anthropic: {e}", flush=True)
-
-    # ── DeepSeek fallback ──────────────────────────────────────────────────────
     if DEEPSEEK_KEY:
         try:
             import openai
             client = openai.OpenAI(api_key=DEEPSEEK_KEY, base_url="https://api.deepseek.com/v1")
             resp = client.chat.completions.create(
                 model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": _SYSTEM},
-                    {"role": "user",   "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=120
-            )
-            result = _parse_raw(resp.choices[0].message.content)
-            if result:
-                return result
+                messages=[{"role": "system", "content": _SYSTEM},
+                          {"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}, max_tokens=160)
+            r = _parse_raw(resp.choices[0].message.content)
+            if r:
+                return r
         except Exception as e:
             print(f"[INTENT] DeepSeek: {e}", flush=True)
+    return None
 
-    return _DEFAULT.copy()
+
+def parse_intent(text: str) -> dict:
+    """فهم نيّة الرسالة. الوضع العميق: LLM لكل رسالة (مع احتياط regex عند الفشل)."""
+    text = (text or "").strip()
+    if not text:
+        return _DEFAULT.copy()
+
+    if DEEP_INTENT:
+        # 🧠 LLM أولاً لكل رسالة — فهم عميق بالسياق لا بالكلمات
+        r = _llm_parse(text)
+        if r:
+            return r
+        # فشل LLM → احتياط سريع
+        return _fast_parse(text) or _DEFAULT.copy()
+
+    # الوضع السريع القديم: regex أولاً، LLM للغامض
+    fast = _fast_parse(text)
+    if fast is not None:
+        return fast
+    return _llm_parse(text) or _DEFAULT.copy()

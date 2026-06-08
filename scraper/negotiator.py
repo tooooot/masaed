@@ -969,12 +969,8 @@ def _handle_registration(neg, phone, text, conn):
 
     intent = parse_intent(text)
 
-    # 🎭 مزاج غاضب/منزعج → احتواء + تعريف، بلا تقدّم في التسجيل
-    try:
-        from strategy import detect_mood
-        _mood = detect_mood(text, intent)
-    except Exception:
-        _mood = "neutral"
+    # 🎭 مزاج غاضب/منزعج → احتواء + تعريف، بلا تقدّم في التسجيل (من الفهم العميق)
+    _mood = intent.get("mood") or "neutral"
     if _mood in ("angry", "frustrated"):
         _say(neg, phone, _reg_calm_reply(role))
         return True

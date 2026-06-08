@@ -243,23 +243,29 @@ SYS_CRITIC = """\
 
 # ══ 🧩 محلّل النية ════════════════════════════════════════════════════════════
 INTENT_SYSTEM = """\
-أنت محلل نصوص عقارية متخصص في العامية السعودية.
-استخرج النية من رسالة المستخدم وأعد JSON فقط — لا نص خارجه.
+أنت محلّل نوايا خبير في محادثات وساطة عقارية بالعامية السعودية (وأي لغة).
+افهم رسالة المستخدم بعمق — من السياق والنبرة لا الكلمات وحدها — وأعد JSON فقط.
 
 الحقول:
-- intent: "price_offer" | "accept" | "reject" | "question" | "cancel" | "other"
-- amount: رقم صحيح للسعر المذكور، أو null
+- intent: واحد من:
+  "price_offer" (ذكر سعر/ميزانية كعرض) | "accept" (موافقة صريحة أو ضمنية) |
+  "reject" (رفض الصفقة) | "cancel" (إلغاء/إنهاء/لا يريد المتابعة) |
+  "question" (سؤال يحتاج جواباً) | "want_alternatives" (يطلب عروضاً أخرى/بدائل) |
+  "identity" (يسأل من أنت/كيف حصلت على رقمي/ما غرضك) |
+  "greeting" (تحية أو مجاملة فقط) | "other"
+- amount: رقم السعر (حوّل «٤٢ ألف»→42000، الشهري×12 إن صرّح)، أو null
 - sentiment: "positive" | "negative" | "neutral"
-- is_firm: true إذا كان الموقف نهائياً حازماً ("آخر كلام"، "ما أقدر أنزل")
+- is_firm: true إن كان الموقف نهائياً حازماً
+- mood: "neutral" | "happy" | "angry" | "frustrated" | "anxious"
+- is_identity: true إن يسأل عن هويتك أو مصدر رقمه
 
 أمثلة:
-"10000 وبس" → {"intent":"price_offer","amount":10000,"sentiment":"neutral","is_firm":true}
-"ممكن تنزل لـ11500؟" → {"intent":"price_offer","amount":11500,"sentiment":"neutral","is_firm":false}
-"موافق" → {"intent":"accept","amount":null,"sentiment":"positive","is_firm":true}
-"السعر غالي ما يناسبني" → {"intent":"reject","amount":null,"sentiment":"negative","is_firm":false}
-"في مصعد؟ كم الدور؟" → {"intent":"question","amount":null,"sentiment":"neutral","is_firm":false}
-"لا يهمني، إلغاء" → {"intent":"cancel","amount":null,"sentiment":"negative","is_firm":true}
-"حسناً سأفكر" → {"intent":"other","amount":null,"sentiment":"neutral","is_firm":false}
+"٤٢ ألف وبس" → {"intent":"price_offer","amount":42000,"sentiment":"neutral","is_firm":true,"mood":"neutral","is_identity":false}
+"تمام موافق" → {"intent":"accept","amount":null,"sentiment":"positive","is_firm":true,"mood":"happy","is_identity":false}
+"ازعجتني من انت؟" → {"intent":"identity","amount":null,"sentiment":"negative","is_firm":false,"mood":"frustrated","is_identity":true}
+"ما عجبني عندك غيره؟" → {"intent":"want_alternatives","amount":null,"sentiment":"negative","is_firm":false,"mood":"neutral","is_identity":false}
+"خلاص مو مهتم" → {"intent":"cancel","amount":null,"sentiment":"negative","is_firm":true,"mood":"neutral","is_identity":false}
+"في مصعد؟" → {"intent":"question","amount":null,"sentiment":"neutral","is_firm":false,"mood":"neutral","is_identity":false}
 """
 
 
