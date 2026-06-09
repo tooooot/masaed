@@ -972,6 +972,20 @@ def _looks_like_confirm(text, intent):
     return bool(words & _REG_CONFIRM_WORDS)
 
 
+_NOT_AVAIL_HINTS = ("غير متاح", "مو متاح", "ما متاح", "مافي", "ما في", "لايوجد", "لا يوجد",
+                    "مو موجود", "انتهى", "تأجّر", "تأجر", "محجوز", "مب متاح", "ماعاد", "ما عاد")
+
+
+def _is_not_interested(text, intent):
+    """عدم رغبة/رفض/عدم توفّر — عبر الفهم العميق أو نفي صريح (يُغلق التسجيل)."""
+    if intent.get("intent") in ("cancel", "reject"):
+        return True
+    t = (text or "").strip()
+    if t in ("لا", "لأ", "no", "نو", "لا لا", "ابد", "أبداً", "أبدا"):
+        return True
+    return any(w in t for w in _NOT_AVAIL_HINTS)
+
+
 def _handle_registration(neg, phone, text, conn):
     """📝 مرحلة التسجيل قبل التفاوض — مع فهم النية/الهوية/المزاج (لا تقدّم أعمى):
     موافقة → تأكيد البيانات + صفحة → عند اكتمال الطرفين يبدأ التفاوض."""
@@ -984,14 +998,14 @@ def _handle_registration(neg, phone, text, conn):
     step_col = "seeker_reg" if is_lead else "owner_reg"
     step = neg.get(step_col) or 0
     _append_log(neg_id, role_ar, text, conn)
+    intent = parse_intent(text)
 
-    if _has_cancel(text):
+    # ❌ عدم رغبة/رفض/عدم توفّر (فهم عميق أو نفي صريح) → أغلق بلطف، لا تُسجّل
+    if _has_cancel(text) or _is_not_interested(text, intent):
         _close(neg_id, "cancelled", conn)
         _say(neg, phone, identity.cancel_to_party())
         _say(neg, neg["listing_phone"] if is_lead else neg["lead_phone"], identity.cancel_to_other())
         return True
-
-    intent = parse_intent(text)
 
     # 🎭 مزاج غاضب/منزعج → احتواء + تعريف، بلا تقدّم في التسجيل (من الفهم العميق)
     _mood = intent.get("mood") or "neutral"
