@@ -1083,8 +1083,11 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
                     pass
                 return True
 
+    # 🧠 تحليل النيّة مرّة واحدة لكل رسالة (يُعاد استخدامه أدناه — يقلّل حمل LLM للثلث)
+    intent = parse_intent(text)
+
     # ── 🔁 الباحث يطلب عروضاً أخرى / لم يرغب بهذا العرض → نرشّح بدائل مطابقة ──
-    if is_lead and parse_intent(text).get("intent") == "want_alternatives":
+    if is_lead and intent.get("intent") == "want_alternatives" and not _wants_viewing(text):
         import identity
         _append_log(neg_id, my_role, text, conn)
         alts = _seeker_alternatives(neg["lead_phone"], neg.get("listing_id"), conn)
@@ -1119,7 +1122,7 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
 
     # ── تتبع الموافقة على سعر مقترح (قبول صريح أو ناعم) ───────────────────────
     if neg.get("proposed_price"):
-        intent_q = parse_intent(text)
+        intent_q = intent
         soft = _is_soft_accept(text, neg["proposed_price"])
         if intent_q["intent"] == "accept" or soft:
             p_str = f"{neg['proposed_price']:,}"
@@ -1161,8 +1164,7 @@ def _handle_active(neg: dict, phone: str, text: str, conn, media_url: str = None
                     f"ننتظر رد الطرف الآخر.")
             return True
 
-    # ── parse intent + سجّل حالة الـFSM الحالية ───────────────────────────────
-    intent = parse_intent(text)
+    # ── حالة الـFSM (intent مُحلَّل مسبقاً مرّة واحدة أعلاه) ───────────────────
     _state_before = fsm_state(neg)
     print(f"[NEG #{neg_id}] state={_state_before} {my_role} intent={intent['intent']} "
           f"amount={intent.get('amount')} firm={intent.get('is_firm')}", flush=True)
