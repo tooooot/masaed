@@ -986,6 +986,15 @@ def _is_not_interested(text, intent):
     return any(w in t for w in _NOT_AVAIL_HINTS)
 
 
+def _objects_to_registration(text):
+    """اعتراض على «خطوة التسجيل» لا على الصفقة («ما ابغا اسجل»، «بدون تسجيل»).
+    نتساهل ونكمل، لا نُلغي الصفقة."""
+    t = (text or "")
+    has_reg = any(k in t for k in ("سجل", "تسجيل", "اسجل", "أسجل"))
+    has_neg = any(n in t for n in ("لا", "ما ", "مابي", "ماابي", "مو ", "مب ", "بدون", "ليش", "مالي خلق"))
+    return has_reg and has_neg
+
+
 def _handle_registration(neg, phone, text, conn):
     """📝 مرحلة التسجيل قبل التفاوض — مع فهم النية/الهوية/المزاج (لا تقدّم أعمى):
     موافقة → تأكيد البيانات + صفحة → عند اكتمال الطرفين يبدأ التفاوض."""
@@ -999,6 +1008,23 @@ def _handle_registration(neg, phone, text, conn):
     step = neg.get(step_col) or 0
     _append_log(neg_id, role_ar, text, conn)
     intent = parse_intent(text)
+
+    # 📝 اعتراض على التسجيل (لا على الصفقة) → تساهل: سجّل بصمت وأكمل، لا تُلغِ الصفقة
+    if _objects_to_registration(text) and step < 2:
+        prof = _fetch_understanding(role, phone, conn)
+        page = _create_party_registration(role, phone, neg, prof, conn)
+        _update_neg(neg_id, conn, **{step_col: 2}); neg[step_col] = 2
+        msg = "تمام، ما يحتاج تسجيل رسمي 👍 سجّلت طلبك من إعلانك باختصار، ونكمل."
+        if page:
+            msg += f"\n📄 صفحتك جاهزة: {page}"
+        _append_log(neg_id, f"bot→{role_ar}", msg, conn)
+        _say(neg, phone, msg)
+        other_step = (neg.get("owner_reg") if is_lead else neg.get("seeker_reg")) or 0
+        if other_step >= 2:
+            _start_negotiation_phase(neg, conn)
+        else:
+            _say(neg, phone, identity.waiting_other())
+        return True
 
     # ❌ عدم رغبة/رفض/عدم توفّر (فهم عميق أو نفي صريح) → أغلق بلطف، لا تُسجّل
     if _has_cancel(text) or _is_not_interested(text, intent):
