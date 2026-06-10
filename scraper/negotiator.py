@@ -995,6 +995,25 @@ def _objects_to_registration(text):
     return has_reg and has_neg
 
 
+def _post_register_engage(neg, phone, is_lead, conn):
+    """بعد تسجيل طرف وانتظار الآخر: لا تصمت — أبقِ الهدف حيّاً (صور + جمع السعر)."""
+    if is_lead:
+        photos = _listing_photos(neg, conn)
+        for url in photos[:6]:
+            try:
+                wa_send_media(phone, url)
+            except Exception:
+                pass
+        if photos:
+            msg = ("📷 تفضّل صور العقار. وبينما أأكّد مع المالك — وش ميزانيتك السنوية "
+                   "عشان أجهّز لك أفضل سعر؟")
+        else:
+            msg = "سجّلتك ✅ وأأكّد مع المالك. وبينها — وش ميزانيتك السنوية للإيجار؟"
+    else:
+        msg = "سجّلتك ✅ وعندي مستأجر مهتم، أأكّد معه. وبينها — وش أفضل سعر سنوي تقبله؟"
+    _say(neg, phone, msg)
+
+
 def _handle_registration(neg, phone, text, conn):
     """📝 مرحلة التسجيل قبل التفاوض — مع فهم النية/الهوية/المزاج (لا تقدّم أعمى):
     موافقة → تأكيد البيانات + صفحة → عند اكتمال الطرفين يبدأ التفاوض."""
@@ -1023,7 +1042,7 @@ def _handle_registration(neg, phone, text, conn):
         if other_step >= 2:
             _start_negotiation_phase(neg, conn)
         else:
-            _say(neg, phone, identity.waiting_other())
+            _post_register_engage(neg, phone, is_lead, conn)
         return True
 
     # ❌ عدم رغبة/رفض/عدم توفّر (فهم عميق أو نفي صريح) → أغلق بلطف، لا تُسجّل
@@ -1044,9 +1063,19 @@ def _handle_registration(neg, phone, text, conn):
         _say(neg, phone, _reg_identity_reply(role))
         return True
 
-    # ✅ مسجّل بالفعل وينتظر الطرف الآخر → لا تُعِد طلب التسجيل (إصلاح حلقة الإعادة)
+    # ✅ مسجّل وينتظر الآخر → لا تصمت: التقط ميزانيته/سعره (تجهيز التفاوض) وابقَ على الهدف
     if step >= 2:
-        _say(neg, phone, identity.waiting_other())
+        amt = intent.get("amount")
+        if amt and 3000 <= amt <= 999000:
+            field = "lead_max_price" if is_lead else "owner_min_price"
+            _update_neg(neg_id, conn, **{field: amt}); neg[field] = amt
+            _say(neg, phone, f"تمام، سجّلت رقمك ({amt:,} ر) ✅ وأأكّد مع الطرف الآخر "
+                             f"وأوافيك بأفضل اتفاق 👌")
+        elif intent.get("_identity"):
+            _say(neg, phone, _reg_identity_reply(role))
+        else:
+            _say(neg, phone, "تمام 👌 أتابع مع الطرف الآخر وأوافيك فور جاهزيته — "
+                             "وإن عندك سعر مبدئي في بالك خبّرني عشان أجهّزه.")
         return True
 
     if step == 0:
@@ -1082,7 +1111,7 @@ def _handle_registration(neg, phone, text, conn):
     if other_step >= 2:
         _start_negotiation_phase(neg, conn)
     else:
-        _say(neg, phone, identity.waiting_other())
+        _post_register_engage(neg, phone, is_lead, conn)   # لا تصمت — أبقِ الهدف حيّاً
     return True
 
 
