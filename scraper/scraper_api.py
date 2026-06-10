@@ -2573,6 +2573,15 @@ def deal_wa_test():
         conn.commit()
     conn.close()
 
+    # 🧪 أضِف رقمَي الاختبار لقائمة الإرسال المسموحة تلقائياً (فلا يُحجَبان/يُحوّلان)
+    try:
+        from bot import get_config, set_config
+        _cur = {n.strip() for n in (get_config("wa_test_phones", "") or "").split(",") if n.strip()}
+        _cur |= {my_phone, test_phone}
+        set_config("wa_test_phones", ",".join(sorted(_cur)))
+    except Exception as _e:
+        print(f"[WA-TEST] تعذّر تحديث قائمة الأرقام: {_e}", flush=True)
+
     result = start_negotiation(
         lead_id=seeker_reg_id, listing_id=offer.get("id") or owner_reg_id,  # id الإعلان الحقيقي → صور/روابط القاعدة
         lead_phone=my_phone, listing_phone=test_phone, lead_name="باحث اختبار",

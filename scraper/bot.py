@@ -616,7 +616,9 @@ def wa_send(phone: str, text: str):
     # ── وضع الاختبار: الرقمان المُعدّان مسموحان دائماً؛ وعند التفعيل تُحوّل الأرقام الحقيقية ──
     test_owner  = (get_config("test_owner", "") or "").replace("+", "").replace(" ", "")
     test_seeker = (get_config("test_seeker", "") or "").replace("+", "").replace(" ", "")
-    test_nums = {n for n in (test_owner, test_seeker) if n}
+    # قائمة أرقام اختبار قابلة للتوسّع (يضيفها زر اختبار الواتساب تلقائياً)
+    extra = {n.strip() for n in (get_config("wa_test_phones", "") or "").split(",") if n.strip()}
+    test_nums = {n for n in (test_owner, test_seeker) if n} | extra
     if get_config("test_mode", "off") == "on" and test_owner:
         if phone_clean not in SANDBOX_PHONES and phone_clean not in test_nums:
             print(f"[WA TEST-REDIRECT] {phone_clean} → {test_owner}", flush=True)
